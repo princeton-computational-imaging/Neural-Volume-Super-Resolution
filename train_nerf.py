@@ -151,7 +151,7 @@ def main():
 
         model_coarse.train()
         if model_fine:
-            model_coarse.train()
+            model_fine.train()
 
         rgb_coarse, rgb_fine = None, None
         target_ray_values = None
@@ -257,7 +257,7 @@ def main():
             tqdm.write("[VAL] =======> Iter: " + str(i))
             model_coarse.eval()
             if model_fine:
-                model_coarse.eval()
+                model_fine.eval()
 
             start = time.time()
             with torch.no_grad():
