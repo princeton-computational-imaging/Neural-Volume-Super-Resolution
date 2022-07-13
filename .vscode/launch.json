@@ -1,0 +1,85 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "train NeRF",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":["--config","config/lego.yml"]
+        },
+        {
+            "name": "train downsampled",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":["--config","config/lego_ds.yml"]
+        },
+        {
+            "name": "train SR",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":["--config","config/lego_SR.yml"]
+        },
+        {
+            "name": "resume SR",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":
+            [
+                "--config","config/lego_SR.yml",
+                // "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/coarse_only/checkpoint05000.ckpt"
+                "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/SR_dirs_encoding_L4C256W0001_0"
+            ]
+        },
+        {
+            "name": "resume train",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":
+            [
+                "--config","config/lego.yml",
+                // "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/coarse_only/checkpoint05000.ckpt"
+                "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/coarse_and_fine"
+            ]
+        },
+        {
+            "name": "resume downsampled",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":
+            [
+                "--config","config/lego_ds.yml",
+                // "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/coarse_only/checkpoint05000.ckpt"
+                "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/downsample"
+            ]
+        },
+        {
+            "name": "queue job",
+            "type": "python",
+            "request": "launch",
+            "program": "slurm/queue_job.py",
+            "console": "integratedTerminal",
+        },
+
+    ]
+}

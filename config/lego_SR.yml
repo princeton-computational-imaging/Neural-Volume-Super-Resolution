@@ -1,9 +1,9 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: coarse_and_fine # debug-lego200
+  id: SR_L4C256W00001 # SR_L4C256W0001_HR1 # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
-  logdir: logs
+  logdir: /tigress/yb6751/projects/NeuralMFSR/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
@@ -18,7 +18,8 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  basedir: cache/nerf_synthetic/lego
+  # basedir: cache/nerf_synthetic/lego
+  basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -37,6 +38,7 @@ dataset:
 
 # Model parameters.
 models:
+  path: "/tigress/yb6751/projects/NeuralMFSR/archived_logs/downsample"
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.
@@ -142,3 +144,24 @@ nerf:
     radiance_field_noise_std: 0.
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
+super_resolution:
+  # dataset:
+    # Use specific HR training images (by passing image indices):
+    # train_im_inds: [0] # [0,1,2,3,4,5,6,7,8,9]
+  training:
+    LR_ims_chance: 0.5
+  model:
+    # Name of the torch.nn.Module class that implements the model.
+    type: FlexibleNeRFModel
+    # Number of layers in the model.
+    num_layers: 4 # 4 # 6
+    # Number of hidden units in each layer of the MLP (multi-layer
+    # perceptron).
+    hidden_size: 256 # [512,256,128,64] # 128 # 256
+    # Add a skip connection once in a while. Note: This parameter
+    # won't take affect unless num_layers > skip_connect_every.
+    skip_connect_every: 3
+    # Whether to add the SR model's output to the fine model's output
+    residual: True
+    weight: 0.0001 # Weight of the SR residual radiance field
+    input: "dirs_encoding" # "dirs_encoding","xyz_encoding","xyz"

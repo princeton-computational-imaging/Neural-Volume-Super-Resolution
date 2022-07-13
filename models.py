@@ -131,40 +131,50 @@ class FlexibleNeRFModel(torch.nn.Module):
         include_input_xyz=True,
         include_input_dir=True,
         use_viewdirs=True,
+        input_dim=None
     ):
         super(FlexibleNeRFModel, self).__init__()
-
-        include_input_xyz = 3 if include_input_xyz else 0
-        include_input_dir = 3 if include_input_dir else 0
-        self.dim_xyz = include_input_xyz + 2 * 3 * num_encoding_fn_xyz
-        self.dim_dir = include_input_dir + 2 * 3 * num_encoding_fn_dir
+        if isinstance(hidden_size,list):
+            assert not use_viewdirs,"Unsupported yet"
+        else:
+            hidden_size = [hidden_size]
+        layer_size = lambda x: hidden_size[min([x,len(hidden_size)-1])]
         self.skip_connect_every = skip_connect_every
-        if not use_viewdirs:
-            self.dim_dir = 0
+        if input_dim is not None:
+            self.dim_xyz = input_dim
+        else:
+            include_input_xyz = 3 if include_input_xyz else 0
+            include_input_dir = 3 if include_input_dir else 0
+            self.dim_xyz = include_input_xyz + 2 * 3 * num_encoding_fn_xyz
+            self.dim_dir = include_input_dir + 2 * 3 * num_encoding_fn_dir
+            if not use_viewdirs:
+                self.dim_dir = 0
 
-        self.layer1 = torch.nn.Linear(self.dim_xyz, hidden_size)
+        self.layer1 = torch.nn.Linear(self.dim_xyz, layer_size(0))
         self.layers_xyz = torch.nn.ModuleList()
         for i in range(num_layers - 1):
             if i % self.skip_connect_every == 0 and i > 0 and i != num_layers - 1:
                 self.layers_xyz.append(
-                    torch.nn.Linear(self.dim_xyz + hidden_size, hidden_size)
+                    torch.nn.Linear(self.dim_xyz + layer_size(i), layer_size(i+1))
+                    # torch.nn.Linear(self.dim_xyz + hidden_size, hidden_size)
                 )
             else:
-                self.layers_xyz.append(torch.nn.Linear(hidden_size, hidden_size))
+                # self.layers_xyz.append(torch.nn.Linear(hidden_size, hidden_size))
+                self.layers_xyz.append(torch.nn.Linear(layer_size(i), layer_size(i+1)))
 
         self.use_viewdirs = use_viewdirs
         if self.use_viewdirs:
             self.layers_dir = torch.nn.ModuleList()
             # This deviates from the original paper, and follows the code release instead.
             self.layers_dir.append(
-                torch.nn.Linear(self.dim_dir + hidden_size, hidden_size // 2)
+                torch.nn.Linear(self.dim_dir + hidden_size[-1], hidden_size[-1] // 2)
             )
 
-            self.fc_alpha = torch.nn.Linear(hidden_size, 1)
-            self.fc_rgb = torch.nn.Linear(hidden_size // 2, 3)
-            self.fc_feat = torch.nn.Linear(hidden_size, hidden_size)
+            self.fc_alpha = torch.nn.Linear(hidden_size[-1], 1)
+            self.fc_rgb = torch.nn.Linear(hidden_size[-1] // 2, 3)
+            self.fc_feat = torch.nn.Linear(hidden_size[-1], hidden_size[-1])
         else:
-            self.fc_out = torch.nn.Linear(hidden_size, 4)
+            self.fc_out = torch.nn.Linear(hidden_size[-1], 4)
 
         self.relu = torch.nn.functional.relu
 
@@ -178,7 +188,7 @@ class FlexibleNeRFModel(torch.nn.Module):
             if (
                 i % self.skip_connect_every == 0
                 and i > 0
-                and i != len(self.linear_layers) - 1
+                and i != len(self.layers_xyz)
             ):
                 x = torch.cat((x, xyz), dim=-1)
             x = self.relu(self.layers_xyz[i](x))

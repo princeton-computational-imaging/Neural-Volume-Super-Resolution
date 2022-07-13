@@ -133,3 +133,9 @@ dmypy.json
 cache/
 data/
 logs/
+slurm/code
+slurm/out
+slurm/scripts
+archived_logs
+*.png
+.vscode/settings.json

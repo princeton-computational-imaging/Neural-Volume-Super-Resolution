@@ -1,13 +1,13 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: coarse_and_fine # debug-lego200
+  id: downsample # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
   logdir: logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
-  train_iters: 250000
+  train_iters: 500000
   # Number of training iterations after which to validate.
   validate_every: 50
   # Number of training iterations after which to checkpoint.
@@ -26,6 +26,7 @@ dataset:
   # at half the original resolution of 800 x 800, to save space.
   half_res: True
   # Stride (include one per "testskip" images in the dataset).
+  downsampling_factor: 4 # downsampling factor for the downsampling experiment
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
