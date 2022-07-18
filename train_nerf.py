@@ -42,6 +42,7 @@ def main():
     if SR_experiment:
         with open(os.path.join(cfg.models.path,"config.yml"), "r") as f:
             cfg.super_resolution.ds_factor = CfgNode(yaml.load(f, Loader=yaml.FullLoader)).dataset.downsampling_factor
+        consistent_SR_density = cfg.super_resolution.model.get("consistent_density",False)
     # # (Optional:) enable this to track autograd issues when debugging
     # torch.autograd.set_detect_anomaly(True)
 
@@ -122,27 +123,41 @@ def main():
         model_fine.to(device)
 
     if SR_experiment:
-        NUM_MODEL_OUTPUTS,NUM_FUNC_TYPES,NUM_COORDS = 4,2,3
+        NUM_FUNC_TYPES,NUM_COORDS,NUM_MODEL_OUTPUTS = 2,3,4
         assert cfg.super_resolution.model.input in ["xyz","dirs_encoding","xyz_encoding"]
         if cfg.super_resolution.model.input=="xyz":
-            encoding_grad_inputs = 0
+            encoding_grad_inputs = 2*[0]
         elif cfg.super_resolution.model.input=="xyz_encoding":
-            encoding_grad_inputs = cfg.models.fine.num_encoding_fn_xyz
+            encoding_grad_inputs = [cfg.models.fine.num_encoding_fn_xyz,0]
         elif cfg.super_resolution.model.input=="dirs_encoding":
-            encoding_grad_inputs = cfg.models.fine.num_encoding_fn_xyz+cfg.models.fine.num_encoding_fn_dir
-        SR_input_dim = NUM_FUNC_TYPES*encoding_grad_inputs
-        if SR_input_dim>0:  
-            SR_input_dim += 1
-            SR_input_dim *= NUM_COORDS*NUM_MODEL_OUTPUTS
-        SR_input_dim += NUM_MODEL_OUTPUTS
+            encoding_grad_inputs = [cfg.models.fine.num_encoding_fn_xyz,cfg.models.fine.num_encoding_fn_dir]
+        if consistent_SR_density:
+            SR_input_dim = [NUM_FUNC_TYPES*d for d in encoding_grad_inputs]
+            SR_input_dim = [(d+1)*NUM_COORDS if d>0 else 0 for d in SR_input_dim]
+            jacobian_numel = NUM_MODEL_OUTPUTS*sum(SR_input_dim)
+            SR_input_dim[0] += 1
+            SR_input_dim[1] = jacobian_numel+NUM_MODEL_OUTPUTS-SR_input_dim[0]
+        else:
+            raise Exception("This computation is wrong, and reaches a lower input dimension than the actual product of the dimension of the input to the NeRF model times number of its outputs, which is the size of the Jacobian, plus the number of outputs. The reason why it worked is because I removed the excessive input channels as the first step when running the SR model.")
+            SR_input_dim = NUM_FUNC_TYPES*sum(encoding_grad_inputs)
+            if SR_input_dim>0:  
+                SR_input_dim += 1
+                SR_input_dim *= NUM_COORDS*NUM_MODEL_OUTPUTS
+            SR_input_dim += NUM_MODEL_OUTPUTS
+            SR_input_dim = [SR_input_dim,0]
+        # SR_input_dim += NUM_MODEL_OUTPUTS
         
         SR_model = getattr(models, cfg.super_resolution.model.type)(
-            input_dim=SR_input_dim,
-            use_viewdirs=False,
-            num_layers=cfg.super_resolution.model.num_layers,
+            input_dim= SR_input_dim,
+            use_viewdirs=consistent_SR_density,
+            num_layers=cfg.super_resolution.model.num_layers_xyz,
+            num_layers_dir=cfg.super_resolution.model.get("num_layers_dir",1),
             hidden_size=cfg.super_resolution.model.hidden_size,
+            dirs_hidden_width_ratio=1,
+            xyz_input_2_dir=cfg.super_resolution.model.get("xyz_input_2_dir",False)
         )
-        print("SR model: %d parameters, input dimension %d"%(num_parameters(SR_model),SR_input_dim))
+        print("SR model: %d parameters, input dimension xyz: %d, dirs: %d"%\
+            (num_parameters(SR_model),SR_input_dim[0],SR_input_dim[1]))
         SR_model.to(device)
         trainable_parameters = list(SR_model.parameters())
         SR_HR_im_inds = cfg.super_resolution.get("dataset",{}).get("train_im_inds",None)

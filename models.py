@@ -124,6 +124,8 @@ class FlexibleNeRFModel(torch.nn.Module):
     def __init__(
         self,
         num_layers=4,
+        num_layers_dir=1,
+        dirs_hidden_width_ratio=2,
         hidden_size=128,
         skip_connect_every=4,
         num_encoding_fn_xyz=6,
@@ -131,7 +133,8 @@ class FlexibleNeRFModel(torch.nn.Module):
         include_input_xyz=True,
         include_input_dir=True,
         use_viewdirs=True,
-        input_dim=None
+        input_dim=None,
+        xyz_input_2_dir=False
     ):
         super(FlexibleNeRFModel, self).__init__()
         if isinstance(hidden_size,list):
@@ -141,7 +144,11 @@ class FlexibleNeRFModel(torch.nn.Module):
         layer_size = lambda x: hidden_size[min([x,len(hidden_size)-1])]
         self.skip_connect_every = skip_connect_every
         if input_dim is not None:
-            self.dim_xyz = input_dim
+            self.dim_xyz = input_dim[0]
+            if use_viewdirs:
+                self.dim_dir = input_dim[1]
+            else:
+                self.dim_xyz = sum(input_dim)
         else:
             include_input_xyz = 3 if include_input_xyz else 0
             include_input_dir = 3 if include_input_dir else 0
@@ -164,14 +171,20 @@ class FlexibleNeRFModel(torch.nn.Module):
 
         self.use_viewdirs = use_viewdirs
         if self.use_viewdirs:
+            self.xyz_input_2_dir = xyz_input_2_dir
             self.layers_dir = torch.nn.ModuleList()
             # This deviates from the original paper, and follows the code release instead.
             self.layers_dir.append(
-                torch.nn.Linear(self.dim_dir + hidden_size[-1], hidden_size[-1] // 2)
+                torch.nn.Linear(self.dim_dir + hidden_size[-1]+(self.dim_xyz if xyz_input_2_dir else 0),\
+                    hidden_size[-1] // dirs_hidden_width_ratio)
             )
+            for i in range(num_layers_dir-1):
+                self.layers_dir.append(
+                    torch.nn.Linear(hidden_size[-1]//dirs_hidden_width_ratio, hidden_size[-1] // dirs_hidden_width_ratio)
+                )
 
             self.fc_alpha = torch.nn.Linear(hidden_size[-1], 1)
-            self.fc_rgb = torch.nn.Linear(hidden_size[-1] // 2, 3)
+            self.fc_rgb = torch.nn.Linear(hidden_size[-1] // dirs_hidden_width_ratio, 3)
             self.fc_feat = torch.nn.Linear(hidden_size[-1], hidden_size[-1])
         else:
             self.fc_out = torch.nn.Linear(hidden_size[-1], 4)
@@ -196,6 +209,8 @@ class FlexibleNeRFModel(torch.nn.Module):
             feat = self.relu(self.fc_feat(x))
             alpha = self.fc_alpha(x)
             x = torch.cat((feat, view), dim=-1)
+            if self.xyz_input_2_dir:
+                x = torch.cat((xyz,x),dim=-1)
             for l in self.layers_dir:
                 x = self.relu(l(x))
             rgb = self.fc_rgb(x)

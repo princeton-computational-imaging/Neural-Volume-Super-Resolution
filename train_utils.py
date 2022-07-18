@@ -151,13 +151,27 @@ def predict_and_render_radiance(
             encode_position_fn,
             encode_direction_fn,
             return_input_grads=num_grads_2_return,
+            # return_input_grads={"order_by_outputs":options.super_resolution.model.get("consistent_density",False),\
+            #     "num_grads_2_return":num_grads_2_return},
         )
         if SR_model is not None:
             SR_inputs = []
             if num_grads_2_return>0:
-                SR_inputs.append(radiance_field[1].reshape([radiance_field[1].shape[0],radiance_field[1].shape[1],-1]))
+                if options.super_resolution.model.get("consistent_density",False):
+                    num_xyz_coords = 3*(2*options.models.fine.num_encoding_fn_xyz+1)
+                    SR_inputs.append(torch.cat((
+                        radiance_field[1][:,:,-1,:num_xyz_coords],
+                        radiance_field[1][:,:,:-1,:].reshape([radiance_field[1].shape[0],radiance_field[1].shape[1],-1]),
+                        radiance_field[1][:,:,-1,num_xyz_coords:],
+                    ),-1))
+                else:
+                    SR_inputs.append(radiance_field[1].reshape([radiance_field[1].shape[0],radiance_field[1].shape[1],-1]))
                 radiance_field = radiance_field[0]
-            SR_inputs.insert(0,radiance_field)
+            if options.super_resolution.model.get("consistent_density",False):
+                SR_inputs.insert(0,radiance_field[...,-1:])
+                SR_inputs.append(radiance_field[...,:-1])
+            else:
+                SR_inputs.insert(0,radiance_field)
             SR_inputs = torch.cat(SR_inputs,-1)
 
         rgb_fine, disp_fine, acc_fine, _, _ = volume_render_radiance_field(
@@ -274,21 +288,6 @@ def run_one_iter_of_nerf(
         rgb_SR = append2list(r_SR,rgb_SR)
         disp_SR = append2list(d_SR,disp_SR)
         acc_SR = append2list(a_SR,acc_SR)
-        # if rf is not None:
-        #     if rgb_fine is None:
-        #         rgb_fine = [rf]
-        #     else:
-        #         rgb_fine.append(rf)
-        # if df is not None:
-        #     if disp_fine is None:
-        #         disp_fine = [df]
-        #     else:
-        #         disp_fine.append(df)
-        # if af is not None:
-        #     if acc_fine is None:
-        #         acc_fine = [af]
-        #     else:
-        #         acc_fine.append(af)
 
     rgb_coarse_ = torch.cat(rgb_coarse, dim=0)
     disp_coarse_ = torch.cat(disp_coarse, dim=0)
@@ -300,18 +299,6 @@ def run_one_iter_of_nerf(
     rgb_fine_ = cat_list(rgb_fine)
     disp_fine_ = cat_list(disp_fine)
     acc_fine_ = cat_list(acc_fine)
-    # if rgb_fine is not None:
-    #     rgb_fine_ = torch.cat(rgb_fine, dim=0)
-    # else:
-    #     rgb_fine_ = None
-    # if disp_fine is not None:
-    #     disp_fine_ = torch.cat(disp_fine, dim=0)
-    # else:
-    #     disp_fine_ = None
-    # if acc_fine is not None:
-    #     acc_fine_ = torch.cat(acc_fine, dim=0)
-    # else:
-    #     acc_fine_ = None
     rgb_SR_ = cat_list(rgb_SR)
     disp_SR_ = cat_list(disp_SR)
     acc_SR_ = cat_list(acc_SR)
