@@ -9,18 +9,21 @@ def volume_render_radiance_field(
     ray_directions,
     radiance_field_noise_std=0.0,
     white_background=False,
+    mip_nerf=False,
 ):
     # TESTED
     one_e_10 = torch.tensor(
         [1e10], dtype=ray_directions.dtype, device=ray_directions.device
     )
-    dists = torch.cat(
-        (
-            depth_values[..., 1:] - depth_values[..., :-1],
-            one_e_10.expand(depth_values[..., :1].shape),
-        ),
-        dim=-1,
-    )
+    dists = depth_values[..., 1:] - depth_values[..., :-1]
+    if not mip_nerf:
+        dists = torch.cat(
+            (
+                dists,
+                one_e_10.expand(depth_values[..., :1].shape),
+            ),
+            dim=-1,
+        )
     dists = dists * ray_directions[..., None, :].norm(p=2, dim=-1)
 
     rgb = torch.sigmoid(radiance_field[..., :3])
@@ -34,6 +37,8 @@ def volume_render_radiance_field(
 
     rgb_map = weights[..., None] * rgb
     rgb_map = rgb_map.sum(dim=-2)
+    if mip_nerf:
+        depth_values = 0.5*(depth_values[:,:-1]+depth_values[:,1:])
     depth_map = weights * depth_values
     depth_map = depth_map.sum(dim=-1)
     # depth_map = (weights * depth_values).sum(dim=-1)

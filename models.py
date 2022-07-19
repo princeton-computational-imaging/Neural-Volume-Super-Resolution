@@ -134,7 +134,7 @@ class FlexibleNeRFModel(torch.nn.Module):
         include_input_dir=True,
         use_viewdirs=True,
         input_dim=None,
-        xyz_input_2_dir=False
+        xyz_input_2_dir=False,
     ):
         super(FlexibleNeRFModel, self).__init__()
         if isinstance(hidden_size,list):
@@ -156,7 +156,6 @@ class FlexibleNeRFModel(torch.nn.Module):
             self.dim_dir = include_input_dir + 2 * 3 * num_encoding_fn_dir
             if not use_viewdirs:
                 self.dim_dir = 0
-
         self.layer1 = torch.nn.Linear(self.dim_xyz, layer_size(0))
         self.layers_xyz = torch.nn.ModuleList()
         for i in range(num_layers - 1):

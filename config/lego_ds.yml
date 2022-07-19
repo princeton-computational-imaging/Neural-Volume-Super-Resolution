@@ -1,9 +1,9 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: downsample # debug-lego200
+  id: downsample_mip # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
-  logdir: logs
+  logdir: /tigress/yb6751/projects/NeuralMFSR/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
@@ -18,7 +18,7 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  basedir: cache/nerf_synthetic/lego
+  basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -52,7 +52,7 @@ models:
     skip_connect_every: 3
     # Whether to include the position (xyz) itself in its positional
     # encoding.
-    include_input_xyz: True
+    include_input_xyz: False # True
     # Number of encoding functions to use in the positional encoding
     # of the coordinates.
     num_encoding_fn_xyz: 6
@@ -80,7 +80,7 @@ models:
     num_encoding_fn_xyz: 6
     # Whether to include the position (xyz) itself in its positional
     # encoding.
-    include_input_xyz: True
+    include_input_xyz: False # True
     # Additionally use viewing directions as input.
     use_viewdirs: True
     # Whether to include the direction itself in its positional encoding.
@@ -101,7 +101,7 @@ nerf:
   # Use viewing directions as input, in addition to the X, Y, Z coordinates.
   use_viewdirs: True
   # Encoding function for position (X, Y, Z).
-  encode_position_fn: positional_encoding
+  encode_position_fn: mip # positional_encoding
   # Encoding function for ray direction (theta, phi).
   encode_direction_fn: positional_encoding
   # Training-specific parameters.

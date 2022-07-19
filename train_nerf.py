@@ -16,6 +16,7 @@ from load_blender import load_blender_data
 from nerf_helpers import (get_ray_bundle, img2mse, meshgrid_xy, mse2psnr,
                           positional_encoding)
 from train_utils import eval_nerf, run_one_iter_of_nerf
+from mip import IntegratedPositionalEncoding
 
 
 def main():
@@ -82,12 +83,19 @@ def main():
     else:
         device = "cpu"
 
-    def encode_position_fn(x):
-        return positional_encoding(
-            x,
-            num_encoding_functions=cfg.models.coarse.num_encoding_fn_xyz,
-            include_input=cfg.models.coarse.include_input_xyz,
-        )
+    assert cfg.nerf.encode_position_fn in ["mip","positional_encoding"]
+    if cfg.nerf.encode_position_fn=="mip":
+        mip_encoder = IntegratedPositionalEncoding(input_dims=3,\
+            multires=cfg.models.coarse.num_encoding_fn_xyz+1,include_input=cfg.models.coarse.include_input_xyz)
+        def encode_position_fn(x):
+            return mip_encoder(x)
+    else:
+        def encode_position_fn(x):
+            return positional_encoding(
+                x,
+                num_encoding_functions=cfg.models.coarse.num_encoding_fn_xyz,
+                include_input=cfg.models.coarse.include_input_xyz,
+            )
 
     def encode_direction_fn(x):
         return positional_encoding(
@@ -97,6 +105,7 @@ def main():
         )
 
     # Initialize a coarse-resolution model.
+    assert not (cfg.nerf.encode_position_fn=="mip" and cfg.models.coarse.include_input_xyz),"Mip-NeRF does not use the input xyz"
     model_coarse = getattr(models, cfg.models.coarse.type)(
         num_encoding_fn_xyz=cfg.models.coarse.num_encoding_fn_xyz,
         num_encoding_fn_dir=cfg.models.coarse.num_encoding_fn_dir,

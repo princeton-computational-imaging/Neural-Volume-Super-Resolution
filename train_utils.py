@@ -5,12 +5,25 @@ from nerf_helpers import sample_pdf_2 as sample_pdf
 from volume_rendering_utils import volume_render_radiance_field
 
 from functorch import vjp#make_functional_with_buffers, vmap, grad
+import mip
+import numpy as np
 
-def run_network(network_fn, pts, ray_batch, chunksize, embed_fn, embeddirs_fn,return_input_grads=False):
+def run_network(network_fn, pts, ray_batch, chunksize, embed_fn,\
+     embeddirs_fn,return_input_grads=False,mip_nerf=False,z_vals=None):
 
-    pts_flat = pts.reshape((-1, pts.shape[-1]))
-    # embeded_xyz = embed_fn(pts_flat)
-    embedded = embed_fn(pts_flat)
+    pts_shape = list(pts.shape)
+    if mip_nerf:
+        ro, rd, near, far, viewdir = torch.split(ray_batch,[3,3,1,1,3],dim=-1)
+        dx = 0.00135
+        # Get t_vals in world to aply mipnerf
+        radii = dx * 2 / np.sqrt(12.)
+        means,covs = mip.cast_rays(z_vals,ro,rd,radii,None)
+        pts_flat = embed_fn((means,covs))
+        pts_shape[1] = pts_flat.shape[1]
+        embedded = pts_flat.reshape((-1, pts_flat.shape[-1]))
+    else:
+        pts_flat = pts.reshape((-1, pts_shape[-1]))
+        embedded = embed_fn(pts_flat)
     if return_input_grads:
         grads = []
         def cotangents(rows,ones_col):
@@ -18,7 +31,7 @@ def run_network(network_fn, pts, ray_batch, chunksize, embed_fn, embeddirs_fn,re
 
     if embeddirs_fn is not None:
         viewdirs = ray_batch[..., None, -3:]
-        input_dirs = viewdirs.expand(pts.shape)
+        input_dirs = viewdirs.expand(pts_shape)
         input_dirs_flat = input_dirs.reshape((-1, input_dirs.shape[-1]))
         embedded_dirs = embeddirs_fn(input_dirs_flat)
         embedded = torch.cat((embedded, embedded_dirs), dim=-1)
@@ -34,10 +47,10 @@ def run_network(network_fn, pts, ray_batch, chunksize, embed_fn, embeddirs_fn,re
             preds.append(network_fn(batch))
     radiance_field = torch.cat(preds, dim=0)
     radiance_field = radiance_field.reshape(
-        list(pts.shape[:-1]) + [radiance_field.shape[-1]]
+        list(pts_shape[:-1]) + [radiance_field.shape[-1]]
     )
     if return_input_grads:
-        return radiance_field,torch.cat(grads,0).reshape(list(pts.shape[:-1])+list(grads[0].shape[1:]))
+        return radiance_field,torch.cat(grads,0).reshape(list(pts_shape[:-1])+list(grads[0].shape[1:]))
     else:
         return radiance_field
 
@@ -57,7 +70,7 @@ def predict_and_render_radiance(
     SR_model=None,
 ):
     # TESTED
-
+    mip_nerf = options.nerf.encode_position_fn=="mip"
     if encode_position_fn is None:
         encode_position_fn = identity_encoding
     if encode_direction_fn is None:
@@ -70,12 +83,12 @@ def predict_and_render_radiance(
 
     # TODO: Use actual values for "near" and "far" (instead of 0. and 1.)
     # when not enabling "ndc".
-    t_vals = torch.linspace(0.0, 1.0, getattr(options.nerf, mode).num_coarse).to(ro)
+    t_vals = torch.linspace(0.0, 1.0, getattr(options.nerf, mode).num_coarse+mip_nerf).to(ro)
     if not getattr(options.nerf, mode).lindisp:
         z_vals = near * (1.0 - t_vals) + far * t_vals
     else:
         z_vals = 1.0 / (1.0 / near * (1.0 - t_vals) + 1.0 / far * t_vals)
-    z_vals = z_vals.expand([num_rays, getattr(options.nerf, mode).num_coarse])
+    z_vals = z_vals.expand([num_rays, getattr(options.nerf, mode).num_coarse+mip_nerf])
 
     if getattr(options.nerf, mode).perturb:
         # Get intervals between samples.
@@ -88,14 +101,6 @@ def predict_and_render_radiance(
     # pts -> (num_rays, N_samples, 3)
     pts = ro[..., None, :] + rd[..., None, :] * z_vals[..., :, None]
 
-    # num_coarse = getattr(options.nerf, mode).num_coarse
-    # far_ = options.dataset.far
-    # near_ = options.dataset.near
-    # z_vals = torch.linspace(near_, far_, num_coarse).to(ro)
-    # noise_shape = list(ro.shape[:-1]) + [num_coarse]
-    # z_vals = z_vals + torch.rand(noise_shape).to(ro) * (far_ - near_) / num_coarse
-    # pts = ro[..., None, :] + rd[..., None, :] * z_vals[..., :, None]
-
     radiance_field = run_network(
         model_coarse,
         pts,
@@ -103,6 +108,8 @@ def predict_and_render_radiance(
         getattr(options.nerf, mode).chunksize,
         encode_position_fn,
         encode_direction_fn,
+        mip_nerf=mip_nerf,
+        z_vals=z_vals,
     )
 
     (
@@ -117,18 +124,19 @@ def predict_and_render_radiance(
         rd,
         radiance_field_noise_std=getattr(options.nerf, mode).radiance_field_noise_std,
         white_background=getattr(options.nerf, mode).white_background,
+        mip_nerf=mip_nerf,
     )
 
     # TODO: Implement importance sampling, and finer network.
     rgb_fine, disp_fine, acc_fine,rgb_SR,disp_SR,acc_SR = None, None, None, None, None, None
     if getattr(options.nerf, mode).num_fine > 0:
-        # rgb_map_0, disp_map_0, acc_map_0 = rgb_map, disp_map, acc_map
-
-        z_vals_mid = 0.5 * (z_vals[..., 1:] + z_vals[..., :-1])
+        z_average = lambda x:   0.5 * (x[..., 1:] + x[..., :-1])
+        z_vals_mid = z_average(z_vals)
+        if mip_nerf:    z_vals_mid = z_average(z_vals_mid)
         z_samples = sample_pdf(
             z_vals_mid,
             weights[..., 1:-1],
-            getattr(options.nerf, mode).num_fine,
+            getattr(options.nerf, mode).num_fine+mip_nerf,
             det=(getattr(options.nerf, mode).perturb == 0.0),
         )
         z_samples = z_samples.detach()
@@ -151,6 +159,8 @@ def predict_and_render_radiance(
             encode_position_fn,
             encode_direction_fn,
             return_input_grads=num_grads_2_return,
+            mip_nerf=mip_nerf,
+            z_vals=z_vals,
             # return_input_grads={"order_by_outputs":options.super_resolution.model.get("consistent_density",False),\
             #     "num_grads_2_return":num_grads_2_return},
         )
@@ -182,6 +192,7 @@ def predict_and_render_radiance(
                 options.nerf, mode
             ).radiance_field_noise_std,
             white_background=getattr(options.nerf, mode).white_background,
+            mip_nerf=mip_nerf,
         )
         if SR_model is not None:
             SR_input_shape = list(SR_inputs.shape)
