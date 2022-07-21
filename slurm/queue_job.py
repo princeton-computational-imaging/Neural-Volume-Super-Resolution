@@ -15,7 +15,7 @@ CONFIG_FILE = "config/lego_SR.yml"
 RESUME_TRAINING = None
 
 CONDA_ENV = "/tigress/yb6751/envs/neural_sr"
-RUN_TIME = 10 # 20 # 10 # Hours
+RUN_TIME = 20 # 20 # 10 # Hours
 
 with open(CONFIG_FILE, "r") as f:
     cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
@@ -37,8 +37,9 @@ else:
     for k,v in config_diffs['values_changed'].items():
         if k=="root['experiment']['id']":   continue
         diff_warnings.append("Configuration values changed comapred to old file:\n %s: %s"%(k,v))
-    for diff in [config_diffs[ch_type] for ch_type in ['dictionary_item_removed','dictionary_item_added'] if ch_type in config_diffs]:
-        diff_warnings.append(diff)
+    for ch_type in [c for c in ['dictionary_item_removed','dictionary_item_added'] if c in config_diffs]:
+        for diff in config_diffs[ch_type]:
+            diff_warnings.append("%s: %s"%(ch_type,diff))
     if len(diff_warnings)>0: 
         shutil.copyfile(os.path.join("slurm/code",job_identifier,"config.yml"),os.path.join("slurm/code",job_identifier,"config_old.yml"))
         print("\n\n!!! WARNING: Differences in configurations file: !!!")

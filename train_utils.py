@@ -147,9 +147,9 @@ def predict_and_render_radiance(
         num_grads_2_return = 0
         if SR_model is not None:
             if options.super_resolution.model.input=="xyz_encoding":    
-                num_grads_2_return = 3*(2*options.models.fine.num_encoding_fn_xyz+1)
+                num_grads_2_return = 3*(2*options.models.fine.num_encoding_fn_xyz+options.models.fine.include_input_xyz)
             elif options.super_resolution.model.input=="dirs_encoding":
-                num_grads_2_return = 3*(2*(options.models.fine.num_encoding_fn_dir+options.models.fine.num_encoding_fn_xyz)+2)
+                num_grads_2_return = 3*(2*(options.models.fine.num_encoding_fn_dir+options.models.fine.num_encoding_fn_xyz)+options.models.fine.include_input_xyz+options.models.fine.include_input_dir)
         radiance_field = run_network(
             model_fine,
             pts,
@@ -168,8 +168,8 @@ def predict_and_render_radiance(
             SR_inputs = []
             if num_grads_2_return>0:
                 if options.super_resolution.model.get("consistent_density",False):
-                    num_xyz_coords = 3*(2*options.models.fine.num_encoding_fn_xyz+1)
-                    SR_inputs.append(torch.cat((
+                    num_xyz_coords = 3*(2*options.models.fine.num_encoding_fn_xyz+options.models.fine.include_input_xyz)
+                    SR_inputs.append(torch.cat(( # Rearranging SR_inputs to be ordered by [(1) Gradients of sigma with respect to pos_encoding, (2) Gradients of RGB with respect to all inputs, (3) Gradients of sigma with respect to directional encoding]
                         radiance_field[1][:,:,-1,:num_xyz_coords],
                         radiance_field[1][:,:,:-1,:].reshape([radiance_field[1].shape[0],radiance_field[1].shape[1],-1]),
                         radiance_field[1][:,:,-1,num_xyz_coords:],
@@ -178,6 +178,7 @@ def predict_and_render_radiance(
                     SR_inputs.append(radiance_field[1].reshape([radiance_field[1].shape[0],radiance_field[1].shape[1],-1]))
                 radiance_field = radiance_field[0]
             if options.super_resolution.model.get("consistent_density",False):
+                # Adding the density output value to the beginning of SR_inputs and the RGB outputs to its tailing end.
                 SR_inputs.insert(0,radiance_field[...,-1:])
                 SR_inputs.append(radiance_field[...,:-1])
             else:
@@ -203,12 +204,18 @@ def predict_and_render_radiance(
                 from matplotlib import pyplot as plt
                 plt.clf()
                 legends = []
-                STDs2plot = SR_inputs.std(1).mean(0).cpu().numpy()
+                STDs2plot = SR_inputs.detach().std(1).mean(0).cpu().numpy()
                 OMIT_FIRST = 0
-                plt.plot(STDs2plot[:4]);  legends = ["RGBsigma"]
+                output_labels = ["R","G","B","sigma"]
+                if options.super_resolution.model.get("consistent_density",False):
+                    # STDs2plot = np.concatenate([STDs2plot[-3:],STDs2plot[:1],STDs2plot[1:1+num_xyz_coords],STDs2plot[1+num_xyz_coords+3*num_grads_2_return:-3],\
+                    #     STDs2plot[1+num_xyz_coords:1+num_xyz_coords+3*num_grads_2_return]])
+                    STDs2plot = np.concatenate([STDs2plot[-3:],STDs2plot[:1],STDs2plot[1:1+num_xyz_coords],STDs2plot[-3-num_grads_2_return+num_xyz_coords:-3],\
+                        STDs2plot[1+num_xyz_coords:1+num_xyz_coords+3*num_grads_2_return]])
+                plt.plot(STDs2plot[:4]);  legends = ["".join(output_labels)]
                 for i in range(4):
                     plt.plot(STDs2plot[4+i*num_grads_2_return+OMIT_FIRST:4+(i+1)*num_grads_2_return])
-                    legends.append(i)
+                    legends.append("d%s"%(output_labels[i]))
                 plt.legend(legends)
                 plt.savefig("SR_inputs_STD.png")
 
@@ -220,6 +227,7 @@ def predict_and_render_radiance(
                     options.nerf, mode
                 ).radiance_field_noise_std,
                 white_background=getattr(options.nerf, mode).white_background,
+                mip_nerf=mip_nerf,
             )
 
     return rgb_coarse, disp_coarse, acc_coarse, rgb_fine, disp_fine, acc_fine,rgb_SR, disp_SR, acc_SR
@@ -267,7 +275,10 @@ def run_one_iter_of_nerf(
     if options.nerf.use_viewdirs:
         rays = torch.cat((rays, viewdirs), dim=-1)
 
-    batches = get_minibatches(rays, chunksize=getattr(options.nerf, mode).chunksize//(32 if SR_model is not None else 1))
+    # chunk_size = getattr(options.nerf, mode).chunksize*64//max([getattr(options.nerf, mode).num_coarse,getattr(options.nerf, mode).num_fine])
+    chunk_size = getattr(options.nerf, mode).chunksize
+    if SR_model is not None: chunk_size //= 32
+    batches = get_minibatches(rays, chunksize=chunk_size)
     # TODO: Init a list, keep appending outputs to that list,
     # concat everything in the end.
     rgb_coarse, disp_coarse, acc_coarse = [], [], []
@@ -286,6 +297,7 @@ def run_one_iter_of_nerf(
             model_coarse,
             model_fine,
             options,
+            mode=mode,
             encode_position_fn=encode_position_fn,
             encode_direction_fn=encode_direction_fn,
             SR_model=SR_model,

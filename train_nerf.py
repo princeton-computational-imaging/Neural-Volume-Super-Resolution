@@ -17,6 +17,7 @@ from nerf_helpers import (get_ray_bundle, img2mse, meshgrid_xy, mse2psnr,
                           positional_encoding)
 from train_utils import eval_nerf, run_one_iter_of_nerf
 from mip import IntegratedPositionalEncoding
+from deepdiff import DeepDiff
 
 
 def main():
@@ -28,7 +29,7 @@ def main():
     parser.add_argument(
         "--load-checkpoint",
         type=str,
-        default="",
+        default='',
         help="Path to load saved checkpoint from.",
     )
     configargs = parser.parse_args()
@@ -41,7 +42,9 @@ def main():
     print("Running experiment %s"%(cfg.experiment.id))
     SR_experiment = "super_resolution" in cfg
     if SR_experiment:
-        with open(os.path.join(cfg.models.path,"config.yml"), "r") as f:
+        LR_model_path = cfg.models.path
+        if os.path.isfile(LR_model_path):   LR_model_path = "/".join(LR_model_path.split("/")[:-1])
+        with open(os.path.join(LR_model_path,"config.yml"), "r") as f:
             cfg.super_resolution.ds_factor = CfgNode(yaml.load(f, Loader=yaml.FullLoader)).dataset.downsampling_factor
         consistent_SR_density = cfg.super_resolution.model.get("consistent_density",False)
     # # (Optional:) enable this to track autograd issues when debugging
@@ -106,6 +109,8 @@ def main():
 
     # Initialize a coarse-resolution model.
     assert not (cfg.nerf.encode_position_fn=="mip" and cfg.models.coarse.include_input_xyz),"Mip-NeRF does not use the input xyz"
+    assert cfg.models.coarse.include_input_xyz==cfg.models.fine.include_input_xyz,"Assuming they are the same"
+    assert cfg.models.coarse.include_input_dir==cfg.models.fine.include_input_dir,"Assuming they are the same"
     model_coarse = getattr(models, cfg.models.coarse.type)(
         num_encoding_fn_xyz=cfg.models.coarse.num_encoding_fn_xyz,
         num_encoding_fn_dir=cfg.models.coarse.num_encoding_fn_dir,
@@ -142,7 +147,9 @@ def main():
             encoding_grad_inputs = [cfg.models.fine.num_encoding_fn_xyz,cfg.models.fine.num_encoding_fn_dir]
         if consistent_SR_density:
             SR_input_dim = [NUM_FUNC_TYPES*d for d in encoding_grad_inputs]
-            SR_input_dim = [(d+1)*NUM_COORDS if d>0 else 0 for d in SR_input_dim]
+            if SR_input_dim[0]>0:   SR_input_dim[0] = NUM_COORDS*(SR_input_dim[0]+cfg.models.coarse.include_input_xyz)
+            if SR_input_dim[1]>0:   SR_input_dim[1] = NUM_COORDS*(SR_input_dim[1]+cfg.models.coarse.include_input_dir)
+            # SR_input_dim = [(d+1)*NUM_COORDS if d>0 else 0 for d in SR_input_dim]
             jacobian_numel = NUM_MODEL_OUTPUTS*sum(SR_input_dim)
             SR_input_dim[0] += 1
             SR_input_dim[1] = jacobian_numel+NUM_MODEL_OUTPUTS-SR_input_dim[0]
@@ -198,6 +205,7 @@ def main():
 
     # Load an existing checkpoint, if a path is specified.
     start_i = 0
+    if configargs.load_checkpoint=="resume":  configargs.load_checkpoint += logdir
     if SR_experiment or os.path.exists(configargs.load_checkpoint):
         if SR_experiment:
             checkpoint = find_latest_checkpoint(cfg.models.path)
@@ -207,6 +215,12 @@ def main():
                 SR_model_checkpoint = os.path.join(configargs.load_checkpoint,sorted([f for f in os.listdir(configargs.load_checkpoint) if "checkpoint" in f and f[-5:]==".ckpt"],key=lambda x:int(x[len("checkpoint"):-5]))[-1])
                 start_i = int(SR_model_checkpoint.split('/')[-1][len('checkpoint'):-len('.ckpt')])+1
                 print("Resuming training on model %s"%(SR_model_checkpoint))
+                with open(os.path.join(configargs.load_checkpoint,"config.yml"),"r") as f:
+                    saved_config_dict = CfgNode(yaml.load(f, Loader=yaml.FullLoader))
+                    config_diffs = DeepDiff(saved_config_dict,cfg)
+                    for diff in [config_diffs[ch_type] for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed'] if ch_type in config_diffs]:
+                        print(diff)
+
                 SR_model.load_state_dict(torch.load(SR_model_checkpoint)["SR_model"])
         else:
             checkpoint = find_latest_checkpoint(configargs.load_checkpoint)
@@ -396,7 +410,7 @@ def main():
                 if SR_experiment:
                     loss = img2mse(rgb_SR[..., :3], target_ray_values[..., :3])
                     writer.add_image(
-                        "validation/rgb_SR", cast_to_image(rgb_SR[..., :3])
+                        "validation/rgb_SR", cast_to_image(rgb_SR[..., :3]),i
                     )
                     fine_loss = img2mse(rgb_fine[..., :3], target_ray_values[..., :3]).item()
                     writer.add_scalar("validation/fine_loss", fine_loss, i)
@@ -410,17 +424,17 @@ def main():
                     loss = coarse_loss + fine_loss
                     writer.add_scalar("validation/coarse_loss", coarse_loss.item(), i)
                     writer.add_image(
-                        "validation/rgb_coarse", cast_to_image(rgb_coarse[..., :3])
+                        "validation/rgb_coarse", cast_to_image(rgb_coarse[..., :3]),i
                     )
                 psnr = mse2psnr(loss.item())
                 writer.add_scalar("validation/loss", loss.item(), i)
                 writer.add_scalar("validataion/psnr", psnr, i)
                 if rgb_fine is not None:
                     writer.add_image(
-                        "validation/rgb_fine", cast_to_image(rgb_fine[..., :3])
+                        "validation/rgb_fine", cast_to_image(rgb_fine[..., :3]),i
                     )
                 writer.add_image(
-                    "validation/img_target", cast_to_image(target_ray_values[..., :3])
+                    "validation/img_target", cast_to_image(target_ray_values[..., :3]),i
                 )
                 tqdm.write(
                     "Validation loss: "
@@ -434,10 +448,6 @@ def main():
         if i % cfg.experiment.save_every == 0 or i == cfg.experiment.train_iters - 1:
             checkpoint_dict = {
                 "iter": i,
-                # "model_coarse_state_dict": model_coarse.state_dict(),
-                # "model_fine_state_dict": None
-                # if not model_fine
-                # else model_fine.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "loss": loss,
                 "psnr": psnr,

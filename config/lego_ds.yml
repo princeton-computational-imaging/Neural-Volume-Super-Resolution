@@ -7,7 +7,7 @@ experiment:
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
-  train_iters: 500000
+  train_iters: 750000
   # Number of training iterations after which to validate.
   validate_every: 50
   # Number of training iterations after which to checkpoint.
@@ -52,7 +52,7 @@ models:
     skip_connect_every: 3
     # Whether to include the position (xyz) itself in its positional
     # encoding.
-    include_input_xyz: False # True
+    include_input_xyz: False # False # True
     # Number of encoding functions to use in the positional encoding
     # of the coordinates.
     num_encoding_fn_xyz: 6
@@ -80,7 +80,7 @@ models:
     num_encoding_fn_xyz: 6
     # Whether to include the position (xyz) itself in its positional
     # encoding.
-    include_input_xyz: False # True
+    include_input_xyz: False # False # True
     # Additionally use viewing directions as input.
     use_viewdirs: True
     # Whether to include the direction itself in its positional encoding.
@@ -101,7 +101,7 @@ nerf:
   # Use viewing directions as input, in addition to the X, Y, Z coordinates.
   use_viewdirs: True
   # Encoding function for position (X, Y, Z).
-  encode_position_fn: mip # positional_encoding
+  encode_position_fn: mip # mip # positional_encoding
   # Encoding function for ray direction (theta, phi).
   encode_direction_fn: positional_encoding
   # Training-specific parameters.
