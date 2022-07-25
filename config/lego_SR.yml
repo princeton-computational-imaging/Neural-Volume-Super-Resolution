@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR_L4C128W00001_consistent_xyzSkip_mip # SR_L4C256W0001_HR1 # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  id: SR_refine_HR1_0 # SR_L4C256W0001_HR1 # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /tigress/yb6751/projects/NeuralMFSR/logs
   # Seed for random number generators (for repeatability).
@@ -38,8 +38,8 @@ dataset:
 
 # Model parameters.
 models:
-  # path: "/tigress/yb6751/projects/NeuralMFSR/logs/downsample_0"
-  path: /tigress/yb6751/projects/NeuralMFSR/logs/downsample_mip_0
+  # path: "/tigress/yb6751/projects/NeuralMFSR/logs/downsample_mip_0"
+  path: /tigress/yb6751/projects/NeuralMFSR/logs/downsample_0
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.
@@ -54,7 +54,8 @@ models:
     skip_connect_every: 3
     # Whether to include the position (xyz) itself in its positional
     # encoding.
-    include_input_xyz: False # True
+    # include_input_xyz: False # False # True
+    include_input_xyz: True # False # True
     # Number of encoding functions to use in the positional encoding
     # of the coordinates.
     num_encoding_fn_xyz: 6
@@ -82,7 +83,8 @@ models:
     num_encoding_fn_xyz: 6
     # Whether to include the position (xyz) itself in its positional
     # encoding.
-    include_input_xyz: False # True
+    # include_input_xyz: False # False # True
+    include_input_xyz: True # False # True
     # Additionally use viewing directions as input.
     use_viewdirs: True
     # Whether to include the direction itself in its positional encoding.
@@ -103,7 +105,8 @@ nerf:
   # Use viewing directions as input, in addition to the X, Y, Z coordinates.
   use_viewdirs: True
   # Encoding function for position (X, Y, Z).
-  encode_position_fn: mip # positional_encoding
+  # encode_position_fn: mip # mip # positional_encoding
+  encode_position_fn: positional_encoding # mip # positional_encoding
   # Encoding function for ray direction (theta, phi).
   encode_direction_fn: positional_encoding
   # Training-specific parameters.
@@ -146,27 +149,27 @@ nerf:
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
 super_resolution:
-  # dataset:
+  dataset:
     # Use specific HR training images (by passing image indices):
-    # train_im_inds: [0] # [0,1,2,3,4,5,6,7,8,9]
+    train_im_inds: [0] # [0,1,2,3,4,5,6,7,8,9]
   training:
     LR_ims_chance: 0.5
-  model:
-    # Name of the torch.nn.Module class that implements the model.
-    type: FlexibleNeRFModel
-    # Number of layers in the model.
-    num_layers_xyz: 4 # 1 # 4 # 6
-    # num_layers_dir: 4
-    # Number of hidden units in each layer of the MLP (multi-layer
-    # perceptron).
-    hidden_size: 128 # [512,256,128,64] # 128 # 256
-    xyz_input_2_dir: True
-    # Add a skip connection once in a while. Note: This parameter
-    # won't take affect unless num_layers > skip_connect_every.
-    skip_connect_every: 3
-    # Whether to add the SR model's output to the fine model's output
-    residual: True
-    weight: 0.0001 # Weight of the SR residual radiance field
-    input: "dirs_encoding" # "dirs_encoding","xyz_encoding","xyz"
-    # Whether to make the super-resolved density independent of viewing direction:
-    consistent_density: True
+  # model:
+  #   # Name of the torch.nn.Module class that implements the model.
+  #   type: FlexibleNeRFModel
+  #   # Number of layers in the model.
+  #   num_layers_xyz: 4 # 1 # 4 # 6
+  #   # num_layers_dir: 4
+  #   # Number of hidden units in each layer of the MLP (multi-layer
+  #   # perceptron).
+  #   hidden_size: 128 # [512,256,128,64] # 128 # 256
+  #   xyz_input_2_dir: True
+  #   # Add a skip connection once in a while. Note: This parameter
+  #   # won't take affect unless num_layers > skip_connect_every.
+  #   skip_connect_every: 3
+  #   # Whether to add the SR model's output to the fine model's output
+  #   residual: True
+  #   weight: 0.0001 # Weight of the SR residual radiance field
+  #   input: "xyz_encoding" # "dirs_encoding","xyz_encoding","xyz"
+  #   # Whether to make the super-resolved density independent of viewing direction:
+  #   consistent_density: True

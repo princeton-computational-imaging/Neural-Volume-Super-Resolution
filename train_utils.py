@@ -207,14 +207,17 @@ def predict_and_render_radiance(
                 STDs2plot = SR_inputs.detach().std(1).mean(0).cpu().numpy()
                 OMIT_FIRST = 0
                 output_labels = ["R","G","B","sigma"]
+                color_order = ["r","g","b","k"]
                 if options.super_resolution.model.get("consistent_density",False):
                     # STDs2plot = np.concatenate([STDs2plot[-3:],STDs2plot[:1],STDs2plot[1:1+num_xyz_coords],STDs2plot[1+num_xyz_coords+3*num_grads_2_return:-3],\
                     #     STDs2plot[1+num_xyz_coords:1+num_xyz_coords+3*num_grads_2_return]])
                     STDs2plot = np.concatenate([STDs2plot[-3:],STDs2plot[:1],STDs2plot[1:1+num_xyz_coords],STDs2plot[-3-num_grads_2_return+num_xyz_coords:-3],\
                         STDs2plot[1+num_xyz_coords:1+num_xyz_coords+3*num_grads_2_return]])
-                plt.plot(STDs2plot[:4]);  legends = ["".join(output_labels)]
+                # plt.plot(STDs2plot[:4]);  legends = ["".join(output_labels)]
                 for i in range(4):
-                    plt.plot(STDs2plot[4+i*num_grads_2_return+OMIT_FIRST:4+(i+1)*num_grads_2_return])
+                    if OMIT_FIRST==0:
+                        plt.plot(STDs2plot[i],"+"+color_order[i]);  legends.append(output_labels[i])
+                    plt.plot(STDs2plot[4+i*num_grads_2_return+OMIT_FIRST:4+(i+1)*num_grads_2_return],color_order[i])
                     legends.append("d%s"%(output_labels[i]))
                 plt.legend(legends)
                 plt.savefig("SR_inputs_STD.png")
