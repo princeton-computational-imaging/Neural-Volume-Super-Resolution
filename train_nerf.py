@@ -65,7 +65,7 @@ def main():
         USE_CACHED_DATASET = True
     else:
         # Load dataset
-        images, poses, render_poses, hwf, i_split = load_blender_data(
+        images, poses, render_poses, hwfDs, i_split = load_blender_data(
             cfg.dataset.basedir,
             half_res=cfg.dataset.half_res,
             testskip=cfg.dataset.testskip,
@@ -73,7 +73,14 @@ def main():
             cfg=cfg
         )
         i_train, i_val, i_test = i_split
-        H, W, focal = hwf
+        SR_HR_im_inds,val_ims_dict = None,None
+        if isinstance(i_train,tuple):
+            SR_HR_im_inds = i_train[0]
+            SR_LR_im_inds = i_train[1]
+            val_ims_dict = i_val[1]
+            i_val = i_val[0]
+
+        H, W, focal,ds_factor = hwfDs
         # H, W = int(H), int(W)
         # hwf = [H, W, focal]
 
@@ -179,12 +186,14 @@ def main():
             (num_parameters(SR_model),SR_input_dim[0],SR_input_dim[1]))
         SR_model.to(device)
         trainable_parameters = list(SR_model.parameters())
-        SR_HR_im_inds = cfg.super_resolution.get("dataset",{}).get("train_im_inds",None)
-        if SR_HR_im_inds is not None:
-            SR_LR_im_inds = [i for i in i_train if i not in SR_HR_im_inds]
+        # SR_HR_im_inds = cfg.super_resolution.get("dataset",{}).get("train_im_inds",None)
+        # if SR_HR_im_inds is not None:
+        #     if not isinstance(SR_HR_im_inds,list):
+        #         pass
+        #     SR_LR_im_inds = [i for i in i_train if i not in SR_HR_im_inds]
     else:
         # Initialize optimizer.
-        SR_HR_im_inds = None
+        # SR_HR_im_inds = None
         trainable_parameters = list(model_coarse.parameters())
         if model_fine is not None:
             trainable_parameters += list(model_fine.parameters())
@@ -248,13 +257,13 @@ def main():
 
     # # TODO: Prepare raybatch tensor if batching random rays
 
-    for i in trange(start_i,cfg.experiment.train_iters):
+    for iter in trange(start_i,cfg.experiment.train_iters):
         # Validation
         if (
-            i % cfg.experiment.validate_every == 0
-            or i == cfg.experiment.train_iters - 1
+            iter % cfg.experiment.validate_every == 0
+            or iter == cfg.experiment.train_iters - 1
         ):
-            tqdm.write("[VAL] =======> Iter: " + str(i))
+            tqdm.write("[VAL] =======> Iter: " + str(iter))
             model_coarse.eval()
             if model_fine:
                 model_fine.eval()
@@ -283,38 +292,23 @@ def main():
                     )
                     target_ray_values = cache_dict["target"].to(device)
                 else:
-                    img_idx = np.random.choice(i_val)
+                    img_indecis,val_strings = [np.random.choice(i_val)],[""]
+                    if val_ims_dict is not None:
+                        img_indecis += [i_val[val_ims_dict["closest_val"]],i_val[val_ims_dict["furthest_val"]]]
+                        val_strings += ["closest_","furthest_"]
                     # img_idx = 0
-                    img_target = images[img_idx].to(device)
-                    pose_target = poses[img_idx, :3, :4].to(device)
-                    ray_origins, ray_directions = get_ray_bundle(
-                        H[img_idx], W[img_idx], focal[img_idx], pose_target
-                    )
-                    rgb_coarse, _, _, rgb_fine, _, _,rgb_SR,_,_ = eval_nerf(
-                        H[img_idx],
-                        W[img_idx],
-                        focal[img_idx],
-                        model_coarse,
-                        model_fine,
-                        ray_origins,
-                        ray_directions,
-                        cfg,
-                        mode="validation",
-                        encode_position_fn=encode_position_fn,
-                        encode_direction_fn=encode_direction_fn,
-                        SR_model=SR_model,
-                    )
-                    target_ray_values = img_target
-                if SR_experiment:
-                    if SR_experiment=="refine":
-                        rgb_SR = 1*rgb_fine
-                        rgb_SR_coarse = 1*rgb_coarse
-                        rgb_coarse, _, _, rgb_fine, _, _,_,_,_ = eval_nerf(
+                    for val_num,img_idx in enumerate(img_indecis):
+                        img_target = images[img_idx].to(device)
+                        pose_target = poses[img_idx, :3, :4].to(device)
+                        ray_origins, ray_directions = get_ray_bundle(
+                            H[img_idx], W[img_idx], focal[img_idx], pose_target
+                        )
+                        rgb_coarse, _, _, rgb_fine, _, _,rgb_SR,_,_ = eval_nerf(
                             H[img_idx],
                             W[img_idx],
                             focal[img_idx],
-                            LR_model_coarse,
-                            LR_model_fine,
+                            model_coarse,
+                            model_fine,
                             ray_origins,
                             ray_directions,
                             cfg,
@@ -322,47 +316,73 @@ def main():
                             encode_position_fn=encode_position_fn,
                             encode_direction_fn=encode_direction_fn,
                             SR_model=SR_model,
+                            ds_factor=ds_factor[img_idx],
                         )
+                        target_ray_values = img_target
+                        if SR_experiment:
+                            if SR_experiment=="refine":
+                                rgb_SR = 1*rgb_fine
+                                rgb_SR_coarse = 1*rgb_coarse
+                                rgb_coarse, _, _, rgb_fine, _, _,_,_,_ = eval_nerf(
+                                    H[img_idx],
+                                    W[img_idx],
+                                    focal[img_idx],
+                                    LR_model_coarse,
+                                    LR_model_fine,
+                                    ray_origins,
+                                    ray_directions,
+                                    cfg,
+                                    mode="validation",
+                                    encode_position_fn=encode_position_fn,
+                                    encode_direction_fn=encode_direction_fn,
+                                    SR_model=SR_model,
+                                    ds_factor=ds_factor[img_idx],
+                                )
 
-                    loss = img2mse(rgb_SR[..., :3], target_ray_values[..., :3])
-                    writer.add_image(
-                        "validation/rgb_SR", cast_to_image(rgb_SR[..., :3]),i
-                    )
-                    fine_loss = img2mse(rgb_fine[..., :3], target_ray_values[..., :3]).item()
-                    writer.add_scalar("validation/fine_loss", fine_loss, i)
-                    writer.add_scalar("validation/fine_psnr", mse2psnr(fine_loss), i)
-                else:
-                    coarse_loss = img2mse(rgb_coarse[..., :3], target_ray_values[..., :3])
-                    fine_loss = 0.0
-                    if rgb_fine is not None:
-                        fine_loss = img2mse(rgb_fine[..., :3], target_ray_values[..., :3])
-                        writer.add_scalar("validation/fine_loss", fine_loss.item(), i)
-                    loss = coarse_loss + fine_loss
-                    writer.add_scalar("validation/coarse_loss", coarse_loss.item(), i)
-                    writer.add_image(
-                        "validation/rgb_coarse", cast_to_image(rgb_coarse[..., :3]),i
-                    )
-                psnr = mse2psnr(loss.item())
-                if SR_experiment:
-                    writer.add_scalar("validation/SR_psnr_gain", psnr-mse2psnr(fine_loss), i)
-                writer.add_scalar("validation/loss", loss.item(), i)
-                writer.add_scalar("validation/psnr", psnr, i)
-                if rgb_fine is not None:
-                    writer.add_image(
-                        "validation/rgb_fine", cast_to_image(rgb_fine[..., :3]),i
-                    )
-                writer.add_image(
-                    "validation/img_target", cast_to_image(target_ray_values[..., :3]),i
-                )
-                tqdm.write(
-                    "Validation loss: "
-                    + str(loss.item())
-                    + " Validation PSNR: "
-                    + str(psnr)
-                    + "Time: "
-                    + str(time.time() - start)
-                )
-        
+                            loss = img2mse(rgb_SR[..., :3], target_ray_values[..., :3])
+                            writer.add_image(
+                                "validation/%srgb_SR"%(val_strings[val_num]), cast_to_image(rgb_SR[..., :3]),iter
+                            )
+                            fine_loss = img2mse(rgb_fine[..., :3], target_ray_values[..., :3]).item()
+                            if val_num==0:
+                                writer.add_scalar("validation/%sfine_loss"%(val_strings[val_num]), fine_loss, iter)
+                                writer.add_scalar("validation/%sfine_psnr"%(val_strings[val_num]), mse2psnr(fine_loss), iter)
+                        else:
+                            coarse_loss = img2mse(rgb_coarse[..., :3], target_ray_values[..., :3])
+                            fine_loss = 0.0
+                            if rgb_fine is not None:
+                                fine_loss = img2mse(rgb_fine[..., :3], target_ray_values[..., :3])
+                                writer.add_scalar("validation/%sfine_loss"%(val_strings[val_num]), fine_loss.item(), iter)
+                            loss = coarse_loss + fine_loss
+                            writer.add_scalar("validation/%scoarse_loss"%(val_strings[val_num]), coarse_loss.item(), iter)
+                            writer.add_image(
+                                "validation/%srgb_coarse"%(val_strings[val_num]), cast_to_image(rgb_coarse[..., :3]),iter
+                            )
+                        psnr = mse2psnr(loss.item())
+                        if SR_experiment:
+                            writer.add_scalar("validation/%sSR_psnr_gain"%(val_strings[val_num]), psnr-mse2psnr(fine_loss), iter)
+                        if val_num==0:
+                            writer.add_scalar("validation/%sloss"%(val_strings[val_num]), loss.item(), iter)
+                            writer.add_scalar("validation/%spsnr"%(val_strings[val_num]), psnr, iter)
+                        if rgb_fine is not None:
+                            if val_num==0 or iter==0:
+                                writer.add_image(
+                                    "validation/%srgb_fine"%(val_strings[val_num]), cast_to_image(rgb_fine[..., :3]),iter
+                                )
+                        if val_num==0 or iter==0:
+                            writer.add_image(
+                                "validation/%simg_target"%(val_strings[val_num]), cast_to_image(target_ray_values[..., :3]),iter
+                            )
+                        if val_num==0:
+                            tqdm.write(
+                                "Validation loss: "
+                                + str(loss.item())
+                                + " Validation PSNR: "
+                                + str(psnr)
+                                + "Time: "
+                                + str(time.time() - start)
+                            )
+            
         # Training:
         if SR_experiment=="model":
             SR_model.train()
@@ -443,6 +463,7 @@ def main():
                 encode_position_fn=encode_position_fn,
                 encode_direction_fn=encode_direction_fn,
                 SR_model=SR_model,
+                ds_factor=ds_factor[img_idx],
             )
             target_ray_values = target_s
 
@@ -465,25 +486,25 @@ def main():
         psnr = mse2psnr(loss.item())
         optimizer.step()
         optimizer.zero_grad()
-        if i % cfg.experiment.print_every == 0 or i == cfg.experiment.train_iters - 1:
+        if iter % cfg.experiment.print_every == 0 or iter == cfg.experiment.train_iters - 1:
             tqdm.write(
                 "[TRAIN] Iter: "
-                + str(i)
+                + str(iter)
                 + " Loss: "
                 + str(loss.item())
                 + " PSNR: "
                 + str(psnr)
             )
-        writer.add_scalar("train/loss", loss.item(), i)
+        writer.add_scalar("train/loss", loss.item(), iter)
         if SR_experiment!="model":
-            writer.add_scalar("train/coarse_loss", coarse_loss.item(), i)
+            writer.add_scalar("train/coarse_loss", coarse_loss.item(), iter)
             if rgb_fine is not None:
-                writer.add_scalar("train/fine_loss", fine_loss.item(), i)
-        writer.add_scalar("train/psnr", psnr, i)
+                writer.add_scalar("train/fine_loss", fine_loss.item(), iter)
+        writer.add_scalar("train/psnr", psnr, iter)
 
-        if i>0 and i % cfg.experiment.save_every == 0 or i == cfg.experiment.train_iters - 1:
+        if iter>0 and iter % cfg.experiment.save_every == 0 or iter == cfg.experiment.train_iters - 1:
             checkpoint_dict = {
-                "iter": i,
+                "iter": iter,
                 "optimizer_state_dict": optimizer.state_dict(),
                 "loss": loss,
                 "psnr": psnr,
@@ -495,7 +516,7 @@ def main():
                 if model_fine:  checkpoint_dict.update({"model_fine_state_dict": model_fine.state_dict()})
             torch.save(
                 checkpoint_dict,
-                os.path.join(logdir, "checkpoint" + str(i).zfill(5) + ".ckpt"),
+                os.path.join(logdir, "checkpoint" + str(iter).zfill(5) + ".ckpt"),
             )
             tqdm.write("================== Saved Checkpoint =================")
 

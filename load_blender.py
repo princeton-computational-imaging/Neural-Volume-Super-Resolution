@@ -52,7 +52,8 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,downsampl
 
     all_imgs = []
     all_poses = []
-    H,W,focal = [],[],[]
+    H,W,focal,ds_factor = [],[],[],[]
+    ds_f_nums = []
     counts = [0]
     for s in splits:
         meta = metas[s]
@@ -65,20 +66,23 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,downsampl
 
         camera_angle_x = float(meta["camera_angle_x"])
         focal_over_W = 0.5 / np.tan(0.5 * camera_angle_x)
+        total_split_frames = len(meta["frames"])
         for f_num,frame in enumerate(meta["frames"][::skip]):
             fname = os.path.join(basedir, frame["file_path"] + ".png")
             img = (imageio.imread(fname)/ 255.0).astype(np.float32)
             H.append(img.shape[0])
             W.append(img.shape[1])
             per_im_ds_factor = 1*downsampling_factor
-            if s=="train" and train_im_inds is not None and f_num not in train_im_inds:
+            if s=="train" and train_im_inds is not None and (f_num not in train_im_inds if isinstance(train_im_inds,list) else f_num>train_im_inds*total_split_frames):
                 per_im_ds_factor = cfg.super_resolution.ds_factor
+                ds_f_nums.append(f_num)
             if half_res:
                 H[-1] //= (2*per_im_ds_factor)
                 W[-1] //= (2*per_im_ds_factor)
                 img = torch.from_numpy(cv2.resize(img, dsize=(400//per_im_ds_factor, 400//per_im_ds_factor), interpolation=cv2.INTER_AREA))
 
             focal.append(focal_over_W*W[-1])
+            ds_factor.append(per_im_ds_factor)
             imgs.append(img)
             poses.append(np.array(frame["transform_matrix"]))
         # imgs = (np.array(imgs) / 255.0).astype(np.float32)
@@ -89,7 +93,12 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,downsampl
 
     imgs = [im for s in all_imgs for im in s]
     i_split = [np.arange(counts[i], counts[i + 1]) for i in range(3)]
-
+    if len(ds_f_nums)>0:
+        i_split[0] = ([i for i in i_split[0] if i not in ds_f_nums],ds_f_nums)
+        pose_dists = np.sum((np.stack([all_poses[0][i] for i in i_split[0][0]],0)[:,None,...]-all_poses[1][None,...])**2,axis=(2,3))
+        closest_val = np.argmin(pose_dists)%pose_dists.shape[1]
+        furthest_val = np.argmax(np.min(pose_dists,0))
+        i_split[1] = (i_split[1],{"closest_val":closest_val,"furthest_val":furthest_val})
     # imgs = np.concatenate(all_imgs, 0)
     poses = np.concatenate(all_poses, 0)
 
@@ -135,4 +144,4 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,downsampl
 
     poses = torch.from_numpy(poses)
 
-    return imgs, poses, render_poses, [H, W, focal], i_split
+    return imgs, poses, render_poses, [H, W, focal,ds_factor], i_split

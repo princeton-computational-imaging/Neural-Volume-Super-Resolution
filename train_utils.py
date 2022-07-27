@@ -9,12 +9,12 @@ import mip
 import numpy as np
 
 def run_network(network_fn, pts, ray_batch, chunksize, embed_fn,\
-     embeddirs_fn,return_input_grads=False,mip_nerf=False,z_vals=None):
+     embeddirs_fn,return_input_grads=False,mip_nerf=False,z_vals=None,ds_factor=1):
 
     pts_shape = list(pts.shape)
     if mip_nerf:
         ro, rd, near, far, viewdir = torch.split(ray_batch,[3,3,1,1,3],dim=-1)
-        dx = 0.00135
+        dx = ds_factor*0.00135
         # Get t_vals in world to aply mipnerf
         radii = dx * 2 / np.sqrt(12.)
         means,covs = mip.cast_rays(z_vals,ro,rd,radii,None)
@@ -68,6 +68,7 @@ def predict_and_render_radiance(
     encode_position_fn=None,
     encode_direction_fn=None,
     SR_model=None,
+    ds_factor=1,
 ):
     # TESTED
     mip_nerf = options.nerf.encode_position_fn=="mip"
@@ -110,6 +111,7 @@ def predict_and_render_radiance(
         encode_direction_fn,
         mip_nerf=mip_nerf,
         z_vals=z_vals,
+        ds_factor=ds_factor,
     )
 
     (
@@ -161,6 +163,7 @@ def predict_and_render_radiance(
             return_input_grads=num_grads_2_return,
             mip_nerf=mip_nerf,
             z_vals=z_vals,
+            ds_factor=ds_factor,
             # return_input_grads={"order_by_outputs":options.super_resolution.model.get("consistent_density",False),\
             #     "num_grads_2_return":num_grads_2_return},
         )
@@ -248,6 +251,7 @@ def run_one_iter_of_nerf(
     encode_position_fn=None,
     encode_direction_fn=None,
     SR_model=None,
+    ds_factor=1,
 ):
     if encode_position_fn is None:
         encode_position_fn = identity_encoding
@@ -281,6 +285,7 @@ def run_one_iter_of_nerf(
     # chunk_size = getattr(options.nerf, mode).chunksize*64//max([getattr(options.nerf, mode).num_coarse,getattr(options.nerf, mode).num_fine])
     chunk_size = getattr(options.nerf, mode).chunksize
     if SR_model is not None: chunk_size //= 32
+    if options.nerf.encode_position_fn=="mip":  chunk_size //= 4 # For some reason I get memory problems when using MipNeRF, so I'm using this arbitrary factor of 4.
     batches = get_minibatches(rays, chunksize=chunk_size)
     # TODO: Init a list, keep appending outputs to that list,
     # concat everything in the end.
@@ -304,6 +309,7 @@ def run_one_iter_of_nerf(
             encode_position_fn=encode_position_fn,
             encode_direction_fn=encode_direction_fn,
             SR_model=SR_model,
+            ds_factor=ds_factor,
         )
         rgb_coarse.append(rc)
         disp_coarse.append(dc)
@@ -345,6 +351,7 @@ def eval_nerf(
     encode_position_fn=None,
     encode_direction_fn=None,
     SR_model=None,
+    ds_factor=1,
 ):
     r"""Evaluate a NeRF by synthesizing a full image (as opposed to train mode, where
     only a handful of rays/pixels are synthesized).
@@ -369,6 +376,7 @@ def eval_nerf(
         encode_position_fn=encode_position_fn,
         encode_direction_fn=encode_direction_fn,
         SR_model=SR_model,
+        ds_factor=ds_factor,
     )
     rgb_coarse = rgb_coarse.reshape(original_shape)
     if rgb_fine is not None:
