@@ -1,7 +1,8 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: downsample_mip_pixWidth # debug-lego200
+  # id: downsample_mip_materials # debug-lego200
+  id: HR_mip_lego # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /tigress/yb6751/projects/NeuralMFSR/logs
   # Seed for random number generators (for repeatability).
@@ -18,6 +19,7 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
+  # basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
   basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.

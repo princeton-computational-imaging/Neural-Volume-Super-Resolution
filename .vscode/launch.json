@@ -5,6 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "queue job",
+            "type": "python",
+            "request": "launch",
+            "program": "slurm/queue_job.py",
+            "console": "integratedTerminal",
+        },
+        {
             "name": "train NeRF",
             "type": "python",
             "request": "launch",
@@ -29,7 +36,7 @@
             "program": "train_nerf.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args":["--config","config/lego_SR.yml"]
+            "args":["--config","config/lego_dev.yml"]
         },
         {
             "name": "resume SR",
@@ -40,9 +47,9 @@
             "justMyCode": true,
             "args":
             [
-                "--config","config/lego_SR.yml",
-                // "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/coarse_only/checkpoint05000.ckpt"
+                // "--config","config/lego_SR.yml",
                 "--load-checkpoint","resume", //"/tigress/yb6751/projects/NeuralMFSR/logs/SR_dirs_encoding_L4C256W0001_0"
+                "--resume","/tigress/yb6751/projects/NeuralMFSR/logs/SR_spatial_model_0"
             ]
         },
         {
@@ -73,13 +80,5 @@
                 "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/downsample"
             ]
         },
-        {
-            "name": "queue job",
-            "type": "python",
-            "request": "launch",
-            "program": "slurm/queue_job.py",
-            "console": "integratedTerminal",
-        },
-
     ]
 }

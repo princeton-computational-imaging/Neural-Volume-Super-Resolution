@@ -119,6 +119,115 @@ class ReplicateNeRFModel(torch.nn.Module):
         rgb = self.fc_rgb(y_)
         return torch.cat((rgb, alpha), dim=-1)
 
+class Conv3D(torch.nn.Module):
+    def __init__(
+        self,
+        num_layers=4,
+        num_layers_dir=1,
+        dirs_hidden_width_ratio=2,
+        hidden_size=128,
+        skip_connect_every=4,
+        num_encoding_fn_xyz=6,
+        num_encoding_fn_dir=4,
+        include_input_xyz=True,
+        include_input_dir=True,
+        use_viewdirs=True,
+        input_dim=None,
+        xyz_input_2_dir=False,
+        kernel_size=3,
+    ):
+        super(Conv3D, self).__init__()
+        if not isinstance(hidden_size,list):
+            hidden_size = [hidden_size]
+        layer_size = lambda x: hidden_size[min([x,len(hidden_size)-1])]
+        self.skip_connect_every = skip_connect_every
+        self.receptive_field = 1
+        if input_dim is not None:
+            self.dim_xyz = input_dim[0]
+            if use_viewdirs:
+                self.dim_dir = input_dim[1]
+            else:
+                self.dim_xyz = sum(input_dim)
+        else:
+            include_input_xyz = 3 if include_input_xyz else 0
+            include_input_dir = 3 if include_input_dir else 0
+            self.dim_xyz = include_input_xyz + 2 * 3 * num_encoding_fn_xyz
+            self.dim_dir = include_input_dir + 2 * 3 * num_encoding_fn_dir
+            if not use_viewdirs:
+                self.dim_dir = 0
+        self.layer1 = torch.nn.Conv3d(self.dim_xyz, layer_size(0),kernel_size=kernel_size)
+        self.receptive_field += kernel_size-1
+        self.layers_xyz = torch.nn.ModuleList()
+        for i in range(num_layers - 1):
+            self.receptive_field += kernel_size-1
+            if i % self.skip_connect_every == 0 and i > 0 and i != num_layers - 1:
+                self.layers_xyz.append(
+                    torch.nn.Conv3d(self.dim_xyz + layer_size(i), layer_size(i+1),kernel_size=kernel_size)
+                )
+            else:
+                self.layers_xyz.append(torch.nn.Conv3d(layer_size(i), layer_size(i+1),kernel_size=kernel_size))
+
+        self.use_viewdirs = use_viewdirs
+        if self.use_viewdirs:
+            self.xyz_input_2_dir = xyz_input_2_dir
+            self.layers_dir = torch.nn.ModuleList()
+            # This deviates from the original paper, and follows the code release instead.
+            self.layers_dir.append(
+                torch.nn.Conv3d(self.dim_dir + hidden_size[-1]+(self.dim_xyz if xyz_input_2_dir else 0),\
+                    hidden_size[-1] // dirs_hidden_width_ratio,kernel_size=kernel_size)
+            )
+            self.receptive_field += kernel_size-1
+            for i in range(num_layers_dir-1):
+                self.receptive_field += kernel_size-1
+                self.layers_dir.append(
+                    torch.nn.Conv3d(hidden_size[-1]//dirs_hidden_width_ratio, hidden_size[-1] // dirs_hidden_width_ratio,kernel_size=kernel_size)
+                )
+
+            self.fc_alpha = torch.nn.Conv3d(hidden_size[-1], 1,kernel_size=kernel_size)
+            self.receptive_field += kernel_size-1
+            self.fc_rgb = torch.nn.Conv3d(hidden_size[-1] // dirs_hidden_width_ratio, 3,kernel_size=kernel_size)
+            self.receptive_field += kernel_size-1
+            self.fc_feat = torch.nn.Conv3d(hidden_size[-1], hidden_size[-1],kernel_size=kernel_size)
+        else:
+            self.receptive_field += kernel_size-1
+            self.fc_out = torch.nn.Conv3d(hidden_size[-1], 4,kernel_size=kernel_size)
+
+        self.relu = torch.nn.functional.relu
+
+    def forward(self, x):
+        if self.use_viewdirs:
+            xyz, view = x[:, : self.dim_xyz,...], x[:, self.dim_xyz :,...]
+        else:
+            xyz = x[:, : self.dim_xyz,...]
+        x = self.layer1(xyz)
+        for i in range(len(self.layers_xyz)):
+            if (
+                i % self.skip_connect_every == 0
+                and i > 0
+                and i != len(self.layers_xyz)
+            ):
+                x = torch.cat((x, xyz), dim=-1)
+            x = self.relu(self.layers_xyz[i](x))
+        def different_shape_concat(x,y):
+            shape_crop = (y.shape[2]-x.shape[2])//2
+            return torch.cat((x,y[...,shape_crop:-shape_crop,shape_crop:-shape_crop,shape_crop:-shape_crop]),1)
+
+        if self.use_viewdirs:
+            feat = self.relu(self.fc_feat(x))
+            alpha = self.fc_alpha(x)
+            # x = torch.cat((feat, view[...,shape_crop:-shape_crop,shape_crop:-shape_crop,shape_crop:-shape_crop]), dim=1)
+            x = different_shape_concat(feat,view)
+            if self.xyz_input_2_dir:
+                x = different_shape_concat(x,xyz)
+                # x = torch.cat((xyz,x),dim=-1)
+            for l in self.layers_dir:
+                x = self.relu(l(x))
+            rgb = self.fc_rgb(x)
+            # return torch.cat((rgb, alpha), dim=-1)
+            return different_shape_concat(rgb,alpha)
+        else:
+            return self.fc_out(x)
+
 
 class FlexibleNeRFModel(torch.nn.Module):
     def __init__(
@@ -143,6 +252,7 @@ class FlexibleNeRFModel(torch.nn.Module):
             hidden_size = [hidden_size]
         layer_size = lambda x: hidden_size[min([x,len(hidden_size)-1])]
         self.skip_connect_every = skip_connect_every
+        self.receptive_field = 0
         if input_dim is not None:
             self.dim_xyz = input_dim[0]
             if use_viewdirs:

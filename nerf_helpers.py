@@ -15,14 +15,35 @@ def mse2psnr(mse):
         mse = 1e-5
     return -10.0 * math.log10(mse)
 
+def chunksize_to_2D(chunksize):
+    return math.floor(math.sqrt(chunksize))
 
-def get_minibatches(inputs: torch.Tensor, chunksize: Optional[int] = 1024 * 8):
+def get_minibatches(inputs: torch.Tensor, chunksize: Optional[int] = 1024 * 8,spatial_margin=None):
     r"""Takes a huge tensor (ray "bundle") and splits it into a list of minibatches.
     Each element of the list (except possibly the last) has dimension `0` of length
     `chunksize`.
     """
-    return [inputs[i : i + chunksize] for i in range(0, inputs.shape[0], chunksize)]
+    if spatial_margin is not None:
+        chunksize = chunksize_to_2D(chunksize)
+        # return [inputs[max(0,i-spatial_margin):i+chunksize+spatial_margin,max(0,j-spatial_margin):j+chunksize+spatial_margin,...].reshape([-1,inputs.shape[-1]]) \
+        return [inputs[i-spatial_margin:i+chunksize+spatial_margin,j-spatial_margin:j+chunksize+spatial_margin,...] \
+            for i in range(spatial_margin,inputs.shape[0]-2*spatial_margin, chunksize) for j in range(spatial_margin,inputs.shape[1]-2*spatial_margin, chunksize)]
+    else:
+        return [inputs[i : i + chunksize] for i in range(0, inputs.shape[0], chunksize)]
 
+def spatial_batch_merge(batches_list,batch_shapes,im_shape):
+    b_num = 0
+    rows_list = []
+    while b_num<len(batches_list):
+        cur_row,cur_width = [batches_list[b_num].reshape(list(batch_shapes[b_num])+[-1])],batch_shapes[b_num][1]
+        while cur_width<im_shape[1]:
+            b_num += 1
+            cur_row.append(batches_list[b_num].reshape(list(batch_shapes[b_num])+[-1]))
+            cur_width += batch_shapes[b_num][1]
+        rows_list.append(torch.cat(cur_row,1))
+        b_num += 1
+    full_array = torch.cat(rows_list,0)
+    return full_array.reshape([full_array.shape[0]*full_array.shape[1]]+list(full_array.shape[2:]))
 
 def meshgrid_xy(
     tensor1: torch.Tensor, tensor2: torch.Tensor
@@ -64,7 +85,7 @@ def cumprod_exclusive(tensor: torch.Tensor) -> torch.Tensor:
 
 
 def get_ray_bundle(
-    height: int, width: int, focal_length: float, tform_cam2world: torch.Tensor
+    height: int, width: int, focal_length: float, tform_cam2world: torch.Tensor,padding_size: int=0
 ):
     r"""Compute the bundle of rays passing through all pixels of an image (one ray per pixel).
 
@@ -87,9 +108,12 @@ def get_ray_bundle(
     """
     # TESTED
     ii, jj = meshgrid_xy(
-        torch.arange(width).to(tform_cam2world),
-        torch.arange(height).to(tform_cam2world),
+        torch.arange(width+2*padding_size).to(tform_cam2world),
+        torch.arange(height+2*padding_size).to(tform_cam2world),
     )
+    if padding_size>0:
+        ii = ii-padding_size
+        jj = jj-padding_size
     directions = torch.stack(
         [
             (ii - width * 0.5) / focal_length,

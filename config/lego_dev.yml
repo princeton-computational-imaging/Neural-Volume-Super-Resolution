@@ -1,13 +1,13 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: Refined_LR_mip # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  id: temp # SR_L4C256W0001_HR1 # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /tigress/yb6751/projects/NeuralMFSR/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
-  train_iters: 750000
+  train_iters: 250000
   # Number of training iterations after which to validate.
   validate_every: 50
   # Number of training iterations after which to checkpoint.
@@ -115,6 +115,7 @@ nerf:
     # Number of random rays to retain from each image.
     # These sampled rays are used for training, and the others are discarded.
     num_random_rays: 4096  # 32 * 32 * 4
+    # num_random_rays: 10000
     # spatial_sampling: True # NeRF is typically trained by randomly sampling rays. If True, rays are sampled to create spatially continuous patches.
     # Size of each chunk (rays are batched into "chunks" and passed through
     # the network)
@@ -161,7 +162,7 @@ super_resolution:
   #   # type: Conv3D # FlexibleNeRFModel
   #   type: FlexibleNeRFModel # FlexibleNeRFModel
   #   # Number of layers in the model.
-  #   num_layers_xyz: 4 # 6
+  #   num_layers_xyz: 4 # 1 # 4 # 6
   #   # num_layers_dir: 4
   #   # Number of hidden units in each layer of the MLP (multi-layer
   #   # perceptron).
@@ -173,7 +174,7 @@ super_resolution:
   #   # Whether to add the SR model's output to the fine model's output
   #   residual: True
   #   weight: 0.0001 # Weight of the SR residual radiance field
-  #   input: "outputs" # "dirs_encoding","xyz_encoding","outputs"
-  #   # input: "xyz_encoding" # "dirs_encoding","xyz_encoding","outputs"
+  #   # input: "outputs" # "dirs_encoding","xyz_encoding","outputs"
+  #   input: "xyz_encoding" # "dirs_encoding","xyz_encoding","outputs"
   #   # Whether to make the super-resolved density independent of viewing direction:
   #   consistent_density: True

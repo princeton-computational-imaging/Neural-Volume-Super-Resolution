@@ -14,7 +14,7 @@ import models
 from cfgnode import CfgNode
 from load_blender import load_blender_data
 from nerf_helpers import (get_ray_bundle, img2mse, meshgrid_xy, mse2psnr,
-                          positional_encoding)
+                          positional_encoding,chunksize_to_2D)
 from train_utils import eval_nerf, run_one_iter_of_nerf
 from mip import IntegratedPositionalEncoding
 from deepdiff import DeepDiff
@@ -24,7 +24,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--config", type=str, required=True, help="Path to (.yml) config file."
+        "--config", type=str, help="Path to (.yml) config file."
     )
     parser.add_argument(
         "--load-checkpoint",
@@ -32,11 +32,23 @@ def main():
         default='',
         help="Path to load saved checkpoint from.",
     )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Path to load config file to resume.",
+    )
     configargs = parser.parse_args()
 
     # Read config file.
+    assert (configargs.config is None) ^ (configargs.resume is None)
     cfg = None
-    with open(configargs.config, "r") as f:
+    if configargs.config is None:
+        # assert os.path.isdir(configargs.resume)
+        config_file = os.path.join(configargs.resume,"config.yml")
+    else:
+        config_file = configargs.config
+    with open(config_file, "r") as f:
         cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
         cfg = CfgNode(cfg_dict)
     print("Running experiment %s"%(cfg.experiment.id))
@@ -147,8 +159,8 @@ def main():
 
     if SR_experiment=="model":
         NUM_FUNC_TYPES,NUM_COORDS,NUM_MODEL_OUTPUTS = 2,3,4
-        assert cfg.super_resolution.model.input in ["xyz","dirs_encoding","xyz_encoding"]
-        if cfg.super_resolution.model.input=="xyz":
+        assert cfg.super_resolution.model.input in ["outputs","dirs_encoding","xyz_encoding"]
+        if cfg.super_resolution.model.input=="outputs":
             encoding_grad_inputs = 2*[0]
         elif cfg.super_resolution.model.input=="xyz_encoding":
             encoding_grad_inputs = [cfg.models.fine.num_encoding_fn_xyz,0]
@@ -172,7 +184,7 @@ def main():
             SR_input_dim += NUM_MODEL_OUTPUTS
             SR_input_dim = [SR_input_dim,0]
         # SR_input_dim += NUM_MODEL_OUTPUTS
-        
+        if cfg.super_resolution.model.type=="Conv3D":   assert cfg.super_resolution.model.input=="outputs","Currently not supporting gradients input to spatial SR model."
         SR_model = getattr(models, cfg.super_resolution.model.type)(
             input_dim= SR_input_dim,
             use_viewdirs=consistent_SR_density,
@@ -245,6 +257,7 @@ def main():
         if SR_experiment=="refine":
             LR_model_coarse = deepcopy(model_coarse)
             LR_model_fine = deepcopy(model_fine)
+            furthest_rgb_fine,closest_rgb_fine = None,None
             if os.path.exists(configargs.load_checkpoint):
                 checkpoint = find_latest_checkpoint(configargs.load_checkpoint)
                 start_i = int(checkpoint.split('/')[-1][len('checkpoint'):-len('.ckpt')])+1
@@ -256,7 +269,8 @@ def main():
         # optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
     # # TODO: Prepare raybatch tensor if batching random rays
-
+    spatial_padding_size = SR_model.receptive_field//2 if isinstance(SR_model,models.Conv3D) else 0
+    spatial_sampling = spatial_padding_size>0 or cfg.nerf.train.get("spatial_sampling",False)
     for iter in trange(start_i,cfg.experiment.train_iters):
         # Validation
         if (
@@ -301,7 +315,7 @@ def main():
                         img_target = images[img_idx].to(device)
                         pose_target = poses[img_idx, :3, :4].to(device)
                         ray_origins, ray_directions = get_ray_bundle(
-                            H[img_idx], W[img_idx], focal[img_idx], pose_target
+                            H[img_idx], W[img_idx], focal[img_idx], pose_target,padding_size=spatial_padding_size
                         )
                         rgb_coarse, _, _, rgb_fine, _, _,rgb_SR,_,_ = eval_nerf(
                             H[img_idx],
@@ -317,33 +331,38 @@ def main():
                             encode_direction_fn=encode_direction_fn,
                             SR_model=SR_model,
                             ds_factor=ds_factor[img_idx],
+                            spatial_margin=SR_model.receptive_field//2 if spatial_sampling else None
                         )
                         target_ray_values = img_target
                         if SR_experiment:
                             if SR_experiment=="refine":
                                 rgb_SR = 1*rgb_fine
                                 rgb_SR_coarse = 1*rgb_coarse
-                                rgb_coarse, _, _, rgb_fine, _, _,_,_,_ = eval_nerf(
-                                    H[img_idx],
-                                    W[img_idx],
-                                    focal[img_idx],
-                                    LR_model_coarse,
-                                    LR_model_fine,
-                                    ray_origins,
-                                    ray_directions,
-                                    cfg,
-                                    mode="validation",
-                                    encode_position_fn=encode_position_fn,
-                                    encode_direction_fn=encode_direction_fn,
-                                    SR_model=SR_model,
-                                    ds_factor=ds_factor[img_idx],
-                                )
-
+                                if val_num==0 or (val_num==2 and furthest_rgb_fine is None) or (val_num==1 and closest_rgb_fine is None):
+                                    rgb_coarse, _, _, rgb_fine, _, _,_,_,_ = eval_nerf(
+                                        H[img_idx],
+                                        W[img_idx],
+                                        focal[img_idx],
+                                        LR_model_coarse,
+                                        LR_model_fine,
+                                        ray_origins,
+                                        ray_directions,
+                                        cfg,
+                                        mode="validation",
+                                        encode_position_fn=encode_position_fn,
+                                        encode_direction_fn=encode_direction_fn,
+                                        SR_model=SR_model,
+                                        ds_factor=ds_factor[img_idx],
+                                    )
+                                    if val_num==1:  closest_rgb_fine = 1*rgb_fine.detach()
+                                    elif val_num==2:  furthest_rgb_fine = 1*rgb_fine.detach()
+                                else:
+                                    rgb_fine = 1*closest_rgb_fine if val_num==1 else 1*furthest_rgb_fine
+                            fine_loss = img2mse(rgb_fine[..., :3], target_ray_values[..., :3]).item()
                             loss = img2mse(rgb_SR[..., :3], target_ray_values[..., :3])
                             writer.add_image(
                                 "validation/%srgb_SR"%(val_strings[val_num]), cast_to_image(rgb_SR[..., :3]),iter
                             )
-                            fine_loss = img2mse(rgb_fine[..., :3], target_ray_values[..., :3]).item()
                             if val_num==0:
                                 writer.add_scalar("validation/%sfine_loss"%(val_strings[val_num]), fine_loss, iter)
                                 writer.add_scalar("validation/%sfine_psnr"%(val_strings[val_num]), mse2psnr(fine_loss), iter)
@@ -424,6 +443,7 @@ def main():
                 mode="train",
                 encode_position_fn=encode_position_fn,
                 encode_direction_fn=encode_direction_fn,
+                spatial_margin=SR_model.receptive_field//2 if spatial_sampling else None
             )
         else:
             if SR_HR_im_inds is None:
@@ -436,24 +456,38 @@ def main():
 
             img_target = images[img_idx].to(device)
             pose_target = poses[img_idx, :3, :4].to(device)
-            ray_origins, ray_directions = get_ray_bundle(H[img_idx], W[img_idx], focal[img_idx], pose_target)
+            ray_origins, ray_directions = get_ray_bundle(H[img_idx], W[img_idx], focal[img_idx], pose_target,padding_size=spatial_padding_size)
             coords = torch.stack(
-                meshgrid_xy(torch.arange(H[img_idx]).to(device), torch.arange(W[img_idx]).to(device)),
+                meshgrid_xy(torch.arange(H[img_idx]+2*spatial_padding_size).to(device), torch.arange(W[img_idx]+2*spatial_padding_size).to(device)),
                 dim=-1,
             )
-            coords = coords.reshape((-1, 2))
-            select_inds = np.random.choice(
-                coords.shape[0], size=(cfg.nerf.train.num_random_rays), replace=False
-            )
-            select_inds = coords[select_inds]
+            if spatial_padding_size>0 or spatial_sampling:
+                patch_size = chunksize_to_2D(cfg.nerf.train.num_random_rays)
+                upper_left_corner = np.random.uniform(size=[2])*(np.array([H[img_idx],W[img_idx]])-patch_size)
+                upper_left_corner = np.floor(upper_left_corner).astype(np.int32)
+                select_inds = \
+                    coords[upper_left_corner[0]:upper_left_corner[0]+patch_size+2*spatial_padding_size,\
+                    upper_left_corner[1]:upper_left_corner[1]+patch_size+2*spatial_padding_size]
+                select_inds = select_inds.reshape([-1,2])
+                cropped_inds =\
+                    coords[upper_left_corner[0]:upper_left_corner[0]+patch_size,\
+                    upper_left_corner[1]:upper_left_corner[1]+patch_size]
+                cropped_inds = cropped_inds.reshape([-1,2])
+                target_s = img_target[cropped_inds[:, 0], cropped_inds[:, 1], :]
+            else:
+                coords = coords.reshape((-1, 2))
+                select_inds = np.random.choice(
+                    coords.shape[0], size=(cfg.nerf.train.num_random_rays), replace=False
+                )
+                select_inds = coords[select_inds]
+                target_s = img_target[select_inds[:, 0], select_inds[:, 1], :]
             ray_origins = ray_origins[select_inds[:, 0], select_inds[:, 1], :]
             ray_directions = ray_directions[select_inds[:, 0], select_inds[:, 1], :]
             batch_rays = torch.stack([ray_origins, ray_directions], dim=0)
-            target_s = img_target[select_inds[:, 0], select_inds[:, 1], :]
 
             rgb_coarse, _, _, rgb_fine, _, _,rgb_SR,_,_ = run_one_iter_of_nerf(
-                H[img_idx],
-                W[img_idx],
+                H[img_idx] if not spatial_sampling else patch_size,
+                W[img_idx] if not spatial_sampling else patch_size,
                 focal[img_idx],
                 model_coarse,
                 model_fine,
@@ -464,6 +498,7 @@ def main():
                 encode_direction_fn=encode_direction_fn,
                 SR_model=SR_model,
                 ds_factor=ds_factor[img_idx],
+                spatial_margin=SR_model.receptive_field//2 if spatial_sampling else None
             )
             target_ray_values = target_s
 
