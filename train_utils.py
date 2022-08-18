@@ -8,6 +8,7 @@ from functorch import vjp#make_functional_with_buffers, vmap, grad
 import mip
 import numpy as np
 from torch.nn.functional import pad
+import os
 
 def run_network(network_fn, pts, ray_batch, chunksize, embed_fn,\
      embeddirs_fn,return_input_grads=False,mip_nerf=False,z_vals=None,ds_factor=1,):
@@ -74,7 +75,7 @@ def predict_and_render_radiance(
     spatial_width=1,
 ):
     # TESTED
-    mip_nerf = options.nerf.encode_position_fn=="mip"
+    mip_nerf = getattr(options.nerf,'encode_position_fn',None)=="mip"
     if encode_position_fn is None:
         encode_position_fn = identity_encoding
     if encode_direction_fn is None:
@@ -318,7 +319,7 @@ def run_one_iter_of_nerf(
         chunk_size //= 32
     if spatial_margin is not None:
         rays = rays.reshape([H+2*spatial_margin,W+2*spatial_margin,-1])
-    elif options.nerf.encode_position_fn=="mip":
+    elif hasattr(options.nerf,'encode_position_fn') and options.nerf.encode_position_fn=="mip":
         chunk_size //= 4 # For some reason I get memory problems when using MipNeRF, so I'm using this arbitrary factor of 4.
     batches = get_minibatches(rays, chunksize=chunk_size,spatial_margin=spatial_margin)
     batch_shapes = [tuple(b.shape[:-1]) for b in batches]
@@ -428,3 +429,8 @@ def eval_nerf(
         rgb_SR = rgb_SR.reshape([height,width,-1])
 
     return rgb_coarse, None, None, rgb_fine, None, None, rgb_SR, None,None
+
+def find_latest_checkpoint(ckpt_path):
+    if os.path.isdir(ckpt_path):
+        ckpt_path = os.path.join(ckpt_path,sorted([f for f in os.listdir(ckpt_path) if "checkpoint" in f and f[-5:]==".ckpt"],key=lambda x:int(x[len("checkpoint"):-5]))[-1])
+    return ckpt_path

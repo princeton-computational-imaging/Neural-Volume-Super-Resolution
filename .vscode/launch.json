@@ -12,6 +12,22 @@
             "console": "integratedTerminal",
         },
         {
+            "name": "model comparison",
+            "type": "python",
+            "request": "launch",
+            "program": "models_comparison.py",
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "train planes model",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":["--config","config/lego_planes.yml"]
+        },
+        {
             "name": "train NeRF",
             "type": "python",
             "request": "launch",

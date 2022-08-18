@@ -1,5 +1,5 @@
 from typing import Optional
-
+import numpy as np
 import math
 import torch
 # import torchsearchsorted
@@ -45,9 +45,7 @@ def spatial_batch_merge(batches_list,batch_shapes,im_shape):
     full_array = torch.cat(rows_list,0)
     return full_array.reshape([full_array.shape[0]*full_array.shape[1]]+list(full_array.shape[2:]))
 
-def meshgrid_xy(
-    tensor1: torch.Tensor, tensor2: torch.Tensor
-) -> (torch.Tensor, torch.Tensor):
+def meshgrid_xy(tensor1: torch.Tensor, tensor2: torch.Tensor) -> tuple((torch.Tensor, torch.Tensor)):
     """Mimick np.meshgrid(..., indexing="xy") in pytorch. torch.meshgrid only allows "ij" indexing.
     (If you're unsure what this means, safely skip trying to understand this, and run a tiny example!)
 
@@ -83,6 +81,46 @@ def cumprod_exclusive(tensor: torch.Tensor) -> torch.Tensor:
 
     return cumprod
 
+def calc_scene_box(scene_geometry):
+    num_frames = len(scene_geometry['camera_poses'])
+    box = [[np.finfo(np.float).max,np.finfo(np.float).min] for i in range(3)]
+    for f_num in range(num_frames):
+        origin = scene_geometry['camera_poses'][f_num][:3, -1]
+        for W in [0,scene_geometry['W'][f_num]-1]:
+            for H in [0,scene_geometry['H'][f_num]-1]:
+                coord = np.array([\
+                    (W-scene_geometry['W'][f_num]/2)/scene_geometry['f'][f_num],
+                    -(H-scene_geometry['H'][f_num]/2)/scene_geometry['f'][f_num],
+                    -1
+                ])
+        # for corner in [np.array([i,j,1]) for i in [-1,1] for j in [-1,1]]:
+                dir = np.sum(coord * scene_geometry['camera_poses'][f_num][:3, :3], axis=-1)
+                for dist in [scene_geometry['near'],scene_geometry['far']]:
+                    point = origin+dist*dir
+                    for d in range(len(box)):
+                        box[d][0] = min(box[d][0],point[d])
+                        box[d][1] = max(box[d][1],point[d])
+    return torch.from_numpy(np.array(box).transpose(1,0))
+    # [[-2.1317239184492527, 2.1951201276283916], [-2.555519710969305, 2.162330715608927], [-2.6404644143970133, 1.4706729402285836]]
+
+def cart2el_az(dirs):
+    el = torch.atan2(dirs[...,2],torch.sqrt(torch.sum(dirs[...,:2]**2,-1)))
+    az = torch.atan2(dirs[...,1],dirs[...,0])
+    return torch.stack([az,el],-1)
+
+# def cart2sph(x, y, z):
+#     hxy = np.hypot(x, y)
+#     r = np.hypot(hxy, z)
+#     el = np.arctan2(z, hxy)
+#     az = np.arctan2(y, x)
+#     return az, el, r
+
+# def sph2cart(az, el, r):
+#     rcos_theta = r * np.cos(el)
+#     x = rcos_theta * np.cos(az)
+#     y = rcos_theta * np.sin(az)
+#     z = r * np.sin(el)
+#     return x, y, z
 
 def get_ray_bundle(
     height: int, width: int, focal_length: float, tform_cam2world: torch.Tensor,padding_size: int=0

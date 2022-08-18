@@ -1,4 +1,5 @@
 import torch
+from nerf_helpers import calc_scene_box,cart2el_az
 
 
 class VeryTinyNeRFModel(torch.nn.Module):
@@ -326,3 +327,82 @@ class FlexibleNeRFModel(torch.nn.Module):
             return torch.cat((rgb, alpha), dim=-1)
         else:
             return self.fc_out(x)
+
+class TwoDimPlanesModel(torch.nn.Module):
+    def __init__(
+        self,
+        use_viewdirs,
+        plane_resolutions,
+        scene_geometry,
+        dec_density_layers=4,
+        dec_rgb_layers=4,
+        dec_channels=128,
+        # skip_connect_every=4,
+        num_plane_channels=48,
+    ):
+        super(TwoDimPlanesModel, self).__init__()
+        # self.planes = torch.nn.ParameterList([torch.nn.Parameter(torch.Tensor(1,num_plane_channels,plane_resolutions,plane_resolutions)) for i in range(3+2*use_viewdirs)])
+        self.box_coords = calc_scene_box(scene_geometry=scene_geometry)
+        self.use_viewdirs = use_viewdirs
+        # Density (alpha) decoder:
+        self.density_dec = torch.nn.ModuleList()
+        self.density_dec.append(
+            torch.nn.Linear(num_plane_channels,dec_channels)
+        )
+        for layer_num in range(dec_density_layers-1):
+            self.density_dec.append(
+                torch.nn.Linear(dec_channels,dec_channels)
+            )
+        self.fc_alpha = torch.nn.Linear(dec_channels,1)
+
+        # RGB decoder:
+        self.rgb_dec = torch.nn.ModuleList()
+        self.rgb_dec.append(
+            torch.nn.Linear(num_plane_channels,dec_channels)
+        )
+        for layer_num in range(dec_rgb_layers-1):
+            self.rgb_dec.append(
+                torch.nn.Linear(dec_channels,dec_channels)
+            )
+        self.fc_rgb = torch.nn.Linear(dec_channels,3)
+
+        self.relu = torch.nn.functional.relu
+        self.planes = torch.nn.ParameterList(
+            [torch.nn.Parameter(self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,plane_resolutions,plane_resolutions]
+            )) for i in range(3+2*use_viewdirs)])
+
+    def normalize_coords(self,coords):
+        normalized_coords = 2*(coords-self.box_coords.type(coords.type())[:1])/\
+            (self.box_coords[1:]-self.box_coords[:1]).type(coords.type())-1
+        assert normalized_coords.min()>=-1 and normalized_coords.max()<=1,"Sanity check"
+        return normalized_coords
+
+
+    def project(self,coords):
+        projections = []
+        normalized_coords = self.normalize_coords(coords)
+        for d in range(normalized_coords.shape[1]): # (Currently not supporting viewdir input)
+            grid = normalized_coords[:,[c for c in range(3) if c!=d]].reshape([1,normalized_coords.shape[0],1,2])
+            projections.append(torch.nn.functional.grid_sample(input=self.planes[d],grid=grid,mode='bilinear',align_corners=True))
+        projections = torch.sum(torch.stack(projections,0),0)
+        return projections.squeeze(0).squeeze(-1).permute(1,0)
+
+    def forward(self, x):
+        if self.use_viewdirs:
+            xyz, view = x[..., : 3], x[..., 3 :]
+            view = cart2el_az(view)
+        else:
+            xyz = x[..., : 3]
+
+        # Projecting and summing
+        x = self.project(xyz)
+        for l in self.density_dec:
+            x = self.relu(l(x))
+        alpha = self.fc_alpha(x)
+
+        x_rgb = self.project(torch.cat([xyz]+([view] if self.use_viewdirs else []),1))
+        for l in self.rgb_dec:
+            x_rgb = self.relu(l(x_rgb))
+        rgb = self.fc_rgb(x_rgb)
+
+        return torch.cat((rgb, alpha), dim=-1)

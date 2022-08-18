@@ -15,7 +15,7 @@ from cfgnode import CfgNode
 from load_blender import load_blender_data
 from nerf_helpers import (get_ray_bundle, img2mse, meshgrid_xy, mse2psnr,
                           positional_encoding,chunksize_to_2D)
-from train_utils import eval_nerf, run_one_iter_of_nerf
+from train_utils import eval_nerf, run_one_iter_of_nerf,find_latest_checkpoint
 from mip import IntegratedPositionalEncoding
 from deepdiff import DeepDiff
 from copy import deepcopy
@@ -107,38 +107,54 @@ def main():
     else:
         device = "cpu"
 
-    assert cfg.nerf.encode_position_fn in ["mip","positional_encoding"]
-    if cfg.nerf.encode_position_fn=="mip":
-        mip_encoder = IntegratedPositionalEncoding(input_dims=3,\
-            multires=cfg.models.coarse.num_encoding_fn_xyz+1,include_input=cfg.models.coarse.include_input_xyz)
-        def encode_position_fn(x):
-            return mip_encoder(x)
-    else:
-        def encode_position_fn(x):
+    if getattr(cfg.nerf,"encode_position_fn",None) is not None:
+        assert cfg.nerf.encode_position_fn in ["mip","positional_encoding"]
+        if cfg.nerf.encode_position_fn=="mip":
+            mip_encoder = IntegratedPositionalEncoding(input_dims=3,\
+                multires=cfg.models.coarse.num_encoding_fn_xyz+1,include_input=cfg.models.coarse.include_input_xyz)
+            def encode_position_fn(x):
+                return mip_encoder(x)
+        else:
+            def encode_position_fn(x):
+                return positional_encoding(
+                    x,
+                    num_encoding_functions=cfg.models.coarse.num_encoding_fn_xyz,
+                    include_input=cfg.models.coarse.include_input_xyz,
+                )
+
+        def encode_direction_fn(x):
             return positional_encoding(
                 x,
-                num_encoding_functions=cfg.models.coarse.num_encoding_fn_xyz,
-                include_input=cfg.models.coarse.include_input_xyz,
+                num_encoding_functions=cfg.models.coarse.num_encoding_fn_dir,
+                include_input=cfg.models.coarse.include_input_dir,
             )
-
-    def encode_direction_fn(x):
-        return positional_encoding(
-            x,
-            num_encoding_functions=cfg.models.coarse.num_encoding_fn_dir,
-            include_input=cfg.models.coarse.include_input_dir,
+    else:
+        # encode_position_fn = lambda: None
+        # encode_direction_fn = lambda: None
+        encode_position_fn = None
+        encode_direction_fn = None
+    
+    if cfg.models.coarse.type=="TwoDimPlanesModel":
+        model_coarse = models.TwoDimPlanesModel(
+            use_viewdirs=cfg.models.coarse.use_viewdirs,
+            plane_resolutions=getattr(cfg.models.coarse,'plane_resolutions',512),
+            scene_geometry = {'camera_poses':poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':H,'W':W,'f':focal},
+            dec_density_layers=getattr(cfg.models.coarse,'dec_density_layers',4),
+            dec_rgb_layers=getattr(cfg.models.coarse,'dec_rgb_layers',4),
         )
-
-    # Initialize a coarse-resolution model.
-    assert not (cfg.nerf.encode_position_fn=="mip" and cfg.models.coarse.include_input_xyz),"Mip-NeRF does not use the input xyz"
-    assert cfg.models.coarse.include_input_xyz==cfg.models.fine.include_input_xyz,"Assuming they are the same"
-    assert cfg.models.coarse.include_input_dir==cfg.models.fine.include_input_dir,"Assuming they are the same"
-    model_coarse = getattr(models, cfg.models.coarse.type)(
-        num_encoding_fn_xyz=cfg.models.coarse.num_encoding_fn_xyz,
-        num_encoding_fn_dir=cfg.models.coarse.num_encoding_fn_dir,
-        include_input_xyz=cfg.models.coarse.include_input_xyz,
-        include_input_dir=cfg.models.coarse.include_input_dir,
-        use_viewdirs=cfg.models.coarse.use_viewdirs,
-    )
+        
+    else:
+        # Initialize a coarse-resolution model.
+        assert not (cfg.nerf.encode_position_fn=="mip" and cfg.models.coarse.include_input_xyz),"Mip-NeRF does not use the input xyz"
+        assert cfg.models.coarse.include_input_xyz==cfg.models.fine.include_input_xyz,"Assuming they are the same"
+        assert cfg.models.coarse.include_input_dir==cfg.models.fine.include_input_dir,"Assuming they are the same"
+        model_coarse = getattr(models, cfg.models.coarse.type)(
+            num_encoding_fn_xyz=cfg.models.coarse.num_encoding_fn_xyz,
+            num_encoding_fn_dir=cfg.models.coarse.num_encoding_fn_dir,
+            include_input_xyz=cfg.models.coarse.include_input_xyz,
+            include_input_dir=cfg.models.coarse.include_input_dir,
+            use_viewdirs=cfg.models.coarse.use_viewdirs,
+        )
     def num_parameters(model):
         return sum([p.numel() for p in model.parameters()])
 
@@ -147,15 +163,28 @@ def main():
     # If a fine-resolution model is specified, initialize it.
     model_fine = None
     if hasattr(cfg.models, "fine"):
-        model_fine = getattr(models, cfg.models.fine.type)(
-            num_encoding_fn_xyz=cfg.models.fine.num_encoding_fn_xyz,
-            num_encoding_fn_dir=cfg.models.fine.num_encoding_fn_dir,
-            include_input_xyz=cfg.models.fine.include_input_xyz,
-            include_input_dir=cfg.models.fine.include_input_dir,
-            use_viewdirs=cfg.models.fine.use_viewdirs,
-        )
-        print("Fine model: %d parameters"%num_parameters(model_fine))
-        model_fine.to(device)
+        if cfg.models.fine.type=="use_same":
+            model_fine = model_coarse
+            print("Using the same model for coarse and fine")
+        else:
+            if cfg.models.fine.type=="TwoDimPlanesModel":
+                model_fine = models.TwoDimPlanesModel(
+                    use_viewdirs=cfg.models.fine.use_viewdirs,
+                    plane_resolutions=getattr(cfg.models.fine,'plane_resolutions',512),
+                    scene_geometry = {'camera_poses':poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':H,'W':W,'f':focal},
+                    dec_density_layers=getattr(cfg.models.fine,'dec_density_layers',4),
+                    dec_rgb_layers=getattr(cfg.models.fine,'dec_rgb_layers',4),
+                )
+            else:
+                model_fine = getattr(models, cfg.models.fine.type)(
+                    num_encoding_fn_xyz=cfg.models.fine.num_encoding_fn_xyz,
+                    num_encoding_fn_dir=cfg.models.fine.num_encoding_fn_dir,
+                    include_input_xyz=cfg.models.fine.include_input_xyz,
+                    include_input_dir=cfg.models.fine.include_input_dir,
+                    use_viewdirs=cfg.models.fine.use_viewdirs,
+                )
+            print("Fine model: %d parameters"%num_parameters(model_fine))
+            model_fine.to(device)
 
     if SR_experiment=="model":
         NUM_FUNC_TYPES,NUM_COORDS,NUM_MODEL_OUTPUTS = 2,3,4
@@ -221,11 +250,6 @@ def main():
     # Write out config parameters.
     with open(os.path.join(logdir, "config.yml"), "w") as f:
         f.write(cfg.dump())  # cfg, f, default_flow_style=False)
-
-    def find_latest_checkpoint(ckpt_path):
-        if os.path.isdir(ckpt_path):
-            ckpt_path = os.path.join(ckpt_path,sorted([f for f in os.listdir(ckpt_path) if "checkpoint" in f and f[-5:]==".ckpt"],key=lambda x:int(x[len("checkpoint"):-5]))[-1])
-        return ckpt_path
 
     # Load an existing checkpoint, if a path is specified.
     start_i = 0
