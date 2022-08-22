@@ -1,8 +1,9 @@
 import torch
-from nerf_helpers import calc_scene_box,cart2el_az
+import torch.nn as nn
+from nerf_helpers import calc_scene_box,cart2az_el
+import math
 
-
-class VeryTinyNeRFModel(torch.nn.Module):
+class VeryTinyNeRFModel(nn.Module):
     r"""Define a "very tiny" NeRF model comprising three fully connected layers.
     """
 
@@ -15,15 +16,15 @@ class VeryTinyNeRFModel(torch.nn.Module):
         else:
             self.viewdir_encoding_dims = 0
         # Input layer (default: 65 -> 128)
-        self.layer1 = torch.nn.Linear(
+        self.layer1 = nn.Linear(
             self.xyz_encoding_dims + self.viewdir_encoding_dims, filter_size
         )
         # Layer 2 (default: 128 -> 128)
-        self.layer2 = torch.nn.Linear(filter_size, filter_size)
+        self.layer2 = nn.Linear(filter_size, filter_size)
         # Layer 3 (default: 128 -> 4)
-        self.layer3 = torch.nn.Linear(filter_size, 4)
-        # Short hand for torch.nn.functional.relu
-        self.relu = torch.nn.functional.relu
+        self.layer3 = nn.Linear(filter_size, 4)
+        # Short hand for nn.functional.relu
+        self.relu = nn.functional.relu
 
     def forward(self, x):
         x = self.relu(self.layer1(x))
@@ -32,7 +33,7 @@ class VeryTinyNeRFModel(torch.nn.Module):
         return x
 
 
-class MultiHeadNeRFModel(torch.nn.Module):
+class MultiHeadNeRFModel(nn.Module):
     r"""Define a "multi-head" NeRF model (radiance and RGB colors are predicted by
     separate heads).
     """
@@ -46,25 +47,25 @@ class MultiHeadNeRFModel(torch.nn.Module):
         else:
             self.viewdir_encoding_dims = 0
         # Input layer (default: 39 -> 128)
-        self.layer1 = torch.nn.Linear(self.xyz_encoding_dims, hidden_size)
+        self.layer1 = nn.Linear(self.xyz_encoding_dims, hidden_size)
         # Layer 2 (default: 128 -> 128)
-        self.layer2 = torch.nn.Linear(hidden_size, hidden_size)
+        self.layer2 = nn.Linear(hidden_size, hidden_size)
         # Layer 3_1 (default: 128 -> 1): Predicts radiance ("sigma")
-        self.layer3_1 = torch.nn.Linear(hidden_size, 1)
+        self.layer3_1 = nn.Linear(hidden_size, 1)
         # Layer 3_2 (default: 128 -> 1): Predicts a feature vector (used for color)
-        self.layer3_2 = torch.nn.Linear(hidden_size, hidden_size)
+        self.layer3_2 = nn.Linear(hidden_size, hidden_size)
 
         # Layer 4 (default: 39 + 128 -> 128)
-        self.layer4 = torch.nn.Linear(
+        self.layer4 = nn.Linear(
             self.viewdir_encoding_dims + hidden_size, hidden_size
         )
         # Layer 5 (default: 128 -> 128)
-        self.layer5 = torch.nn.Linear(hidden_size, hidden_size)
+        self.layer5 = nn.Linear(hidden_size, hidden_size)
         # Layer 6 (default: 128 -> 3): Predicts RGB color
-        self.layer6 = torch.nn.Linear(hidden_size, 3)
+        self.layer6 = nn.Linear(hidden_size, 3)
 
-        # Short hand for torch.nn.functional.relu
-        self.relu = torch.nn.functional.relu
+        # Short hand for nn.functional.relu
+        self.relu = nn.functional.relu
 
     def forward(self, x):
         x, view = x[..., : self.xyz_encoding_dims], x[..., self.xyz_encoding_dims :]
@@ -79,7 +80,7 @@ class MultiHeadNeRFModel(torch.nn.Module):
         return torch.cat((x, sigma), dim=-1)
 
 
-class ReplicateNeRFModel(torch.nn.Module):
+class ReplicateNeRFModel(nn.Module):
     r"""NeRF model that follows the figure (from the supp. material of NeRF) to
     every last detail. (ofc, with some flexibility)
     """
@@ -99,15 +100,15 @@ class ReplicateNeRFModel(torch.nn.Module):
         self.dim_xyz = (3 if include_input_xyz else 0) + 2 * 3 * num_encoding_fn_xyz
         self.dim_dir = (3 if include_input_dir else 0) + 2 * 3 * num_encoding_fn_dir
 
-        self.layer1 = torch.nn.Linear(self.dim_xyz, hidden_size)
-        self.layer2 = torch.nn.Linear(hidden_size, hidden_size)
-        self.layer3 = torch.nn.Linear(hidden_size, hidden_size)
-        self.fc_alpha = torch.nn.Linear(hidden_size, 1)
+        self.layer1 = nn.Linear(self.dim_xyz, hidden_size)
+        self.layer2 = nn.Linear(hidden_size, hidden_size)
+        self.layer3 = nn.Linear(hidden_size, hidden_size)
+        self.fc_alpha = nn.Linear(hidden_size, 1)
 
-        self.layer4 = torch.nn.Linear(hidden_size + self.dim_dir, hidden_size // 2)
-        self.layer5 = torch.nn.Linear(hidden_size // 2, hidden_size // 2)
-        self.fc_rgb = torch.nn.Linear(hidden_size // 2, 3)
-        self.relu = torch.nn.functional.relu
+        self.layer4 = nn.Linear(hidden_size + self.dim_dir, hidden_size // 2)
+        self.layer5 = nn.Linear(hidden_size // 2, hidden_size // 2)
+        self.fc_rgb = nn.Linear(hidden_size // 2, 3)
+        self.relu = nn.functional.relu
 
     def forward(self, x):
         xyz, direction = x[..., : self.dim_xyz], x[..., self.dim_xyz :]
@@ -120,7 +121,7 @@ class ReplicateNeRFModel(torch.nn.Module):
         rgb = self.fc_rgb(y_)
         return torch.cat((rgb, alpha), dim=-1)
 
-class Conv3D(torch.nn.Module):
+class Conv3D(nn.Module):
     def __init__(
         self,
         num_layers=4,
@@ -156,44 +157,44 @@ class Conv3D(torch.nn.Module):
             self.dim_dir = include_input_dir + 2 * 3 * num_encoding_fn_dir
             if not use_viewdirs:
                 self.dim_dir = 0
-        self.layer1 = torch.nn.Conv3d(self.dim_xyz, layer_size(0),kernel_size=kernel_size)
+        self.layer1 = nn.Conv3d(self.dim_xyz, layer_size(0),kernel_size=kernel_size)
         self.receptive_field += kernel_size-1
-        self.layers_xyz = torch.nn.ModuleList()
+        self.layers_xyz = nn.ModuleList()
         for i in range(num_layers - 1):
             self.receptive_field += kernel_size-1
             if i % self.skip_connect_every == 0 and i > 0 and i != num_layers - 1:
                 self.layers_xyz.append(
-                    torch.nn.Conv3d(self.dim_xyz + layer_size(i), layer_size(i+1),kernel_size=kernel_size)
+                    nn.Conv3d(self.dim_xyz + layer_size(i), layer_size(i+1),kernel_size=kernel_size)
                 )
             else:
-                self.layers_xyz.append(torch.nn.Conv3d(layer_size(i), layer_size(i+1),kernel_size=kernel_size))
+                self.layers_xyz.append(nn.Conv3d(layer_size(i), layer_size(i+1),kernel_size=kernel_size))
 
         self.use_viewdirs = use_viewdirs
         if self.use_viewdirs:
             self.xyz_input_2_dir = xyz_input_2_dir
-            self.layers_dir = torch.nn.ModuleList()
+            self.layers_dir = nn.ModuleList()
             # This deviates from the original paper, and follows the code release instead.
             self.layers_dir.append(
-                torch.nn.Conv3d(self.dim_dir + hidden_size[-1]+(self.dim_xyz if xyz_input_2_dir else 0),\
+                nn.Conv3d(self.dim_dir + hidden_size[-1]+(self.dim_xyz if xyz_input_2_dir else 0),\
                     hidden_size[-1] // dirs_hidden_width_ratio,kernel_size=kernel_size)
             )
             self.receptive_field += kernel_size-1
             for i in range(num_layers_dir-1):
                 self.receptive_field += kernel_size-1
                 self.layers_dir.append(
-                    torch.nn.Conv3d(hidden_size[-1]//dirs_hidden_width_ratio, hidden_size[-1] // dirs_hidden_width_ratio,kernel_size=kernel_size)
+                    nn.Conv3d(hidden_size[-1]//dirs_hidden_width_ratio, hidden_size[-1] // dirs_hidden_width_ratio,kernel_size=kernel_size)
                 )
 
-            self.fc_alpha = torch.nn.Conv3d(hidden_size[-1], 1,kernel_size=kernel_size)
+            self.fc_alpha = nn.Conv3d(hidden_size[-1], 1,kernel_size=kernel_size)
             self.receptive_field += kernel_size-1
-            self.fc_rgb = torch.nn.Conv3d(hidden_size[-1] // dirs_hidden_width_ratio, 3,kernel_size=kernel_size)
+            self.fc_rgb = nn.Conv3d(hidden_size[-1] // dirs_hidden_width_ratio, 3,kernel_size=kernel_size)
             self.receptive_field += kernel_size-1
-            self.fc_feat = torch.nn.Conv3d(hidden_size[-1], hidden_size[-1],kernel_size=kernel_size)
+            self.fc_feat = nn.Conv3d(hidden_size[-1], hidden_size[-1],kernel_size=kernel_size)
         else:
             self.receptive_field += kernel_size-1
-            self.fc_out = torch.nn.Conv3d(hidden_size[-1], 4,kernel_size=kernel_size)
+            self.fc_out = nn.Conv3d(hidden_size[-1], 4,kernel_size=kernel_size)
 
-        self.relu = torch.nn.functional.relu
+        self.relu = nn.functional.relu
 
     def forward(self, x):
         if self.use_viewdirs:
@@ -230,7 +231,7 @@ class Conv3D(torch.nn.Module):
             return self.fc_out(x)
 
 
-class FlexibleNeRFModel(torch.nn.Module):
+class FlexibleNeRFModel(nn.Module):
     def __init__(
         self,
         num_layers=4,
@@ -267,39 +268,39 @@ class FlexibleNeRFModel(torch.nn.Module):
             self.dim_dir = include_input_dir + 2 * 3 * num_encoding_fn_dir
             if not use_viewdirs:
                 self.dim_dir = 0
-        self.layer1 = torch.nn.Linear(self.dim_xyz, layer_size(0))
-        self.layers_xyz = torch.nn.ModuleList()
+        self.layer1 = nn.Linear(self.dim_xyz, layer_size(0))
+        self.layers_xyz = nn.ModuleList()
         for i in range(num_layers - 1):
             if i % self.skip_connect_every == 0 and i > 0 and i != num_layers - 1:
                 self.layers_xyz.append(
-                    torch.nn.Linear(self.dim_xyz + layer_size(i), layer_size(i+1))
-                    # torch.nn.Linear(self.dim_xyz + hidden_size, hidden_size)
+                    nn.Linear(self.dim_xyz + layer_size(i), layer_size(i+1))
+                    # nn.Linear(self.dim_xyz + hidden_size, hidden_size)
                 )
             else:
-                # self.layers_xyz.append(torch.nn.Linear(hidden_size, hidden_size))
-                self.layers_xyz.append(torch.nn.Linear(layer_size(i), layer_size(i+1)))
+                # self.layers_xyz.append(nn.Linear(hidden_size, hidden_size))
+                self.layers_xyz.append(nn.Linear(layer_size(i), layer_size(i+1)))
 
         self.use_viewdirs = use_viewdirs
         if self.use_viewdirs:
             self.xyz_input_2_dir = xyz_input_2_dir
-            self.layers_dir = torch.nn.ModuleList()
+            self.layers_dir = nn.ModuleList()
             # This deviates from the original paper, and follows the code release instead.
             self.layers_dir.append(
-                torch.nn.Linear(self.dim_dir + hidden_size[-1]+(self.dim_xyz if xyz_input_2_dir else 0),\
+                nn.Linear(self.dim_dir + hidden_size[-1]+(self.dim_xyz if xyz_input_2_dir else 0),\
                     hidden_size[-1] // dirs_hidden_width_ratio)
             )
             for i in range(num_layers_dir-1):
                 self.layers_dir.append(
-                    torch.nn.Linear(hidden_size[-1]//dirs_hidden_width_ratio, hidden_size[-1] // dirs_hidden_width_ratio)
+                    nn.Linear(hidden_size[-1]//dirs_hidden_width_ratio, hidden_size[-1] // dirs_hidden_width_ratio)
                 )
 
-            self.fc_alpha = torch.nn.Linear(hidden_size[-1], 1)
-            self.fc_rgb = torch.nn.Linear(hidden_size[-1] // dirs_hidden_width_ratio, 3)
-            self.fc_feat = torch.nn.Linear(hidden_size[-1], hidden_size[-1])
+            self.fc_alpha = nn.Linear(hidden_size[-1], 1)
+            self.fc_rgb = nn.Linear(hidden_size[-1] // dirs_hidden_width_ratio, 3)
+            self.fc_feat = nn.Linear(hidden_size[-1], hidden_size[-1])
         else:
-            self.fc_out = torch.nn.Linear(hidden_size[-1], 4)
+            self.fc_out = nn.Linear(hidden_size[-1], 4)
 
-        self.relu = torch.nn.functional.relu
+        self.relu = nn.functional.relu
 
     def forward(self, x):
         if self.use_viewdirs:
@@ -328,7 +329,7 @@ class FlexibleNeRFModel(torch.nn.Module):
         else:
             return self.fc_out(x)
 
-class TwoDimPlanesModel(torch.nn.Module):
+class TwoDimPlanesModel(nn.Module):
     def __init__(
         self,
         use_viewdirs,
@@ -339,37 +340,57 @@ class TwoDimPlanesModel(torch.nn.Module):
         dec_channels=128,
         # skip_connect_every=4,
         num_plane_channels=48,
+        rgb_dec_input='projections',
+        planes=None,
+        plane_interp='bilinear',
+        track_planes_coverage=False,
     ):
         super(TwoDimPlanesModel, self).__init__()
-        # self.planes = torch.nn.ParameterList([torch.nn.Parameter(torch.Tensor(1,num_plane_channels,plane_resolutions,plane_resolutions)) for i in range(3+2*use_viewdirs)])
-        self.box_coords = calc_scene_box(scene_geometry=scene_geometry)
+        self.model_id = torch.randint(high=1000000,size=()).item() # Setting an ID to be able to use a single SR model with multiple scene models, while saving on interpolation and evaluation times.
+        self.box_coords = calc_scene_box(scene_geometry=scene_geometry,including_dirs=use_viewdirs)
         self.use_viewdirs = use_viewdirs
+        assert rgb_dec_input in ['sum','projections','features']
+        self.rgb_dec_input = rgb_dec_input
+        self.plane_interp = plane_interp
+        self.track_planes_coverage = track_planes_coverage
         # Density (alpha) decoder:
-        self.density_dec = torch.nn.ModuleList()
+        self.density_dec = nn.ModuleList()
         self.density_dec.append(
-            torch.nn.Linear(num_plane_channels,dec_channels)
+            nn.Linear(num_plane_channels,dec_channels)
         )
         for layer_num in range(dec_density_layers-1):
             self.density_dec.append(
-                torch.nn.Linear(dec_channels,dec_channels)
+                nn.Linear(dec_channels,dec_channels)
             )
-        self.fc_alpha = torch.nn.Linear(dec_channels,1)
+        self.fc_alpha = nn.Linear(dec_channels,1)
+        if self.rgb_dec_input in ['sum','features']:
+            self.fc_feat = nn.Linear(dec_channels,num_plane_channels)
 
         # RGB decoder:
-        self.rgb_dec = torch.nn.ModuleList()
+        self.rgb_dec = nn.ModuleList()
         self.rgb_dec.append(
-            torch.nn.Linear(num_plane_channels,dec_channels)
+            nn.Linear(num_plane_channels,dec_channels)
         )
         for layer_num in range(dec_rgb_layers-1):
             self.rgb_dec.append(
-                torch.nn.Linear(dec_channels,dec_channels)
+                nn.Linear(dec_channels,dec_channels)
             )
-        self.fc_rgb = torch.nn.Linear(dec_channels,3)
+        self.fc_rgb = nn.Linear(dec_channels,3)
 
-        self.relu = torch.nn.functional.relu
-        self.planes = torch.nn.ParameterList(
-            [torch.nn.Parameter(self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,plane_resolutions,plane_resolutions]
-            )) for i in range(3+2*use_viewdirs)])
+        self.relu = nn.functional.relu
+        if planes is None:
+            self.planes_ = nn.ParameterList(
+                [nn.Parameter(self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,plane_resolutions,plane_resolutions]
+                )) for i in range(3+use_viewdirs)])
+            if self.track_planes_coverage:
+                self.planes_coverage = torch.zeros([len(self.planes_),plane_resolutions,plane_resolutions,]).type(torch.bool)
+        else:
+            self.planes_ = planes
+
+    def assign_SR_model(self,SR_model):
+        self.SR_model = SR_model
+        self.SR_model.set_LR_planes([p.detach() for p in self.planes_],id=self.model_id)
+        self.skip_SR_ = False
 
     def normalize_coords(self,coords):
         normalized_coords = 2*(coords-self.box_coords.type(coords.type())[:1])/\
@@ -377,32 +398,172 @@ class TwoDimPlanesModel(torch.nn.Module):
         assert normalized_coords.min()>=-1 and normalized_coords.max()<=1,"Sanity check"
         return normalized_coords
 
+    def grid2plane_inds(self,grid):
+        return (grid+1)/2*(self.planes_[0].shape[-1]-1)
 
-    def project(self,coords):
+    def update_planes_coverage(self,plane_ind:int,grid:torch.tensor):
+        if self.track_planes_coverage and self.training:
+            for r_func in [torch.ceil,torch.floor]:
+                for c_func in [torch.ceil,torch.floor]:
+                    self.planes_coverage[plane_ind,r_func(self.grid2plane_inds(grid[...,0])).type(torch.long),c_func(self.grid2plane_inds(grid[...,1])).type(torch.long)] = True
+
+    def planes(self,plane_num:int)->torch.tensor:
+        if hasattr(self,'SR_model') and not self.skip_SR_:
+            plane = self.SR_model((self.model_id,plane_num))
+        else:
+            plane = self.planes_[plane_num]
+        # plane = self.planes_[plane_num]
+        # if hasattr(self,'SR_model') and not self.skip_SR_:
+        #     plane = self.SR_model(plane)
+        return plane
+
+    def skip_SR(self,skip):
+        self.skip_SR_ = skip
+
+    def project_xyz(self,coords):
         projections = []
-        normalized_coords = self.normalize_coords(coords)
-        for d in range(normalized_coords.shape[1]): # (Currently not supporting viewdir input)
-            grid = normalized_coords[:,[c for c in range(3) if c!=d]].reshape([1,normalized_coords.shape[0],1,2])
-            projections.append(torch.nn.functional.grid_sample(input=self.planes[d],grid=grid,mode='bilinear',align_corners=True))
+        for d in range(3): # (Currently not supporting viewdir input)
+            grid = coords[:,[c for c in range(3) if c!=d]].reshape([1,coords.shape[0],1,2])
+            self.update_planes_coverage(d,grid)
+            projections.append(nn.functional.grid_sample(input=self.planes(d),grid=grid,mode=self.plane_interp,align_corners=True))
         projections = torch.sum(torch.stack(projections,0),0)
         return projections.squeeze(0).squeeze(-1).permute(1,0)
 
+    def project_viewdir(self,dirs):
+        grid = dirs.reshape([1,dirs.shape[0],1,2])
+        self.update_planes_coverage(-1,grid)
+        return nn.functional.grid_sample(input=self.planes(-1),grid=grid,mode=self.plane_interp,align_corners=True).squeeze(0).squeeze(-1).permute(1,0)
+
+
     def forward(self, x):
         if self.use_viewdirs:
-            xyz, view = x[..., : 3], x[..., 3 :]
-            view = cart2el_az(view)
+            x = torch.cat([x[...,:3],cart2az_el(x[...,3:])],-1)
         else:
-            xyz = x[..., : 3]
+            x = x[..., : 3]
+        x = self.normalize_coords(x)
+        projected_xyz = self.project_xyz(x[..., : 3])
+        if self.use_viewdirs:
+            projected_views = self.project_viewdir(x[...,3:])
+        #     xyz, view = x[..., : 3], x[..., 3 :]
+        # else:
+        #     xyz = x
 
         # Projecting and summing
-        x = self.project(xyz)
+        x = 1*projected_xyz
         for l in self.density_dec:
             x = self.relu(l(x))
         alpha = self.fc_alpha(x)
+        x_rgb = 0
+        if self.rgb_dec_input in ['sum','features']:
+            x_rgb = self.fc_feat(x)
 
-        x_rgb = self.project(torch.cat([xyz]+([view] if self.use_viewdirs else []),1))
+        # x_rgb = self.project_xyz(torch.cat([xyz]+([view] if self.use_viewdirs else []),1))
+        if self.rgb_dec_input in ['sum','projections']:
+            x_rgb = x_rgb+projected_xyz
+
+        if self.use_viewdirs:
+            x_rgb = x_rgb+projected_views
+
         for l in self.rgb_dec:
             x_rgb = self.relu(l(x_rgb))
         rgb = self.fc_rgb(x_rgb)
 
         return torch.cat((rgb, alpha), dim=-1)
+
+
+# EDSR code taken and modified from https://github.com/twtygqyy/pytorch-edsr/blob/master/edsr.py
+# class MeanShift(nn.Conv2d):
+#     def __init__(self, rgb_mean, sign):
+#         super(MeanShift, self).__init__(3, 3, kernel_size=1)
+#         self.weight.data = torch.eye(3).view(3, 3, 1, 1)
+#         self.bias.data = float(sign) * torch.Tensor(rgb_mean)
+
+#         # Freeze the MeanShift layer
+#         for params in self.parameters():
+#             params.requires_grad = False
+
+class _Residual_Block(nn.Module): 
+    def __init__(self,hidden_size):
+        super(_Residual_Block, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=3, stride=1, padding=1, bias=False)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=3, stride=1, padding=1, bias=False)
+
+    def forward(self, x): 
+        identity_data = x
+        output = self.relu(self.conv1(x))
+        output = self.conv2(output)
+        output *= 0.1
+        output = torch.add(output,identity_data)
+        return output 
+
+class EDSR(nn.Module):
+    def __init__(self,scale_factor,in_channels,out_channels,hidden_size,plane_interp,n_blocks=32):
+        super(EDSR, self).__init__()
+
+        # rgb_mean = (0.4488, 0.4371, 0.4040)
+        # self.sub_mean = MeanShift(rgb_mean, -1)
+        self.scale_factor = scale_factor
+        self.plane_interp = plane_interp
+        self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=3, stride=1, padding=1, bias=False)
+
+        self.residual = self.make_layer(_Residual_Block,{'hidden_size':hidden_size}, n_blocks)
+
+        self.conv_mid = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=3, stride=1, padding=1, bias=False)
+        assert math.log2(scale_factor)==int(math.log2(scale_factor)),"Supperting only scale factors that are an integer power of 2."
+        upscaling_layers = []
+        for _ in range(int(math.log2(scale_factor))):
+            upscaling_layers += [
+                nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size*4, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.PixelShuffle(2),
+            ]
+        self.upscale = nn.Sequential(*upscaling_layers)
+
+        self.conv_output = nn.Conv2d(in_channels=hidden_size, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+
+        # self.add_mean = MeanShift(rgb_mean, 1)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n)/10)
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                if m.bias is not None:
+                    m.bias.data.zero_()
+
+        self.LR_planes,self.residual_planes,self.SR_planes = {},{},{}
+
+    def make_layer(self, block,args, num_of_layer):
+        layers = []
+        for _ in range(num_of_layer):
+            layers.append(block(**args))
+        return nn.Sequential(*layers)
+
+    def set_LR_planes(self,planes,id):
+        self.LR_planes[id] = planes
+        self.residual_planes[id] = [torch.nn.functional.interpolate(p,scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=True) for p in planes]
+        self.SR_planes[id] = 1*self.residual_planes[id]
+
+    def forward(self, id_plane):
+        id,plane_num = id_plane
+        if self.training:
+            x = self.LR_planes[id][plane_num].detach()
+        # def forward(self, x):
+            # residual = x
+            out = self.conv_input(x)
+            # residual = out
+            out = self.conv_mid(self.residual(out))
+            # out = torch.add(out,residual)
+            out = self.upscale(out)
+            out = self.conv_output(out)
+            # out = torch.add(out,torch.nn.functional.interpolate(residual,size=tuple(out.shape[2:]),mode=self.plane_interp,align_corners=True))
+            out = torch.add(out,self.residual_planes[id][plane_num])
+            self.SR_planes[id][plane_num] = out
+        else:
+            out = self.SR_planes[id][plane_num]
+        return out
+ 

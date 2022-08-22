@@ -11,13 +11,14 @@ from deepdiff import DeepDiff
 # JOB_NAME = "temp"
 # CONFIG_FILE = "config/lego_SR.yml"
 # CONFIG_FILE = "config/lego_ds.yml"
-CONFIG_FILE = "config/lego_planes.yml"
+# CONFIG_FILE = "config/planes.yml"
+CONFIG_FILE = "config/planes_SR.yml"
 
 # RESUME_TRAINING = 0
 RESUME_TRAINING = None
 
 CONDA_ENV = "/tigress/yb6751/envs/neural_sr"
-RUN_TIME = 10 # 20 # 10 # Hours
+RUN_TIME = 40 # 20 # 10 # Hours
 
 with open(CONFIG_FILE, "r") as f:
     cfg_dict = yaml.load(f, Loader=yaml.FullLoader)

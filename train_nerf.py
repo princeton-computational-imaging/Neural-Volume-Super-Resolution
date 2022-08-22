@@ -2,6 +2,7 @@ import argparse
 import glob
 import os
 import time
+from collections import OrderedDict
 
 import numpy as np
 import torch
@@ -19,6 +20,7 @@ from train_utils import eval_nerf, run_one_iter_of_nerf,find_latest_checkpoint
 from mip import IntegratedPositionalEncoding
 from deepdiff import DeepDiff
 from copy import deepcopy
+import cv2
 
 def main():
 
@@ -133,14 +135,17 @@ def main():
         # encode_direction_fn = lambda: None
         encode_position_fn = None
         encode_direction_fn = None
-    
-    if cfg.models.coarse.type=="TwoDimPlanesModel":
+    if getattr(cfg.models.coarse,"use_viewdirs",False) or getattr(cfg.models.fine,"use_viewdirs",False):    assert cfg.nerf.use_viewdirs
+    planes_model = cfg.models.coarse.type=="TwoDimPlanesModel"
+    if planes_model:
         model_coarse = models.TwoDimPlanesModel(
             use_viewdirs=cfg.models.coarse.use_viewdirs,
             plane_resolutions=getattr(cfg.models.coarse,'plane_resolutions',512),
             scene_geometry = {'camera_poses':poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':H,'W':W,'f':focal},
             dec_density_layers=getattr(cfg.models.coarse,'dec_density_layers',4),
             dec_rgb_layers=getattr(cfg.models.coarse,'dec_rgb_layers',4),
+            rgb_dec_input=getattr(cfg.models.coarse,'rgb_dec_input','projections'),
+            plane_interp=getattr(cfg.models.coarse,'plane_interp','bilinear'),
         )
         
     else:
@@ -167,13 +172,19 @@ def main():
             model_fine = model_coarse
             print("Using the same model for coarse and fine")
         else:
-            if cfg.models.fine.type=="TwoDimPlanesModel":
+            if planes_model:
+                for k in cfg.models.coarse.keys():
+                    if k not in cfg.models.fine:
+                        setattr(cfg.models.fine,k,getattr(cfg.models.coarse,k))
                 model_fine = models.TwoDimPlanesModel(
                     use_viewdirs=cfg.models.fine.use_viewdirs,
                     plane_resolutions=getattr(cfg.models.fine,'plane_resolutions',512),
                     scene_geometry = {'camera_poses':poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':H,'W':W,'f':focal},
                     dec_density_layers=getattr(cfg.models.fine,'dec_density_layers',4),
                     dec_rgb_layers=getattr(cfg.models.fine,'dec_rgb_layers',4),
+                    rgb_dec_input=getattr(cfg.models.coarse,'rgb_dec_input','projections'),
+                    planes=model_coarse.planes_ if getattr(cfg.models.fine,'use_coarse_planes',False) else None,
+                    plane_interp=getattr(cfg.models.fine,'plane_interp','bilinear'),
                 )
             else:
                 model_fine = getattr(models, cfg.models.fine.type)(
@@ -187,44 +198,55 @@ def main():
             model_fine.to(device)
 
     if SR_experiment=="model":
-        NUM_FUNC_TYPES,NUM_COORDS,NUM_MODEL_OUTPUTS = 2,3,4
-        assert cfg.super_resolution.model.input in ["outputs","dirs_encoding","xyz_encoding"]
-        if cfg.super_resolution.model.input=="outputs":
-            encoding_grad_inputs = 2*[0]
-        elif cfg.super_resolution.model.input=="xyz_encoding":
-            encoding_grad_inputs = [cfg.models.fine.num_encoding_fn_xyz,0]
-            # assert not cfg.super_resolution.model.get("xyz_input_2_dir",False),"Not taking view-directions as input, so no sense of adding xyz to them"
-        elif cfg.super_resolution.model.input=="dirs_encoding":
-            encoding_grad_inputs = [cfg.models.fine.num_encoding_fn_xyz,cfg.models.fine.num_encoding_fn_dir]
-        if consistent_SR_density:
-            SR_input_dim = [NUM_FUNC_TYPES*d for d in encoding_grad_inputs]
-            if SR_input_dim[0]>0:   SR_input_dim[0] = NUM_COORDS*(SR_input_dim[0]+cfg.models.coarse.include_input_xyz)
-            if SR_input_dim[1]>0:   SR_input_dim[1] = NUM_COORDS*(SR_input_dim[1]+cfg.models.coarse.include_input_dir)
-            # SR_input_dim = [(d+1)*NUM_COORDS if d>0 else 0 for d in SR_input_dim]
-            jacobian_numel = NUM_MODEL_OUTPUTS*sum(SR_input_dim)
-            SR_input_dim[0] += 1
-            SR_input_dim[1] = jacobian_numel+NUM_MODEL_OUTPUTS-SR_input_dim[0]
+        if cfg.super_resolution.model.type=='EDSR':
+            SR_model = getattr(models, cfg.super_resolution.model.type)(
+                scale_factor=cfg.super_resolution.model.scale_factor,
+                in_channels=model_fine.planes_[0].shape[1],
+                out_channels=model_fine.planes_[0].shape[1],
+                hidden_size=cfg.super_resolution.model.hidden_size,
+                plane_interp=model_fine.plane_interp,
+                n_blocks=cfg.super_resolution.model.n_blocks,
+            )
+            print("SR model: %d parameters"%(num_parameters(SR_model)))
         else:
-            raise Exception("This computation is wrong, and reaches a lower input dimension than the actual product of the dimension of the input to the NeRF model times number of its outputs, which is the size of the Jacobian, plus the number of outputs. The reason why it worked is because I removed the excessive input channels as the first step when running the SR model.")
-            SR_input_dim = NUM_FUNC_TYPES*sum(encoding_grad_inputs)
-            if SR_input_dim>0:  
-                SR_input_dim += 1
-                SR_input_dim *= NUM_COORDS*NUM_MODEL_OUTPUTS
-            SR_input_dim += NUM_MODEL_OUTPUTS
-            SR_input_dim = [SR_input_dim,0]
-        # SR_input_dim += NUM_MODEL_OUTPUTS
-        if cfg.super_resolution.model.type=="Conv3D":   assert cfg.super_resolution.model.input=="outputs","Currently not supporting gradients input to spatial SR model."
-        SR_model = getattr(models, cfg.super_resolution.model.type)(
-            input_dim= SR_input_dim,
-            use_viewdirs=consistent_SR_density,
-            num_layers=cfg.super_resolution.model.num_layers_xyz,
-            num_layers_dir=cfg.super_resolution.model.get("num_layers_dir",1),
-            hidden_size=cfg.super_resolution.model.hidden_size,
-            dirs_hidden_width_ratio=1,
-            xyz_input_2_dir=cfg.super_resolution.model.get("xyz_input_2_dir",False)
-        )
-        print("SR model: %d parameters, input dimension xyz: %d, dirs: %d"%\
-            (num_parameters(SR_model),SR_input_dim[0],SR_input_dim[1]))
+            NUM_FUNC_TYPES,NUM_COORDS,NUM_MODEL_OUTPUTS = 2,3,4
+            assert cfg.super_resolution.model.input in ["outputs","dirs_encoding","xyz_encoding"]
+            if cfg.super_resolution.model.input=="outputs":
+                encoding_grad_inputs = 2*[0]
+            elif cfg.super_resolution.model.input=="xyz_encoding":
+                encoding_grad_inputs = [cfg.models.fine.num_encoding_fn_xyz,0]
+                # assert not cfg.super_resolution.model.get("xyz_input_2_dir",False),"Not taking view-directions as input, so no sense of adding xyz to them"
+            elif cfg.super_resolution.model.input=="dirs_encoding":
+                encoding_grad_inputs = [cfg.models.fine.num_encoding_fn_xyz,cfg.models.fine.num_encoding_fn_dir]
+            if consistent_SR_density:
+                SR_input_dim = [NUM_FUNC_TYPES*d for d in encoding_grad_inputs]
+                if SR_input_dim[0]>0:   SR_input_dim[0] = NUM_COORDS*(SR_input_dim[0]+cfg.models.coarse.include_input_xyz)
+                if SR_input_dim[1]>0:   SR_input_dim[1] = NUM_COORDS*(SR_input_dim[1]+cfg.models.coarse.include_input_dir)
+                # SR_input_dim = [(d+1)*NUM_COORDS if d>0 else 0 for d in SR_input_dim]
+                jacobian_numel = NUM_MODEL_OUTPUTS*sum(SR_input_dim)
+                SR_input_dim[0] += 1
+                SR_input_dim[1] = jacobian_numel+NUM_MODEL_OUTPUTS-SR_input_dim[0]
+            else:
+                raise Exception("This computation is wrong, and reaches a lower input dimension than the actual product of the dimension of the input to the NeRF model times number of its outputs, which is the size of the Jacobian, plus the number of outputs. The reason why it worked is because I removed the excessive input channels as the first step when running the SR model.")
+                SR_input_dim = NUM_FUNC_TYPES*sum(encoding_grad_inputs)
+                if SR_input_dim>0:  
+                    SR_input_dim += 1
+                    SR_input_dim *= NUM_COORDS*NUM_MODEL_OUTPUTS
+                SR_input_dim += NUM_MODEL_OUTPUTS
+                SR_input_dim = [SR_input_dim,0]
+            # SR_input_dim += NUM_MODEL_OUTPUTS
+            if cfg.super_resolution.model.type=="Conv3D":   assert cfg.super_resolution.model.input=="outputs","Currently not supporting gradients input to spatial SR model."
+            SR_model = getattr(models, cfg.super_resolution.model.type)(
+                input_dim= SR_input_dim,
+                use_viewdirs=consistent_SR_density,
+                num_layers=cfg.super_resolution.model.num_layers_xyz,
+                num_layers_dir=cfg.super_resolution.model.get("num_layers_dir",1),
+                hidden_size=cfg.super_resolution.model.hidden_size,
+                dirs_hidden_width_ratio=1,
+                xyz_input_2_dir=cfg.super_resolution.model.get("xyz_input_2_dir",False)
+            )
+            print("SR model: %d parameters, input dimension xyz: %d, dirs: %d"%\
+                (num_parameters(SR_model),SR_input_dim[0],SR_input_dim[1]))
         SR_model.to(device)
         trainable_parameters = list(SR_model.parameters())
         # SR_HR_im_inds = cfg.super_resolution.get("dataset",{}).get("train_im_inds",None)
@@ -275,9 +297,12 @@ def main():
             start_i = int(checkpoint.split('/')[-1][len('checkpoint'):-len('.ckpt')])+1
             print("Resuming training on model %s"%(checkpoint))
         checkpoint = torch.load(checkpoint)
-        model_coarse.load_state_dict(checkpoint["model_coarse_state_dict"])
+        def update_saved_names(state_dict):
+            return OrderedDict([(k.replace('planes.','planes_.'),v) for k,v in state_dict.items()])
+            
+        model_coarse.load_state_dict(update_saved_names(checkpoint["model_coarse_state_dict"]))
         if checkpoint["model_fine_state_dict"]:
-            model_fine.load_state_dict(checkpoint["model_fine_state_dict"])
+            model_fine.load_state_dict(update_saved_names(checkpoint["model_fine_state_dict"]))
         if SR_experiment=="refine":
             LR_model_coarse = deepcopy(model_coarse)
             LR_model_fine = deepcopy(model_fine)
@@ -295,6 +320,15 @@ def main():
     # # TODO: Prepare raybatch tensor if batching random rays
     spatial_padding_size = SR_model.receptive_field//2 if isinstance(SR_model,models.Conv3D) else 0
     spatial_sampling = spatial_padding_size>0 or cfg.nerf.train.get("spatial_sampling",False)
+
+    if planes_model and SR_model is not None:
+        if getattr(cfg.super_resolution,'apply_2_coarse',False):
+            model_coarse.assign_SR_model(SR_model)
+        else:
+            assert getattr(cfg.super_resolution.training,'loss','both')=='fine'
+        # if hasattr(cfg.models, "fine") and cfg.models.fine.type!="use_same":
+        model_fine.assign_SR_model(SR_model)
+
     for iter in trange(start_i,cfg.experiment.train_iters):
         # Validation
         if (
@@ -330,7 +364,8 @@ def main():
                     )
                     target_ray_values = cache_dict["target"].to(device)
                 else:
-                    img_indecis,val_strings = [np.random.choice(i_val)],[""]
+                    img_indecis,val_strings = [i_val[(iter//cfg.experiment.validate_every)%len(i_val)]],[""]
+                    # img_indecis,val_strings = [np.random.choice(i_val)],[""]
                     if val_ims_dict is not None:
                         img_indecis += [i_val[val_ims_dict["closest_val"]],i_val[val_ims_dict["furthest_val"]]]
                         val_strings += ["closest_","furthest_"]
@@ -359,16 +394,18 @@ def main():
                         )
                         target_ray_values = img_target
                         if SR_experiment:
-                            if SR_experiment=="refine":
+                            if SR_experiment=="refine" or planes_model:
                                 rgb_SR = 1*rgb_fine
                                 rgb_SR_coarse = 1*rgb_coarse
                                 if val_num==0 or (val_num==2 and furthest_rgb_fine is None) or (val_num==1 and closest_rgb_fine is None):
+                                    model_coarse.skip_SR(True)
+                                    model_fine.skip_SR(True)
                                     rgb_coarse, _, _, rgb_fine, _, _,_,_,_ = eval_nerf(
                                         H[img_idx],
                                         W[img_idx],
                                         focal[img_idx],
-                                        LR_model_coarse,
-                                        LR_model_fine,
+                                        model_coarse if planes_model else LR_model_coarse,
+                                        model_fine if planes_model else LR_model_fine,
                                         ray_origins,
                                         ray_directions,
                                         cfg,
@@ -378,6 +415,8 @@ def main():
                                         SR_model=SR_model,
                                         ds_factor=ds_factor[img_idx],
                                     )
+                                    model_coarse.skip_SR(False)
+                                    model_fine.skip_SR(False)
                                     if val_num==1:  closest_rgb_fine = 1*rgb_fine.detach()
                                     elif val_num==2:  furthest_rgb_fine = 1*rgb_fine.detach()
                                 else:
@@ -385,7 +424,7 @@ def main():
                             fine_loss = img2mse(rgb_fine[..., :3], target_ray_values[..., :3]).item()
                             loss = img2mse(rgb_SR[..., :3], target_ray_values[..., :3])
                             writer.add_image(
-                                "validation/%srgb_SR"%(val_strings[val_num]), cast_to_image(rgb_SR[..., :3]),iter
+                                "validation/%srgb_SR"%(val_strings[val_num]), cast_to_image(rgb_SR[..., :3],str(img_idx)),iter
                             )
                             if val_num==0:
                                 writer.add_scalar("validation/%sfine_loss"%(val_strings[val_num]), fine_loss, iter)
@@ -399,7 +438,7 @@ def main():
                             loss = coarse_loss + fine_loss
                             writer.add_scalar("validation/%scoarse_loss"%(val_strings[val_num]), coarse_loss.item(), iter)
                             writer.add_image(
-                                "validation/%srgb_coarse"%(val_strings[val_num]), cast_to_image(rgb_coarse[..., :3]),iter
+                                "validation/%srgb_coarse"%(val_strings[val_num]), cast_to_image(rgb_coarse[..., :3],str(img_idx)),iter
                             )
                         psnr = mse2psnr(loss.item())
                         if SR_experiment:
@@ -410,11 +449,11 @@ def main():
                         if rgb_fine is not None:
                             if val_num==0 or iter==0:
                                 writer.add_image(
-                                    "validation/%srgb_fine"%(val_strings[val_num]), cast_to_image(rgb_fine[..., :3]),iter
+                                    "validation/%srgb_fine"%(val_strings[val_num]), cast_to_image(rgb_fine[..., :3],str(img_idx)),iter
                                 )
                         if val_num==0 or iter==0:
                             writer.add_image(
-                                "validation/%simg_target"%(val_strings[val_num]), cast_to_image(target_ray_values[..., :3]),iter
+                                "validation/%simg_target"%(val_strings[val_num]), cast_to_image(target_ray_values[..., :3],str(img_idx)),iter
                             )
                         if val_num==0:
                             tqdm.write(
@@ -520,13 +559,13 @@ def main():
                 mode="train",
                 encode_position_fn=encode_position_fn,
                 encode_direction_fn=encode_direction_fn,
-                SR_model=SR_model,
+                SR_model=None if planes_model else SR_model,
                 ds_factor=ds_factor[img_idx],
                 spatial_margin=SR_model.receptive_field//2 if spatial_sampling else None
             )
             target_ray_values = target_s
 
-        if SR_experiment=="model":
+        if SR_experiment=="model" and not planes_model:
             loss = torch.nn.functional.mse_loss(
                     rgb_SR[..., :3], target_ray_values[..., :3]
                 )
@@ -539,8 +578,11 @@ def main():
                 fine_loss = torch.nn.functional.mse_loss(
                     rgb_fine[..., :3], target_ray_values[..., :3]
                 )
+            if SR_experiment=="model":
+                if getattr(cfg.super_resolution.training,'loss','both')=='fine': coarse_loss = None
+                elif getattr(cfg.super_resolution.training,'loss','both')=='coarse': fine_loss = None
             # loss = torch.nn.functional.mse_loss(rgb_pred[..., :3], target_s[..., :3])
-            loss = coarse_loss + (fine_loss if fine_loss is not None else 0.0)
+            loss = (coarse_loss if coarse_loss is not None else 0.0) + (fine_loss if fine_loss is not None else 0.0)
         loss.backward()
         psnr = mse2psnr(loss.item())
         optimizer.step()
@@ -555,9 +597,10 @@ def main():
                 + str(psnr)
             )
         writer.add_scalar("train/loss", loss.item(), iter)
-        if SR_experiment!="model":
-            writer.add_scalar("train/coarse_loss", coarse_loss.item(), iter)
-            if rgb_fine is not None:
+        if SR_experiment!="model" or planes_model:
+            if coarse_loss is not None:
+                writer.add_scalar("train/coarse_loss", coarse_loss.item(), iter)
+            if fine_loss is not None:
                 writer.add_scalar("train/fine_loss", fine_loss.item(), iter)
         writer.add_scalar("train/psnr", psnr, iter)
 
@@ -582,13 +625,25 @@ def main():
     print("Done!")
 
 
-def cast_to_image(tensor):
+def cast_to_image(tensor,img_text=None):
     # Input tensor is (H, W, 3). Convert to (3, H, W).
     tensor = tensor.permute(2, 0, 1)
     # Conver to PIL Image and then np.array (output shape: (H, W, 3))
     img = np.array(torchvision.transforms.ToPILImage()(tensor.detach().cpu()))
     # Map back to shape (3, H, W), as tensorboard needs channels first.
     img = np.moveaxis(img, [-1], [0])
+    if img_text is not None:
+        img = cv2.cv2.putText(
+            img.transpose(1,2,0),
+            img_text,
+            (0,15),
+            # (img.shape[1]-20*len(img_text),50),
+            cv2.FONT_HERSHEY_PLAIN,
+            fontScale=1,
+            color=[255,255,255],
+            thickness=1,
+        ).transpose(2,0,1)
+
     return img
 
 

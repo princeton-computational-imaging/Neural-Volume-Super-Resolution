@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: planes_SharedCF_Viewdir_Res128Lrgb2Lden2 # debug-lego200 
+  id: SRonFine_32Blocks # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /tigress/yb6751/projects/NeuralMFSR/logs
   # Seed for random number generators (for repeatability).
@@ -18,7 +18,7 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  basedir: cache/nerf_synthetic/lego
+  # basedir: cache/nerf_synthetic/lego
   basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
@@ -38,16 +38,21 @@ dataset:
 
 # Model parameters.
 models:
+  path: /tigress/yb6751/projects/NeuralMFSR/logs/planes_SharedCF_NoViewdir_Res32Lrgb2Lden2_LR4_0
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.
     type: TwoDimPlanesModel
     # Plane side size:
-    plane_resolutions: 128
+    plane_resolutions: 32
+    # Planes interpolation method (default to bilinear):
+    plane_interp: bilinear # bicubic # bilinear
     # Number of layers in the density decoder.
     dec_density_layers: 2
     # Number of layers in the rgb decoder.
     dec_rgb_layers: 2
+    # What is the input to the rgb decoder, apart from view directions (if used)
+    rgb_dec_input:  projections # projections, features
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
     # hidden_size: 256
@@ -55,17 +60,19 @@ models:
     # won't take affect unless num_layers > skip_connect_every.
     # skip_connect_every: 3
     # Additionally use viewing directions as input.
-    use_viewdirs: True
+    use_viewdirs: False
   fine:
     # Name of the torch.nn.Module class that implements the model.
     type: use_same
     # type: TwoDimPlanesModel
-    # # Plane side size:
+    # Plane side size:
     # plane_resolutions: 128
     # # Number of layers in the density decoder.
     # dec_density_layers: 2
     # # Number of layers in the rgb decoder.
     # dec_rgb_layers: 2
+    # Share the planes with the coarse model:
+    # use_coarse_planes: True
     # # Additionally use viewing directions as input.
     # use_viewdirs: False
 # Optimizer params.
@@ -73,7 +80,7 @@ optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 5.0E-3
+  lr: 5.0E-5 # 5.0E-3
 
 # NeRF parameters.
 nerf:
@@ -121,3 +128,22 @@ nerf:
     radiance_field_noise_std: 0.
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
+
+super_resolution:
+  # dataset:
+    # Use specific HR training images (by passing image indices):
+    # train_im_inds: [0] # [0,1,2,3,4,5,6,7,8,9] # 0.1 #
+  training:
+  #   LR_ims_chance: 0.5
+    loss: fine # fine,coarse,both
+  apply_2_coarse: False #True # False
+  model:
+    # Name of the torch.nn.Module class that implements the model.
+    type: EDSR
+    # Number of layers in the model.
+    # Number of hidden units in each layer of the MLP (multi-layer
+    # perceptron).
+    hidden_size: 256
+    # Number of residual blocks (originally 32):
+    n_blocks: 32
+    scale_factor: 4

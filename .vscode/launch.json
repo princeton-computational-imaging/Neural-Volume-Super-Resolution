@@ -25,7 +25,30 @@
             "program": "train_nerf.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args":["--config","config/lego_planes.yml"]
+            "args":["--config","config/planes.yml"]
+        },
+        {
+            "name": "train planes SR",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/planes_SR.yml"
+            ]
+        },
+        {
+            "name": "resume planes SR",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/planes_SR.yml",
+                "--load-checkpoint","resume", //"/tigress/yb6751/projects/NeuralMFSR/logs/SR_dirs_encoding_L4C256W0001_0"
+            ]
         },
         {
             "name": "train NeRF",

@@ -2,6 +2,7 @@ from typing import Optional
 import numpy as np
 import math
 import torch
+from tqdm import tqdm
 # import torchsearchsorted
 
 
@@ -81,13 +82,17 @@ def cumprod_exclusive(tensor: torch.Tensor) -> torch.Tensor:
 
     return cumprod
 
-def calc_scene_box(scene_geometry):
+def calc_scene_box(scene_geometry,including_dirs):
+    FULL_AZ_RANGE = True # Manually set azimuth range to be [-pi,pi]
+    FULL_EL_RANGE = [-np.pi/2,np.pi/2] #None
     num_frames = len(scene_geometry['camera_poses'])
-    box = [[np.finfo(np.float).max,np.finfo(np.float).min] for i in range(3)]
-    for f_num in range(num_frames):
+    box = [[np.finfo(np.float).max,np.finfo(np.float).min] for i in range(3+2*including_dirs)]
+    for f_num in tqdm(range(num_frames)):
         origin = scene_geometry['camera_poses'][f_num][:3, -1]
         for W in [0,scene_geometry['W'][f_num]-1]:
             for H in [0,scene_geometry['H'][f_num]-1]:
+        # for W in range(scene_geometry['W'][f_num]-1):
+        #     for H in range(scene_geometry['H'][f_num]-1):
                 coord = np.array([\
                     (W-scene_geometry['W'][f_num]/2)/scene_geometry['f'][f_num],
                     -(H-scene_geometry['H'][f_num]/2)/scene_geometry['f'][f_num],
@@ -97,30 +102,23 @@ def calc_scene_box(scene_geometry):
                 dir = np.sum(coord * scene_geometry['camera_poses'][f_num][:3, :3], axis=-1)
                 for dist in [scene_geometry['near'],scene_geometry['far']]:
                     point = origin+dist*dir
-                    for d in range(len(box)):
+                    for d in range(3):
                         box[d][0] = min(box[d][0],point[d])
                         box[d][1] = max(box[d][1],point[d])
+                if including_dirs and not (FULL_AZ_RANGE and FULL_EL_RANGE):
+                    az_el = cart2az_el(torch.tensor(dir)).numpy()
+                    for d in range(int(FULL_AZ_RANGE),2):
+                        box[3+d][0] = min(box[3+d][0],az_el[d])
+                        box[3+d][1] = max(box[3+d][1],az_el[d])
+    if including_dirs:
+        if FULL_AZ_RANGE:   box[3] = [-np.pi,np.pi]
+        if FULL_EL_RANGE:   box[4] = [-np.pi/2,np.pi/2]
     return torch.from_numpy(np.array(box).transpose(1,0))
-    # [[-2.1317239184492527, 2.1951201276283916], [-2.555519710969305, 2.162330715608927], [-2.6404644143970133, 1.4706729402285836]]
 
-def cart2el_az(dirs):
+def cart2az_el(dirs):
     el = torch.atan2(dirs[...,2],torch.sqrt(torch.sum(dirs[...,:2]**2,-1)))
     az = torch.atan2(dirs[...,1],dirs[...,0])
     return torch.stack([az,el],-1)
-
-# def cart2sph(x, y, z):
-#     hxy = np.hypot(x, y)
-#     r = np.hypot(hxy, z)
-#     el = np.arctan2(z, hxy)
-#     az = np.arctan2(y, x)
-#     return az, el, r
-
-# def sph2cart(az, el, r):
-#     rcos_theta = r * np.cos(el)
-#     x = rcos_theta * np.cos(az)
-#     y = rcos_theta * np.sin(az)
-#     z = r * np.sin(el)
-#     return x, y, z
 
 def get_ray_bundle(
     height: int, width: int, focal_length: float, tform_cam2world: torch.Tensor,padding_size: int=0

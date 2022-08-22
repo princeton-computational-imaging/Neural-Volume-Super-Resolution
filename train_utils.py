@@ -9,6 +9,7 @@ import mip
 import numpy as np
 from torch.nn.functional import pad
 import os
+import models
 
 def run_network(network_fn, pts, ray_batch, chunksize, embed_fn,\
      embeddirs_fn,return_input_grads=False,mip_nerf=False,z_vals=None,ds_factor=1,):
@@ -168,7 +169,6 @@ def predict_and_render_radiance(
             model_fine,
             pts,
             ray_batch,
-            # getattr(options.nerf, mode).chunksize//(1 if SR_model is None else 100),
             getattr(options.nerf, mode).chunksize,
             encode_position_fn,
             encode_direction_fn,
@@ -418,7 +418,7 @@ def eval_nerf(
         mode="validation",
         encode_position_fn=encode_position_fn,
         encode_direction_fn=encode_direction_fn,
-        SR_model=SR_model,
+        SR_model=None if isinstance(model_coarse,models.TwoDimPlanesModel) else SR_model,
         ds_factor=ds_factor,
         spatial_margin=spatial_margin,
     )
