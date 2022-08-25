@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: planes_SepDecCF_Viewdir_Res32BicubicLrgb2Lden2_LR # debug-lego200 
+  id: planes_SepDecCF_Viewdir_Res32_64Lrgb2Lden2_LR2_4_noAlign # debug-lego200 
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /tigress/yb6751/projects/NeuralMFSR/logs
   # Seed for random number generators (for repeatability).
@@ -18,7 +18,8 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
+  root: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic
+  dir: lego
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -26,7 +27,7 @@ dataset:
   # at half the original resolution of 800 x 800, to save space.
   half_res: True
   # Stride (include one per "testskip" images in the dataset).
-  downsampling_factor: 4 # downsampling factor for the downsampling experiment
+  downsampling_factor: [2,4] # downsampling factor for the downsampling experiment
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
@@ -43,7 +44,7 @@ models:
     # Name of the torch.nn.Module class that implements the model.
     type: TwoDimPlanesModel
     # Plane side size:
-    plane_resolutions: 32
+    plane_resolutions: [64,32]
     # Planes interpolation method (default to bilinear):
     plane_interp: bilinear # bicubic # bilinear
     # Number of layers in the density decoder.
@@ -52,6 +53,8 @@ models:
     dec_rgb_layers: 2
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
+    # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
+    align_corners: False
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
     # hidden_size: 256
