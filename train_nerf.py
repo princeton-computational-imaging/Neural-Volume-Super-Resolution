@@ -2,25 +2,23 @@ import argparse
 import glob
 import os
 import time
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 import numpy as np
 import torch
-import torchvision
-import yaml
+# import yaml
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 
 import models
-from cfgnode import CfgNode
+# from cfgnode import CfgNode
 from load_blender import load_blender_data
-from nerf_helpers import (get_ray_bundle, img2mse, meshgrid_xy, mse2psnr,
-                          positional_encoding,chunksize_to_2D)
+from nerf_helpers import * #(get_ray_bundle, img2mse, meshgrid_xy, mse2psnr,
+                        #   positional_encoding,chunksize_to_2D,get_config,arange_ims,assert_list)
 from train_utils import eval_nerf, run_one_iter_of_nerf,find_latest_checkpoint
 from mip import IntegratedPositionalEncoding
 from deepdiff import DeepDiff
 from copy import deepcopy
-import cv2
 
 def main():
 
@@ -50,18 +48,42 @@ def main():
         config_file = os.path.join(configargs.resume,"config.yml")
     else:
         config_file = configargs.config
-    with open(config_file, "r") as f:
-        cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
-        cfg = CfgNode(cfg_dict)
+    cfg = get_config(config_file)
     print("Running experiment %s"%(cfg.experiment.id))
     SR_experiment = None
     if "super_resolution" in cfg:
         SR_experiment = "model" if "model" in cfg.super_resolution.keys() else "refine"
+    planes_model = cfg.models.coarse.type=="TwoDimPlanesModel"
+    downsampling_factor = cfg.dataset.get("downsampling_factor",[1])
+    downsampling_factor = assert_list(downsampling_factor)
+    # if not isinstance(downsampling_factor,list): downsampling_factor = [downsampling_factor]
+    if planes_model:
+        plane_resolutions = assert_list(getattr(cfg.models.coarse,'plane_resolutions',[512]))
+        # if not isinstance(plane_resolutions,list):  plane_resolutions = [plane_resolutions]
+        assert len(downsampling_factor)==1 or len(downsampling_factor)==len(plane_resolutions)
+    internal_SR,record_fine = False,True
     if SR_experiment:
+        assert not hasattr(cfg.dataset,"downsampling_factor")
         LR_model_folder = cfg.models.path
         if os.path.isfile(LR_model_folder):   LR_model_folder = "/".join(LR_model_folder.split("/")[:-1])
-        with open(os.path.join(LR_model_folder,"config.yml"), "r") as f:
-            cfg.super_resolution.ds_factor = CfgNode(yaml.load(f, Loader=yaml.FullLoader)).dataset.downsampling_factor
+        LR_model_ds_factor = get_config(os.path.join(LR_model_folder,"config.yml")).dataset.downsampling_factor
+        # downsampling_factor = 
+        internal_SR = isinstance(LR_model_ds_factor,list) and len(LR_model_ds_factor)>1
+        # internal_SR = isinstance(cfg.super_resolution.ds_factor,list) and len(cfg.super_resolution.ds_factor)>1
+        if internal_SR:
+            assert not isinstance(cfg.dataset.dir,list) or len(cfg.dataset.dir)==1
+            cfg.super_resolution.ds_factor = max(LR_model_ds_factor)//min(LR_model_ds_factor)
+            downsampling_factor = [cfg.super_resolution.ds_factor] # In this case the SR model should train to reconstruct images downsampled using the same factor as the SR factor. 
+        else:
+            sf_config = getattr(cfg.super_resolution.model,'scale_factor','linear')
+            assert sf_config in ['linear','sqrt','one']
+            if sf_config=='one':
+                cfg.super_resolution.ds_factor = 1
+            elif sf_config=='linear':
+                cfg.super_resolution.ds_factor = LR_model_ds_factor
+            else:
+                cfg.super_resolution.ds_factor = int(np.sqrt(LR_model_ds_factor))
+            # downsampling_factor = assert_list(downsampling_factor)
         if SR_experiment=="model":  consistent_SR_density = cfg.super_resolution.model.get("consistent_density",False)
     # # (Optional:) enable this to track autograd issues when debugging
     # torch.autograd.set_detect_anomaly(True)
@@ -79,24 +101,55 @@ def main():
         USE_CACHED_DATASET = True
     else:
         # Load dataset
-        images, poses, render_poses, hwfDs, i_split = load_blender_data(
-            cfg.dataset.basedir,
-            half_res=cfg.dataset.half_res,
-            testskip=cfg.dataset.testskip,
-            downsampling_factor=cfg.dataset.get("downsampling_factor",1),
-            cfg=cfg
-        )
+
+        train_dirs = assert_list(cfg.dataset.dir.train)
+        val_only_dirs = assert_list(getattr(cfg.dataset.dir,'val',[]))
+        basedirs = [os.path.join(cfg.dataset.root,d) for d in train_dirs+val_only_dirs]
+        images, poses, render_poses, hwfDs, i_split,scene_ids = [],torch.zeros([0,4,4]),[],[[],[],[],[]],[np.array([]).astype(np.int64) for i in range(3)],[]
+        scene_id,scene_id_plane_resolution,val_only_scene_ids = -1,{},[]
+        if planes_model and internal_SR:
+            scene_id_plane_resolution = {0:max(plane_resolutions),1:min(plane_resolutions)}
+        for basedir in basedirs:
+            for ds_num,factor in enumerate(downsampling_factor):
+                scene_id += 1
+                val_only = basedir.split('/')[-1] not in train_dirs
+                if val_only:    val_only_scene_ids.append(scene_id)
+                if planes_model and not internal_SR:
+                    scene_id_plane_resolution[scene_id] = plane_resolutions[min(len(plane_resolutions)-1,ds_num)]
+                cur_images, cur_poses, cur_render_poses, cur_hwfDs, cur_i_split = load_blender_data(
+                    basedir,
+                    half_res=cfg.dataset.half_res,
+                    testskip=cfg.dataset.testskip,
+                    downsampling_factor=cfg.super_resolution.ds_factor if internal_SR else factor,
+                    val_downsampling_factor=1 if internal_SR else None,
+                    cfg=cfg,
+                    val_only=val_only,
+                )
+                for i in range(len(i_split)):
+                    i_split[i] = np.concatenate((i_split[i],cur_i_split[i]+len(images)))
+                images += cur_images
+                poses = torch.cat((poses,cur_poses),0)
+                for i in range(len(hwfDs)):
+                    hwfDs[i] += cur_hwfDs[i]
+                scene_ids += [scene_id for i in cur_images]
+        if internal_SR: # Speicifically handling this case, where there is only one scene, and we are currently 
+            # training our SR model on downsampled training images, while evaluating it on full size 
+            # validation images.
+            assert scene_id==0
+            scene_ids = [0 if i in i_split[1] else 1 for i in range(len(scene_ids))]
         i_train, i_val, i_test = i_split
+        i_val = defaultdict(list)
+        for ind in i_split[1]:
+            i_val[scene_ids[ind]].append(ind)
         SR_HR_im_inds,val_ims_dict = None,None
         if isinstance(i_train,tuple):
+            raise Exception('Revisit after enabling multi-scene.')
             SR_HR_im_inds = i_train[0]
             SR_LR_im_inds = i_train[1]
             val_ims_dict = i_val[1]
             i_val = i_val[0]
 
         H, W, focal,ds_factor = hwfDs
-        # H, W = int(H), int(W)
-        # hwf = [H, W, focal]
 
     # Seed experiment for repeatability
     seed = cfg.experiment.randomseed
@@ -131,21 +184,19 @@ def main():
                 include_input=cfg.models.coarse.include_input_dir,
             )
     else:
-        # encode_position_fn = lambda: None
-        # encode_direction_fn = lambda: None
         encode_position_fn = None
         encode_direction_fn = None
     if getattr(cfg.models.coarse,"use_viewdirs",False) or getattr(cfg.models.fine,"use_viewdirs",False):    assert cfg.nerf.use_viewdirs
-    planes_model = cfg.models.coarse.type=="TwoDimPlanesModel"
     if planes_model:
         model_coarse = models.TwoDimPlanesModel(
             use_viewdirs=cfg.models.coarse.use_viewdirs,
-            plane_resolutions=getattr(cfg.models.coarse,'plane_resolutions',512),
+            scene_id_plane_resolution=scene_id_plane_resolution,
             scene_geometry = {'camera_poses':poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':H,'W':W,'f':focal},
             dec_density_layers=getattr(cfg.models.coarse,'dec_density_layers',4),
             dec_rgb_layers=getattr(cfg.models.coarse,'dec_rgb_layers',4),
             rgb_dec_input=getattr(cfg.models.coarse,'rgb_dec_input','projections'),
             plane_interp=getattr(cfg.models.coarse,'plane_interp','bilinear'),
+            align_corners=getattr(cfg.models.coarse,'align_corners',True),
         )
         
     else:
@@ -160,8 +211,6 @@ def main():
             include_input_dir=cfg.models.coarse.include_input_dir,
             use_viewdirs=cfg.models.coarse.use_viewdirs,
         )
-    def num_parameters(model):
-        return sum([p.numel() for p in model.parameters()])
 
     print("Coarse model: %d parameters"%num_parameters(model_coarse))
     model_coarse.to(device)
@@ -178,13 +227,14 @@ def main():
                         setattr(cfg.models.fine,k,getattr(cfg.models.coarse,k))
                 model_fine = models.TwoDimPlanesModel(
                     use_viewdirs=cfg.models.fine.use_viewdirs,
-                    plane_resolutions=getattr(cfg.models.fine,'plane_resolutions',512),
+                    scene_id_plane_resolution=scene_id_plane_resolution,
                     scene_geometry = {'camera_poses':poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':H,'W':W,'f':focal},
                     dec_density_layers=getattr(cfg.models.fine,'dec_density_layers',4),
                     dec_rgb_layers=getattr(cfg.models.fine,'dec_rgb_layers',4),
                     rgb_dec_input=getattr(cfg.models.coarse,'rgb_dec_input','projections'),
                     planes=model_coarse.planes_ if getattr(cfg.models.fine,'use_coarse_planes',False) else None,
                     plane_interp=getattr(cfg.models.fine,'plane_interp','bilinear'),
+                    align_corners=getattr(cfg.models.fine,'align_corners',True),
                 )
             else:
                 model_fine = getattr(models, cfg.models.fine.type)(
@@ -199,10 +249,12 @@ def main():
 
     if SR_experiment=="model":
         if cfg.super_resolution.model.type=='EDSR':
+            plane_channels = list(model_fine.planes_.values())[0].shape[1]
             SR_model = getattr(models, cfg.super_resolution.model.type)(
-                scale_factor=cfg.super_resolution.model.scale_factor,
-                in_channels=model_fine.planes_[0].shape[1],
-                out_channels=model_fine.planes_[0].shape[1],
+                # scale_factor=cfg.super_resolution.model.scale_factor,
+                scale_factor=cfg.super_resolution.ds_factor,
+                in_channels=plane_channels,
+                out_channels=plane_channels,
                 hidden_size=cfg.super_resolution.model.hidden_size,
                 plane_interp=model_fine.plane_interp,
                 n_blocks=cfg.super_resolution.model.n_blocks,
@@ -249,22 +301,22 @@ def main():
                 (num_parameters(SR_model),SR_input_dim[0],SR_input_dim[1]))
         SR_model.to(device)
         trainable_parameters = list(SR_model.parameters())
-        # SR_HR_im_inds = cfg.super_resolution.get("dataset",{}).get("train_im_inds",None)
-        # if SR_HR_im_inds is not None:
-        #     if not isinstance(SR_HR_im_inds,list):
-        #         pass
-        #     SR_LR_im_inds = [i for i in i_train if i not in SR_HR_im_inds]
     else:
         # Initialize optimizer.
-        # SR_HR_im_inds = None
         trainable_parameters = list(model_coarse.parameters())
         if model_fine is not None:
-            trainable_parameters += list(model_fine.parameters())
+            if planes_model:
+                if cfg.models.fine.type!="use_same":
+                    if getattr(cfg.models.fine,'use_coarse_planes',False):
+                        trainable_parameters += [v for k,v in model_fine.named_parameters() if 'planes_.' not in k]
+                    else:
+                        trainable_parameters += list(model_fine.parameters())
+            else: 
+                trainable_parameters += list(model_fine.parameters())
         SR_model = None
     optimizer = getattr(torch.optim, cfg.optimizer.type)(
         trainable_parameters, lr=cfg.optimizer.lr
     )
-
     # Setup logging.
     logdir = os.path.join(cfg.experiment.logdir, cfg.experiment.id)
     os.makedirs(logdir, exist_ok=True)
@@ -278,6 +330,7 @@ def main():
     if configargs.load_checkpoint=="resume":  configargs.load_checkpoint = logdir
     if SR_experiment or os.path.exists(configargs.load_checkpoint):
         if SR_experiment:#=="model" or not os.path.exists(configargs.load_checkpoint):
+            saved_rgb_fine = [{} for i in train_dirs+val_only_dirs]
             checkpoint = find_latest_checkpoint(cfg.models.path)
             print("Using LR model %s"%(checkpoint))
             if SR_experiment=="model" and os.path.exists(configargs.load_checkpoint):
@@ -285,20 +338,34 @@ def main():
                 SR_model_checkpoint = os.path.join(configargs.load_checkpoint,sorted([f for f in os.listdir(configargs.load_checkpoint) if "checkpoint" in f and f[-5:]==".ckpt"],key=lambda x:int(x[len("checkpoint"):-5]))[-1])
                 start_i = int(SR_model_checkpoint.split('/')[-1][len('checkpoint'):-len('.ckpt')])+1
                 print("Resuming training on model %s"%(SR_model_checkpoint))
-                with open(os.path.join(configargs.load_checkpoint,"config.yml"),"r") as f:
-                    saved_config_dict = CfgNode(yaml.load(f, Loader=yaml.FullLoader))
-                    config_diffs = DeepDiff(saved_config_dict,cfg)
-                    for diff in [config_diffs[ch_type] for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed'] if ch_type in config_diffs]:
-                        print(diff)
+                # with open(os.path.join(configargs.load_checkpoint,"config.yml"),"r") as f:
+                #     saved_config_dict = CfgNode(yaml.load(f, Loader=yaml.FullLoader))
+                saved_config_dict = get_config(os.path.join(configargs.load_checkpoint,"config.yml"))
+                config_diffs = DeepDiff(saved_config_dict,cfg)
+                for diff in [config_diffs[ch_type] for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed'] if ch_type in config_diffs]:
+                    print(diff)
 
                 SR_model.load_state_dict(torch.load(SR_model_checkpoint)["SR_model"])
         else:
             checkpoint = find_latest_checkpoint(configargs.load_checkpoint)
             start_i = int(checkpoint.split('/')[-1][len('checkpoint'):-len('.ckpt')])+1
             print("Resuming training on model %s"%(checkpoint))
+        checkpoint_config = get_config(os.path.join('/'.join(checkpoint.split('/')[:-1]),'config.yml'))
+        config_diffs = DeepDiff(checkpoint_config.models,cfg.models)
+        for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed']:
+            if ch_type not in config_diffs: continue
+            for diff in config_diffs[ch_type]:
+                if ch_type=='dictionary_item_added' and str(config_diffs[ch_type])=="[root['path']]":  continue
+                elif ch_type=='dictionary_item_removed' and "root['fine']" in str(config_diffs[ch_type]):   continue
+                raise Exception('Inconsistent model onfig')
+                print(ch_type,diff)
         checkpoint = torch.load(checkpoint)
         def update_saved_names(state_dict):
-            return OrderedDict([(k.replace('planes.','planes_.'),v) for k,v in state_dict.items()])
+            return state_dict
+            if any(['planes_.' in k and '.sc' not in k for k in state_dict.keys()]):
+                return OrderedDict([(k.replace('planes_.','planes_.sc0_res32_D'),v) for k,v in state_dict.items()])
+            else:
+                return OrderedDict([(k.replace('planes.','planes_.sc0_res32_D'),v) for k,v in state_dict.items()])
             
         model_coarse.load_state_dict(update_saved_names(checkpoint["model_coarse_state_dict"]))
         if checkpoint["model_fine_state_dict"]:
@@ -306,7 +373,7 @@ def main():
         if SR_experiment=="refine":
             LR_model_coarse = deepcopy(model_coarse)
             LR_model_fine = deepcopy(model_fine)
-            furthest_rgb_fine,closest_rgb_fine = None,None
+            furthest_rgb_fine,closest_rgb_fine, = [{} for i in train_dirs+val_only_dirs],[{} for i in train_dirs+val_only_dirs],
             if os.path.exists(configargs.load_checkpoint):
                 checkpoint = find_latest_checkpoint(configargs.load_checkpoint)
                 start_i = int(checkpoint.split('/')[-1][len('checkpoint'):-len('.ckpt')])+1
@@ -326,7 +393,6 @@ def main():
             model_coarse.assign_SR_model(SR_model)
         else:
             assert getattr(cfg.super_resolution.training,'loss','both')=='fine'
-        # if hasattr(cfg.models, "fine") and cfg.models.fine.type!="use_same":
         model_fine.assign_SR_model(SR_model)
 
     for iter in trange(start_i,cfg.experiment.train_iters):
@@ -364,19 +430,25 @@ def main():
                     )
                     target_ray_values = cache_dict["target"].to(device)
                 else:
-                    img_indecis,val_strings = [i_val[(iter//cfg.experiment.validate_every)%len(i_val)]],[""]
+                    val_ind = (iter//cfg.experiment.validate_every)%len(i_val[0])
+                    img_indecis = [v[val_ind] for v in i_val.values()]
+                    val_strings = ['eval_' if id in val_only_scene_ids else '' for id in range(max(scene_ids)+1)]
+                    # img_indecis,val_strings = [i_val[(iter//cfg.experiment.validate_every)%len(i_val)]],[""]
                     # img_indecis,val_strings = [np.random.choice(i_val)],[""]
                     if val_ims_dict is not None:
+                        raise Exception('Revisit after enabling multi-scene.')
                         img_indecis += [i_val[val_ims_dict["closest_val"]],i_val[val_ims_dict["furthest_val"]]]
                         val_strings += ["closest_","furthest_"]
                     # img_idx = 0
-                    for val_num,img_idx in enumerate(img_indecis):
+
+                    coarse_loss,fine_loss,loss,psnr,rgb_coarse,rgb_fine,rgb_SR,target_ray_values = defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list)
+                    for scene_id,img_idx in enumerate(img_indecis):
                         img_target = images[img_idx].to(device)
                         pose_target = poses[img_idx, :3, :4].to(device)
                         ray_origins, ray_directions = get_ray_bundle(
                             H[img_idx], W[img_idx], focal[img_idx], pose_target,padding_size=spatial_padding_size
                         )
-                        rgb_coarse, _, _, rgb_fine, _, _,rgb_SR,_,_ = eval_nerf(
+                        rgb_coarse_, _, _, rgb_fine_, _, _,rgb_SR_,_,_ = eval_nerf(
                             H[img_idx],
                             W[img_idx],
                             focal[img_idx],
@@ -389,18 +461,20 @@ def main():
                             encode_position_fn=encode_position_fn,
                             encode_direction_fn=encode_direction_fn,
                             SR_model=SR_model,
-                            ds_factor=ds_factor[img_idx],
+                            ds_factor_or_id=scene_ids[img_idx] if planes_model else ds_factor[img_idx],
                             spatial_margin=SR_model.receptive_field//2 if spatial_sampling else None
                         )
-                        target_ray_values = img_target
+                        target_ray_values[val_strings[scene_id]].append(img_target[...,:3])
                         if SR_experiment:
                             if SR_experiment=="refine" or planes_model:
-                                rgb_SR = 1*rgb_fine
-                                rgb_SR_coarse = 1*rgb_coarse
-                                if val_num==0 or (val_num==2 and furthest_rgb_fine is None) or (val_num==1 and closest_rgb_fine is None):
+                                rgb_SR_ = 1*rgb_fine_
+                                rgb_SR_coarse_ = 1*rgb_coarse_
+                                # if val_num==0 or (val_num==2 and furthest_rgb_fine is None) or (val_num==1 and closest_rgb_fine is None):
+                                if val_ind not in saved_rgb_fine[scene_id]:
+                                    record_fine = True
                                     model_coarse.skip_SR(True)
                                     model_fine.skip_SR(True)
-                                    rgb_coarse, _, _, rgb_fine, _, _,_,_,_ = eval_nerf(
+                                    rgb_coarse_, _, _, rgb_fine_, _, _,_,_,_ = eval_nerf(
                                         H[img_idx],
                                         W[img_idx],
                                         focal[img_idx],
@@ -413,57 +487,84 @@ def main():
                                         encode_position_fn=encode_position_fn,
                                         encode_direction_fn=encode_direction_fn,
                                         SR_model=SR_model,
-                                        ds_factor=ds_factor[img_idx],
+                                        ds_factor_or_id=scene_ids[img_idx] if planes_model else ds_factor[img_idx],
                                     )
                                     model_coarse.skip_SR(False)
                                     model_fine.skip_SR(False)
-                                    if val_num==1:  closest_rgb_fine = 1*rgb_fine.detach()
-                                    elif val_num==2:  furthest_rgb_fine = 1*rgb_fine.detach()
+                                    saved_rgb_fine[scene_id][val_ind] = 1*rgb_fine_.detach()
+                                    # if val_num==1:  closest_rgb_fine = 1*rgb_fine.detach()
+                                    # elif val_num==2:  furthest_rgb_fine = 1*rgb_fine.detach()
                                 else:
-                                    rgb_fine = 1*closest_rgb_fine if val_num==1 else 1*furthest_rgb_fine
-                            fine_loss = img2mse(rgb_fine[..., :3], target_ray_values[..., :3]).item()
-                            loss = img2mse(rgb_SR[..., :3], target_ray_values[..., :3])
-                            writer.add_image(
-                                "validation/%srgb_SR"%(val_strings[val_num]), cast_to_image(rgb_SR[..., :3],str(img_idx)),iter
-                            )
-                            if val_num==0:
-                                writer.add_scalar("validation/%sfine_loss"%(val_strings[val_num]), fine_loss, iter)
-                                writer.add_scalar("validation/%sfine_psnr"%(val_strings[val_num]), mse2psnr(fine_loss), iter)
+                                    # rgb_fine = 1*closest_rgb_fine if val_num==1 else 1*furthest_rgb_fine
+                                    record_fine = False
+                                    rgb_fine_ = 1*saved_rgb_fine[scene_id][val_ind]
+                            fine_loss[val_strings[scene_id]].append(img2mse(rgb_fine_[..., :3], img_target[..., :3]).item())
+                            loss[val_strings[scene_id]].append(img2mse(rgb_SR_[..., :3], img_target[..., :3]).item())
+                            # writer.add_image(
+                            #     "validation/%srgb_SR"%(val_strings[val_num]), cast_to_image(rgb_SR[..., :3],str(img_idx)),iter
+                            # )
+                            # if val_num==0:
+                            #     writer.add_scalar("validation/%sfine_loss"%(val_strings[val_num]), fine_loss, iter)
+                            #     writer.add_scalar("validation/%sfine_psnr"%(val_strings[val_num]), mse2psnr(fine_loss), iter)
                         else:
-                            coarse_loss = img2mse(rgb_coarse[..., :3], target_ray_values[..., :3])
-                            fine_loss = 0.0
+                            coarse_loss[val_strings[scene_id]].append(img2mse(rgb_coarse_[..., :3], img_target[..., :3]).item())
+                            fine_loss[val_strings[scene_id]].append(0.0)
                             if rgb_fine is not None:
-                                fine_loss = img2mse(rgb_fine[..., :3], target_ray_values[..., :3])
-                                writer.add_scalar("validation/%sfine_loss"%(val_strings[val_num]), fine_loss.item(), iter)
-                            loss = coarse_loss + fine_loss
-                            writer.add_scalar("validation/%scoarse_loss"%(val_strings[val_num]), coarse_loss.item(), iter)
-                            writer.add_image(
-                                "validation/%srgb_coarse"%(val_strings[val_num]), cast_to_image(rgb_coarse[..., :3],str(img_idx)),iter
-                            )
-                        psnr = mse2psnr(loss.item())
+                                fine_loss[-1] = img2mse(rgb_fine_[..., :3], img_target[..., :3]).item()
+                            loss[val_strings[scene_id]].append(coarse_loss[val_strings[scene_id]][-1] + fine_loss[val_strings[scene_id]][-1])
+                        rgb_coarse[val_strings[scene_id]].append(rgb_coarse_)
+                        rgb_fine[val_strings[scene_id]].append(rgb_fine_)
+                        rgb_SR[val_strings[scene_id]].append(rgb_SR_)
+                        psnr[val_strings[scene_id]].append(mse2psnr(loss[val_strings[scene_id]][-1]))
+                    for val_set in set(val_strings):
+                        font_scale = 4/downsampling_factor[0]
                         if SR_experiment:
-                            writer.add_scalar("validation/%sSR_psnr_gain"%(val_strings[val_num]), psnr-mse2psnr(fine_loss), iter)
-                        if val_num==0:
-                            writer.add_scalar("validation/%sloss"%(val_strings[val_num]), loss.item(), iter)
-                            writer.add_scalar("validation/%spsnr"%(val_strings[val_num]), psnr, iter)
-                        if rgb_fine is not None:
-                            if val_num==0 or iter==0:
-                                writer.add_image(
-                                    "validation/%srgb_fine"%(val_strings[val_num]), cast_to_image(rgb_fine[..., :3],str(img_idx)),iter
-                                )
-                        if val_num==0 or iter==0:
+                            writer.add_scalar("validation/%sSR_psnr_gain"%(val_set), np.mean([psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in range(len(psnr[val_set]))]), iter)
                             writer.add_image(
-                                "validation/%simg_target"%(val_strings[val_num]), cast_to_image(target_ray_values[..., :3],str(img_idx)),iter
+                                "validation/%srgb_SR"%(val_set), arange_ims(rgb_SR[val_set],str(val_ind),font_scale),iter
                             )
-                        if val_num==0:
-                            tqdm.write(
-                                "Validation loss: "
-                                + str(loss.item())
-                                + " Validation PSNR: "
-                                + str(psnr)
-                                + "Time: "
-                                + str(time.time() - start)
-                            )
+                            writer.add_scalar("validation/%sfine_loss"%(val_set), np.mean(fine_loss[val_set]), iter)
+                            writer.add_scalar("validation/%sfine_psnr"%(val_set), np.mean([mse2psnr(l) for l in fine_loss[val_set]]), iter)
+                        writer.add_scalar("validation/%sloss"%(val_set), np.mean(loss[val_set]), iter)
+                        writer.add_scalar("validation/%spsnr"%(val_set), np.mean(psnr[val_set]), iter)
+                        writer.add_scalar("validation/%scoarse_loss"%(val_set), np.mean(coarse_loss[val_set]), iter)
+                        if len(rgb_fine[val_set])>0:
+                            if record_fine:
+                                writer.add_scalar("validation/%sfine_loss"%(val_set), np.mean(fine_loss[val_set]), iter)
+                                writer.add_image(
+                                    "validation/%srgb_fine"%(val_set), arange_ims(rgb_fine[val_set],str(val_ind),font_scale),iter
+                                )
+                            # if val_num==0 or iter==0:
+                            #     writer.add_image(
+                            #         "validation/%srgb_fine"%(val_strings[val_num]), cast_to_image(rgb_fine[..., :3],str(img_idx)),iter
+                            #     )
+                        writer.add_image(
+                            "validation/%srgb_coarse"%(val_set), arange_ims(rgb_coarse[val_set],str(val_ind),font_scale),iter
+                        )
+                        writer.add_image(
+                            "validation/%simg_target"%(val_set), arange_ims(target_ray_values[val_set],str(val_ind),font_scale),iter
+                        )
+                        # if val_num==0 or iter==0:
+                            # writer.add_image(
+                            #     "validation/%simg_target"%(val_strings[val_num]), cast_to_image(target_ray_values[..., :3],str(img_idx)),iter
+                            # )
+                        tqdm.write(
+                            "%sValidation loss: "%(val_set)
+                            + str(np.mean(loss[val_set]))
+                            + " Validation PSNR: "
+                            + str(np.mean(psnr[val_set]))
+                            + "Time: "
+                            + str(time.time() - start)
+                        )
+                        # if val_num==0:
+                        #     tqdm.write(
+                        #         "Validation loss: "
+                        #         + str(loss.item())
+                        #         + " Validation PSNR: "
+                        #         + str(psnr)
+                        #         + "Time: "
+                        #         + str(time.time() - start)
+                        #     )
             
         # Training:
         if SR_experiment=="model":
@@ -560,7 +661,7 @@ def main():
                 encode_position_fn=encode_position_fn,
                 encode_direction_fn=encode_direction_fn,
                 SR_model=None if planes_model else SR_model,
-                ds_factor=ds_factor[img_idx],
+                ds_factor_or_id=scene_ids[img_idx] if planes_model else ds_factor[img_idx],
                 spatial_margin=SR_model.receptive_field//2 if spatial_sampling else None
             )
             target_ray_values = target_s
@@ -624,27 +725,6 @@ def main():
 
     print("Done!")
 
-
-def cast_to_image(tensor,img_text=None):
-    # Input tensor is (H, W, 3). Convert to (3, H, W).
-    tensor = tensor.permute(2, 0, 1)
-    # Conver to PIL Image and then np.array (output shape: (H, W, 3))
-    img = np.array(torchvision.transforms.ToPILImage()(tensor.detach().cpu()))
-    # Map back to shape (3, H, W), as tensorboard needs channels first.
-    img = np.moveaxis(img, [-1], [0])
-    if img_text is not None:
-        img = cv2.cv2.putText(
-            img.transpose(1,2,0),
-            img_text,
-            (0,15),
-            # (img.shape[1]-20*len(img_text),50),
-            cv2.FONT_HERSHEY_PLAIN,
-            fontScale=1,
-            color=[255,255,255],
-            thickness=1,
-        ).transpose(2,0,1)
-
-    return img
 
 
 if __name__ == "__main__":

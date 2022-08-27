@@ -1,3 +1,4 @@
+from genericpath import isfile
 import os
 from re import search
 import shutil
@@ -13,12 +14,14 @@ from deepdiff import DeepDiff
 # CONFIG_FILE = "config/lego_ds.yml"
 # CONFIG_FILE = "config/planes.yml"
 CONFIG_FILE = "config/planes_SR.yml"
+# CONFIG_FILE = "config/planes_multiScene.yml"
+# CONFIG_FILE = "config/planes_internal_SR.yml"
 
 # RESUME_TRAINING = 0
 RESUME_TRAINING = None
 
 CONDA_ENV = "/tigress/yb6751/envs/neural_sr"
-RUN_TIME = 40 # 20 # 10 # Hours
+RUN_TIME = 20 # 20 # 10 # Hours
 
 with open(CONFIG_FILE, "r") as f:
     cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
@@ -33,7 +36,11 @@ if RESUME_TRAINING is None:
 else:
     job_identifier = job_name+"_%d"%(RESUME_TRAINING)
     saved_models_folder = "/tigress/yb6751/projects/NeuralMFSR/logs/%s"%(job_identifier)
-    with open(os.path.join("slurm/code",job_identifier,"config.yml"), "r") as f:
+    assert os.path.isdir(saved_models_folder),"Cannot resume training, since folder %s does not exist."%(saved_models_folder)
+    # if os.path.isfile(os.path.join("slurm/code",job_identifier,"config.yml")):
+    # If a configuration file already exists, checking whether there are any differences with respect to the current confg used. It can happen that an old file does not exist if this is 
+    with open(os.path.join(saved_models_folder,"config.yml"), "r") as f:
+    # with open(os.path.join("slurm/code",job_identifier,"config.yml"), "r") as f:
         saved_config_dict = CfgNode(yaml.load(f, Loader=yaml.FullLoader))
     config_diffs = DeepDiff(saved_config_dict,cfg)
     diff_warnings = []
@@ -44,11 +51,11 @@ else:
         for diff in config_diffs[ch_type]:
             diff_warnings.append("%s: %s"%(ch_type,diff))
     if len(diff_warnings)>0: 
-        shutil.copyfile(os.path.join("slurm/code",job_identifier,"config.yml"),os.path.join("slurm/code",job_identifier,"config_old.yml"))
+        shutil.copyfile(os.path.join(saved_models_folder,"config.yml"),os.path.join("slurm/code",job_identifier,"config_old.yml"))
+        # shutil.copyfile(os.path.join("slurm/code",job_identifier,"config.yml"),os.path.join("slurm/code",job_identifier,"config_old.yml"))
         print("\n\n!!! WARNING: Differences in configurations file: !!!")
         for warn in diff_warnings:  print(warn)
         print("\n")
-    assert os.path.isdir(saved_models_folder),"Cannot resume training, since folder %s does not exist."%(saved_models_folder)
     print("Resuming training on job %s"%(job_identifier))
 
 for f in [f for f in os.listdir() if f[-3:]==".py"]:

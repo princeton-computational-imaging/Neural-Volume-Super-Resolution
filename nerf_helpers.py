@@ -3,18 +3,28 @@ import numpy as np
 import math
 import torch
 from tqdm import tqdm
+from cfgnode import CfgNode
+import yaml
+import cv2
+import torchvision
+
 # import torchsearchsorted
 
 
 def img2mse(img_src, img_tgt):
     return torch.nn.functional.mse_loss(img_src, img_tgt)
 
+def assert_list(input):
+    return input if isinstance(input,list) else [input]
 
 def mse2psnr(mse):
     # For numerical stability, avoid a zero mse loss.
     if mse == 0:
         mse = 1e-5
     return -10.0 * math.log10(mse)
+
+def num_parameters(model):
+    return sum([p.numel() for p in model.parameters()])
 
 def chunksize_to_2D(chunksize):
     return math.floor(math.sqrt(chunksize))
@@ -31,6 +41,50 @@ def get_minibatches(inputs: torch.Tensor, chunksize: Optional[int] = 1024 * 8,sp
             for i in range(spatial_margin,inputs.shape[0]-2*spatial_margin, chunksize) for j in range(spatial_margin,inputs.shape[1]-2*spatial_margin, chunksize)]
     else:
         return [inputs[i : i + chunksize] for i in range(0, inputs.shape[0], chunksize)]
+
+def get_config(config_path):
+    with open(config_path, "r") as f:
+        cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
+        return CfgNode(cfg_dict)
+
+def arange_ims(ims_tensor_list,text,fontScale=1):
+    num_cols = int(np.ceil(np.sqrt(len(ims_tensor_list))))
+    im_sides = [t.shape[0] for t in ims_tensor_list]
+    max_side = max(im_sides)
+    rows = []
+    for im_num,im in enumerate(ims_tensor_list):
+        if im_num%num_cols==0:
+            if im_num>0:    rows.append(np.concatenate(row,1))
+            row = []
+        row.append(cv2.resize(
+            cast_to_image(im,text if im_num==0 else None,fontScale).transpose(1,2,0),
+            dsize=(max_side,max_side),
+            interpolation=cv2.INTER_CUBIC))
+    row = np.concatenate(row,1)
+    rows.append(np.pad(row,((0,0),(0,num_cols*max_side-row.shape[1]),(0,0)),))
+    return np.concatenate(rows,0).transpose(2,0,1)
+
+def cast_to_image(tensor,img_text=None,fontScale=1):
+    # Input tensor is (H, W, 3). Convert to (3, H, W).
+    tensor = tensor.permute(2, 0, 1)
+    # Conver to PIL Image and then np.array (output shape: (H, W, 3))
+    img = np.array(torchvision.transforms.ToPILImage()(tensor.detach().cpu()))
+    # Map back to shape (3, H, W), as tensorboard needs channels first.
+    img = np.moveaxis(img, [-1], [0])
+    if img_text is not None:
+        img = cv2.cv2.putText(
+            img.transpose(1,2,0),
+            img_text,
+            (0,int(fontScale*15)),
+            # (img.shape[1]-20*len(img_text),50),
+            cv2.FONT_HERSHEY_PLAIN,
+            fontScale=fontScale,
+            color=[255,255,255],
+            thickness=int(np.ceil(np.sqrt(fontScale))),
+        ).transpose(2,0,1)
+
+    return img
+
 
 def spatial_batch_merge(batches_list,batch_shapes,im_shape):
     b_num = 0

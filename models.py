@@ -333,7 +333,7 @@ class TwoDimPlanesModel(nn.Module):
     def __init__(
         self,
         use_viewdirs,
-        plane_resolutions,
+        scene_id_plane_resolution,
         scene_geometry,
         dec_density_layers=4,
         dec_rgb_layers=4,
@@ -343,12 +343,14 @@ class TwoDimPlanesModel(nn.Module):
         rgb_dec_input='projections',
         planes=None,
         plane_interp='bilinear',
+        align_corners=True,
         track_planes_coverage=False,
     ):
         super(TwoDimPlanesModel, self).__init__()
-        self.model_id = torch.randint(high=1000000,size=()).item() # Setting an ID to be able to use a single SR model with multiple scene models, while saving on interpolation and evaluation times.
+        # self.ds_2_res = dict([(v,k) for k,v in plane_resolutions.items()])
         self.box_coords = calc_scene_box(scene_geometry=scene_geometry,including_dirs=use_viewdirs)
         self.use_viewdirs = use_viewdirs
+        self.align_corners = align_corners
         assert rgb_dec_input in ['sum','projections','features']
         self.rgb_dec_input = rgb_dec_input
         self.plane_interp = plane_interp
@@ -379,23 +381,39 @@ class TwoDimPlanesModel(nn.Module):
 
         self.relu = nn.functional.relu
         if planes is None:
-            self.planes_ = nn.ParameterList(
-                [nn.Parameter(self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,plane_resolutions,plane_resolutions]
-                )) for i in range(3+use_viewdirs)])
+            self.planes_ = nn.ParameterDict([
+                (self.plane_name(id,d),
+                nn.Parameter(self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,res,res])))
+                 for id,res in scene_id_plane_resolution.items() for d in range(3+use_viewdirs)])
+            # self.planes_ = [nn.ParameterList(
+            #     [nn.Parameter(self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,res,res]
+            #     )) for i in range(3+use_viewdirs)]) for res in plane_resolutions.keys()]
             if self.track_planes_coverage:
+                raise Exception("Should be adapted to support multiple plane resolutions.")
                 self.planes_coverage = torch.zeros([len(self.planes_),plane_resolutions,plane_resolutions,]).type(torch.bool)
         else:
             self.planes_ = planes
 
+    def plane_name(self,scene_id,dimension):
+        return "sc%s_D%d"%(scene_id,dimension)
+        
     def assign_SR_model(self,SR_model):
         self.SR_model = SR_model
-        self.SR_model.set_LR_planes([p.detach() for p in self.planes_],id=self.model_id)
+        for k,v in self.planes_.items():
+            self.SR_model.set_LR_planes(v.detach(),id=k,align_corners=self.align_corners)
+
+        # for id in self.model_ids:
+        #     self.SR_model.set_LR_planes([p.detach() for p in self.planes_[id]],id=id)
         self.skip_SR_ = False
 
+    def set_cur_scene_id(self,scene_id):
+        self.cur_id = scene_id
+
     def normalize_coords(self,coords):
+        EPSILON = 1e-5
         normalized_coords = 2*(coords-self.box_coords.type(coords.type())[:1])/\
             (self.box_coords[1:]-self.box_coords[:1]).type(coords.type())-1
-        assert normalized_coords.min()>=-1 and normalized_coords.max()<=1,"Sanity check"
+        assert normalized_coords.min()>=-1-EPSILON and normalized_coords.max()<=1+EPSILON,"Sanity check"
         return normalized_coords
 
     def grid2plane_inds(self,grid):
@@ -407,12 +425,13 @@ class TwoDimPlanesModel(nn.Module):
                 for c_func in [torch.ceil,torch.floor]:
                     self.planes_coverage[plane_ind,r_func(self.grid2plane_inds(grid[...,0])).type(torch.long),c_func(self.grid2plane_inds(grid[...,1])).type(torch.long)] = True
 
-    def planes(self,plane_num:int)->torch.tensor:
+    def planes(self,dim_num:int)->torch.tensor:
+        plane_name = self.plane_name(self.cur_id,dim_num)
         if hasattr(self,'SR_model') and not self.skip_SR_:
-            plane = self.SR_model((self.model_id,plane_num))
+            plane = self.SR_model(plane_name)
         else:
-            plane = self.planes_[plane_num]
-        # plane = self.planes_[plane_num]
+            plane = self.planes_[plane_name]#[self.cur_res][dim_num]
+        # plane = self.planes_[dim_num]
         # if hasattr(self,'SR_model') and not self.skip_SR_:
         #     plane = self.SR_model(plane)
         return plane
@@ -425,14 +444,26 @@ class TwoDimPlanesModel(nn.Module):
         for d in range(3): # (Currently not supporting viewdir input)
             grid = coords[:,[c for c in range(3) if c!=d]].reshape([1,coords.shape[0],1,2])
             self.update_planes_coverage(d,grid)
-            projections.append(nn.functional.grid_sample(input=self.planes(d),grid=grid,mode=self.plane_interp,align_corners=True))
+            projections.append(nn.functional.grid_sample(
+                    input=self.planes(d),
+                    grid=grid,
+                    mode=self.plane_interp,
+                    align_corners=self.align_corners,
+                    padding_mode='border',
+                ))
         projections = torch.sum(torch.stack(projections,0),0)
         return projections.squeeze(0).squeeze(-1).permute(1,0)
 
     def project_viewdir(self,dirs):
         grid = dirs.reshape([1,dirs.shape[0],1,2])
-        self.update_planes_coverage(-1,grid)
-        return nn.functional.grid_sample(input=self.planes(-1),grid=grid,mode=self.plane_interp,align_corners=True).squeeze(0).squeeze(-1).permute(1,0)
+        self.update_planes_coverage(3,grid)
+        return nn.functional.grid_sample(
+                input=self.planes(3),
+                grid=grid,
+                mode=self.plane_interp,
+                align_corners=self.align_corners,
+                padding_mode='border',
+            ).squeeze(0).squeeze(-1).permute(1,0)
 
 
     def forward(self, x):
@@ -444,9 +475,6 @@ class TwoDimPlanesModel(nn.Module):
         projected_xyz = self.project_xyz(x[..., : 3])
         if self.use_viewdirs:
             projected_views = self.project_viewdir(x[...,3:])
-        #     xyz, view = x[..., : 3], x[..., 3 :]
-        # else:
-        #     xyz = x
 
         # Projecting and summing
         x = 1*projected_xyz
@@ -457,7 +485,6 @@ class TwoDimPlanesModel(nn.Module):
         if self.rgb_dec_input in ['sum','features']:
             x_rgb = self.fc_feat(x)
 
-        # x_rgb = self.project_xyz(torch.cat([xyz]+([view] if self.use_viewdirs else []),1))
         if self.rgb_dec_input in ['sum','projections']:
             x_rgb = x_rgb+projected_xyz
 
@@ -472,16 +499,6 @@ class TwoDimPlanesModel(nn.Module):
 
 
 # EDSR code taken and modified from https://github.com/twtygqyy/pytorch-edsr/blob/master/edsr.py
-# class MeanShift(nn.Conv2d):
-#     def __init__(self, rgb_mean, sign):
-#         super(MeanShift, self).__init__(3, 3, kernel_size=1)
-#         self.weight.data = torch.eye(3).view(3, 3, 1, 1)
-#         self.bias.data = float(sign) * torch.Tensor(rgb_mean)
-
-#         # Freeze the MeanShift layer
-#         for params in self.parameters():
-#             params.requires_grad = False
-
 class _Residual_Block(nn.Module): 
     def __init__(self,hidden_size):
         super(_Residual_Block, self).__init__()
@@ -535,7 +552,7 @@ class EDSR(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-        self.LR_planes,self.residual_planes,self.SR_planes = {},{},{}
+        self.LR_planes,self.residual_planes,self.SR_planes,self.SR_updated = {},{},{},{}
 
     def make_layer(self, block,args, num_of_layer):
         layers = []
@@ -543,15 +560,17 @@ class EDSR(nn.Module):
             layers.append(block(**args))
         return nn.Sequential(*layers)
 
-    def set_LR_planes(self,planes,id):
-        self.LR_planes[id] = planes
-        self.residual_planes[id] = [torch.nn.functional.interpolate(p,scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=True) for p in planes]
+    def set_LR_planes(self,plane,id,align_corners):
+        assert id not in self.LR_planes,"Plane ID already exists."
+        self.LR_planes[id] = plane
+        self.residual_planes[id] = torch.nn.functional.interpolate(plane,scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=align_corners)
         self.SR_planes[id] = 1*self.residual_planes[id]
+        self.SR_updated[id] = True
 
-    def forward(self, id_plane):
-        id,plane_num = id_plane
-        if self.training:
-            x = self.LR_planes[id][plane_num].detach()
+    def forward(self, plane_name):
+        if self.training or not self.SR_updated[plane_name]:
+            if self.training:   self.SR_updated = dict([(id,False) for id in self.SR_updated.keys()])
+            x = self.LR_planes[plane_name].detach()
         # def forward(self, x):
             # residual = x
             out = self.conv_input(x)
@@ -561,9 +580,11 @@ class EDSR(nn.Module):
             out = self.upscale(out)
             out = self.conv_output(out)
             # out = torch.add(out,torch.nn.functional.interpolate(residual,size=tuple(out.shape[2:]),mode=self.plane_interp,align_corners=True))
-            out = torch.add(out,self.residual_planes[id][plane_num])
-            self.SR_planes[id][plane_num] = out
+            out = torch.add(out,self.residual_planes[plane_name])
+            if not self.training:
+                self.SR_planes[plane_name] = out
+                self.SR_updated[plane_name] = True
         else:
-            out = self.SR_planes[id][plane_num]
+            out = self.SR_planes[plane_name]
         return out
  

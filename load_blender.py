@@ -37,13 +37,19 @@ def pose_spherical(theta, phi, radius):
     return c2w
 
 
-def load_blender_data(basedir, half_res=False, testskip=1, debug=False,downsampling_factor=1,cfg=None):
+def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
+    downsampling_factor=1,val_downsampling_factor=None,cfg=None,val_only=False):
     assert cfg is not None,"As of now, expecting to get the entire configuration"
     train_im_inds = None
     if cfg.get("super_resolution",None) is not None:
         train_im_inds = cfg.super_resolution.get("dataset",{}).get("train_im_inds",None)
+    # if not isinstance(downsampling_factor,list):    downsampling_factor = [downsampling_factor]
+    # assert (len(downsampling_factor)==1 and downsampling_factor[0]==1) or train_im_inds is None,"Should not use a global downsampling_factor when training an SR model, only when learning the LR representation"
     assert downsampling_factor==1 or train_im_inds is None,"Should not use a global downsampling_factor when training an SR model, only when learning the LR representation"
     if downsampling_factor!=1: assert half_res,"Assuming half_res is True"
+    # if any([d!=1 for d in downsampling_factor]): assert half_res,"Assuming half_res is True"
+    if val_downsampling_factor is None:
+        val_downsampling_factor = downsampling_factor
     splits = ["train", "val", "test"]
     metas = {}
     for s in splits:
@@ -57,6 +63,8 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,downsampl
     counts = [0]
     for s in splits:
         meta = metas[s]
+        if val_only and s=='train':
+            meta["frames"] = []
         imgs = []
         poses = []
         if s == "train" or testskip == 0:
@@ -70,23 +78,29 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,downsampl
         for f_num,frame in enumerate(meta["frames"][::skip]):
             fname = os.path.join(basedir, frame["file_path"] + ".png")
             img = (imageio.imread(fname)/ 255.0).astype(np.float32)
-            H.append(img.shape[0])
-            W.append(img.shape[1])
-            per_im_ds_factor = 1*downsampling_factor
+            # per_im_ds_factor = 1*downsampling_factor
+            if s=='val':
+                per_im_ds_factor = 1*val_downsampling_factor
+            else:
+            # per_im_ds_factor = np.random.choice(downsampling_factor,1)
+                per_im_ds_factor = 1*downsampling_factor
             if s=="train" and train_im_inds is not None and (f_num not in train_im_inds if isinstance(train_im_inds,list) else f_num>train_im_inds*total_split_frames):
                 per_im_ds_factor = cfg.super_resolution.ds_factor
                 ds_f_nums.append(f_num)
+            # for factor in per_im_ds_factor:
+            H.append(img.shape[0])
+            W.append(img.shape[1])
             if half_res:
                 H[-1] //= (2*per_im_ds_factor)
                 W[-1] //= (2*per_im_ds_factor)
-                img = torch.from_numpy(cv2.resize(img, dsize=(400//per_im_ds_factor, 400//per_im_ds_factor), interpolation=cv2.INTER_AREA))
+                resized_img = torch.from_numpy(cv2.resize(img, dsize=(400//per_im_ds_factor, 400//per_im_ds_factor), interpolation=cv2.INTER_AREA))
 
             focal.append(focal_over_W*W[-1])
             ds_factor.append(per_im_ds_factor)
-            imgs.append(img)
+            imgs.append(resized_img)
             poses.append(np.array(frame["transform_matrix"]))
         # imgs = (np.array(imgs) / 255.0).astype(np.float32)
-        poses = np.array(poses).astype(np.float32)
+        poses = np.array(poses).reshape([-1,4,4]).astype(np.float32)
         counts.append(counts[-1] + len(imgs))
         all_imgs.append(imgs)
         all_poses.append(poses)
@@ -129,18 +143,6 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,downsampl
         imgs = torch.stack(imgs, 0)
         poses = torch.from_numpy(poses)
         return imgs, poses, render_poses, [H, W, focal], i_split
-    if half_res and False:
-        # TODO: resize images using INTER_AREA (cv2)
-        H = H // (2*downsampling_factor)
-        W = W // (2*downsampling_factor)
-        focal = focal / (2.0*downsampling_factor)
-        imgs = [
-            torch.from_numpy(
-                cv2.resize(imgs[i], dsize=(400//downsampling_factor, 400//downsampling_factor), interpolation=cv2.INTER_AREA)
-            )
-            for i in range(imgs.shape[0])
-        ]
-        imgs = torch.stack(imgs, 0)
 
     poses = torch.from_numpy(poses)
 

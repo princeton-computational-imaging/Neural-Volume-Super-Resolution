@@ -139,3 +139,5 @@ slurm/scripts
 archived_logs
 *.png
 .vscode/settings.json
+src/ResizeRight4delete/*
+src/ResizeRight/__init__.py

@@ -12,6 +12,13 @@
             "console": "integratedTerminal",
         },
         {
+            "name": "clean checkpoint",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/clean_checkpoints.py",
+            "console": "integratedTerminal",
+        },
+        {
             "name": "model comparison",
             "type": "python",
             "request": "launch",
@@ -28,6 +35,36 @@
             "args":["--config","config/planes.yml"]
         },
         {
+            "name": "resume planes model",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/planes.yml",
+                "--load-checkpoint","resume", //"/tigress/yb6751/projects/NeuralMFSR/logs/SR_dirs_encoding_L4C256W0001_0"
+            ]
+        },
+        {
+            "name": "Dual-res planes model",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":["--config","config/planes_dualRes.yml"]
+        },
+        {
+            "name": "multi-scene planes model",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":["--config","config/planes_multiScene.yml"]
+        },
+        {
             "name": "train planes SR",
             "type": "python",
             "request": "launch",
@@ -36,6 +73,17 @@
             "justMyCode": true,
             "args":[
                 "--config","config/planes_SR.yml"
+            ]
+        },
+        {
+            "name": "planes internal SR",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/planes_internal_SR.yml"
             ]
         },
         {

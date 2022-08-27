@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SRonFine_32Blocks # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  id: SR6vs2Scenes_0B16C_OneSF # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /tigress/yb6751/projects/NeuralMFSR/logs
   # Seed for random number generators (for repeatability).
@@ -18,8 +18,10 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  # basedir: cache/nerf_synthetic/lego
-  basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
+  root: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic
+  dir:
+    train: ['chair','drums','ficus','hotdog','lego','materials',]
+    val: ['mic','ship']
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -38,7 +40,7 @@ dataset:
 
 # Model parameters.
 models:
-  path: /tigress/yb6751/projects/NeuralMFSR/logs/planes_SharedCF_NoViewdir_Res32Lrgb2Lden2_LR4_0
+  path: /tigress/yb6751/projects/NeuralMFSR/logs/planes_SepDecCF_Viewdir_Res32Lrgb2Lden2_LR4_noAlign_allScenes_0
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.
@@ -53,6 +55,8 @@ models:
     dec_rgb_layers: 2
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
+    # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
+    align_corners: False #True #False
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
     # hidden_size: 256
@@ -60,11 +64,11 @@ models:
     # won't take affect unless num_layers > skip_connect_every.
     # skip_connect_every: 3
     # Additionally use viewing directions as input.
-    use_viewdirs: False
+    use_viewdirs: True
   fine:
     # Name of the torch.nn.Module class that implements the model.
-    type: use_same
-    # type: TwoDimPlanesModel
+    # type: use_same
+    type: TwoDimPlanesModel
     # Plane side size:
     # plane_resolutions: 128
     # # Number of layers in the density decoder.
@@ -72,7 +76,7 @@ models:
     # # Number of layers in the rgb decoder.
     # dec_rgb_layers: 2
     # Share the planes with the coarse model:
-    # use_coarse_planes: True
+    use_coarse_planes: True
     # # Additionally use viewing directions as input.
     # use_viewdirs: False
 # Optimizer params.
@@ -85,7 +89,7 @@ optimizer:
 # NeRF parameters.
 nerf:
   # Use viewing directions as input, in addition to the X, Y, Z coordinates.
-  use_viewdirs: False
+  use_viewdirs: True
   # # Encoding function for position (X, Y, Z).
   # encode_position_fn: None
   # # Encoding function for ray direction (theta, phi).
@@ -143,7 +147,7 @@ super_resolution:
     # Number of layers in the model.
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
-    hidden_size: 256
+    hidden_size: 16 #256
     # Number of residual blocks (originally 32):
-    n_blocks: 32
-    scale_factor: 4
+    n_blocks: 0
+    scale_factor: one #one #sqrt #linear

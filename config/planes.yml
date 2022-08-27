@@ -1,13 +1,13 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: planes_SepDecCF_Viewdir_Res32BicubicLrgb2Lden2_LR # debug-lego200 
+  id: planes_SepDecCF_Viewdir_Res32Lrgb2Lden2_LR_0 # debug-lego200 
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /tigress/yb6751/projects/NeuralMFSR/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
-  train_iters: 750000
+  train_iters: 750050
   # Number of training iterations after which to validate.
   validate_every: 50
   # Number of training iterations after which to checkpoint.
@@ -18,7 +18,8 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
+  root: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic
+  dir: lego
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -52,6 +53,8 @@ models:
     dec_rgb_layers: 2
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
+    # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
+    align_corners: False
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
     # hidden_size: 256

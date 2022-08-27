@@ -12,12 +12,12 @@ import os
 import models
 
 def run_network(network_fn, pts, ray_batch, chunksize, embed_fn,\
-     embeddirs_fn,return_input_grads=False,mip_nerf=False,z_vals=None,ds_factor=1,):
+     embeddirs_fn,return_input_grads=False,mip_nerf=False,z_vals=None,ds_factor_or_id=1,):
 
     pts_shape = list(pts.shape)
     if mip_nerf:
         ro, rd, near, far, viewdir = torch.split(ray_batch,[3,3,1,1,3],dim=-1)
-        dx = ds_factor*0.00135
+        dx = ds_factor_or_id*0.00135
         # Get t_vals in world to aply mipnerf
         radii = dx * 2 / np.sqrt(12.)
         means,covs = mip.cast_rays(z_vals,ro,rd,radii,None)
@@ -42,6 +42,8 @@ def run_network(network_fn, pts, ray_batch, chunksize, embed_fn,\
     # chunksize = embedded.shape[0]
     batches = get_minibatches(embedded, chunksize=chunksize)
     preds = []
+    if isinstance(network_fn,models.TwoDimPlanesModel):
+        network_fn.set_cur_scene_id(ds_factor_or_id)
     for batch in batches:
         if return_input_grads:
             cur_pred,vjp_fn = vjp(network_fn,batch)
@@ -72,7 +74,7 @@ def predict_and_render_radiance(
     encode_position_fn=None,
     encode_direction_fn=None,
     SR_model=None,
-    ds_factor=1,
+    ds_factor_or_id=1,
     spatial_width=1,
 ):
     # TESTED
@@ -106,7 +108,10 @@ def predict_and_render_radiance(
         z_vals = lower + (upper - lower) * t_rand
     # pts -> (num_rays, N_samples, 3)
     pts = ro[..., None, :] + rd[..., None, :] * z_vals[..., :, None]
-
+    # planes_model = isinstance(model_coarse,models.TwoDimPlanesModel)
+    # if planes_model:
+    #     assert not mip_nerf,'Unsupported'
+    #     ds_factor *= 2 # In this scenario ds_factor is only used to pick the plane resolution, determined according to the image's downsampling factor. For super-resolution, the relevant plane resolution should fit the LR image DS.
     radiance_field = run_network(
         model_coarse,
         pts,
@@ -116,7 +121,7 @@ def predict_and_render_radiance(
         encode_direction_fn,
         mip_nerf=mip_nerf,
         z_vals=z_vals,
-        ds_factor=ds_factor,
+        ds_factor_or_id=ds_factor_or_id,
     )
 
     (
@@ -175,7 +180,7 @@ def predict_and_render_radiance(
             return_input_grads=num_grads_2_return,
             mip_nerf=mip_nerf,
             z_vals=z_vals,
-            ds_factor=ds_factor,
+            ds_factor_or_id=ds_factor_or_id,
             # return_input_grads={"order_by_outputs":options.super_resolution.model.get("consistent_density",False),\
             #     "num_grads_2_return":num_grads_2_return},
         )
@@ -281,7 +286,7 @@ def run_one_iter_of_nerf(
     encode_position_fn=None,
     encode_direction_fn=None,
     SR_model=None,
-    ds_factor=1,
+    ds_factor_or_id=1,
     spatial_margin=None,
 ):
     if encode_position_fn is None:
@@ -347,7 +352,7 @@ def run_one_iter_of_nerf(
             encode_position_fn=encode_position_fn,
             encode_direction_fn=encode_direction_fn,
             SR_model=SR_model,
-            ds_factor=ds_factor,
+            ds_factor_or_id=ds_factor_or_id,
             spatial_width=1 if (spatial_margin is None or spatial_margin==0) else batch_shapes[b_num][-1]
         )
         rgb_coarse.append(rc)
@@ -393,7 +398,7 @@ def eval_nerf(
     encode_position_fn=None,
     encode_direction_fn=None,
     SR_model=None,
-    ds_factor=1,
+    ds_factor_or_id=1,
     spatial_margin=None,
 ):
     r"""Evaluate a NeRF by synthesizing a full image (as opposed to train mode, where
@@ -419,7 +424,7 @@ def eval_nerf(
         encode_position_fn=encode_position_fn,
         encode_direction_fn=encode_direction_fn,
         SR_model=None if isinstance(model_coarse,models.TwoDimPlanesModel) else SR_model,
-        ds_factor=ds_factor,
+        ds_factor_or_id=ds_factor_or_id,
         spatial_margin=spatial_margin,
     )
     rgb_coarse = rgb_coarse.reshape([height,width,-1])

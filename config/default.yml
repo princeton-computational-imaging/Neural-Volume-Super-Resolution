@@ -18,7 +18,8 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  basedir: cache/nerf_example_data/nerf_synthetic/lego
+  root: cache/nerf_example_data/nerf_synthetic
+  dir: lego
   # Optionally, provide a path to the pre_cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache

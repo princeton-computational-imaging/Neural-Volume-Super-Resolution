@@ -19,7 +19,8 @@ experiment:
 dataset:
   # Base directory of dataset.
   # basedir: cache/nerf_synthetic/lego
-  basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
+  root: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic
+  dir: lego
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
