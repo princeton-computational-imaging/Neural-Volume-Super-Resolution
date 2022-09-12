@@ -18,12 +18,12 @@ CONFIG_FILE = "config/planes.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
 
-# RESUME_TRAINING = 0
-RESUME_TRAINING = None
+RESUME_TRAINING = 0
+# RESUME_TRAINING = None
 
-LOGS_FOLDER = "/tigress/yb6751/projects/NeuralMFSR/logs"
+LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 CONDA_ENV = "/tigress/yb6751/envs/neural_sr"
-RUN_TIME = 20 # 20 # 10 # Hours
+RUN_TIME = 13 # 20 # 10 # Hours
 
 with open(CONFIG_FILE, "r") as f:
     cfg_dict = yaml.load(f, Loader=yaml.FullLoader)

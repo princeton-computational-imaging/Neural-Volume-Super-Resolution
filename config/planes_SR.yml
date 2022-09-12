@@ -3,7 +3,7 @@ experiment:
   # Unique experiment identifier
   id: SR2vs2Scenes_10B64C_OneSF # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
-  logdir: /tigress/yb6751/projects/NeuralMFSR/logs
+  logdir: /tigress/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
@@ -18,7 +18,7 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  root: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic
+  root: /tigress/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   dir:
     # train: ['chair','drums','ficus','hotdog','lego','materials',]
     # train: ['chair','drums'] #,'ficus','hotdog','lego','materials',]
@@ -43,8 +43,8 @@ dataset:
 
 # Model parameters.
 models:
-  path: /tigress/yb6751/projects/NeuralMFSR/logs/planes_SepDecCF_Viewdir_Res32Lrgb2Lden2_LR4_noAlign_allScenes_1/checkpoint240000.ckpt
-  # path: /tigress/yb6751/projects/NeuralMFSR/logs/planes_SepDecCF_Viewdir_Res32Lrgb2Lden2_LR4_noAlign_allScenes_1/
+  path: /tigress/yb6751/projects/VolumetricEnhance/logs/planes_SepDecCF_Viewdir_Res32Lrgb2Lden2_LR4_noAlign_allScenes_1/checkpoint240000.ckpt
+  # path: /tigress/yb6751/projects/VolumetricEnhance/logs/planes_SepDecCF_Viewdir_Res32Lrgb2Lden2_LR4_noAlign_allScenes_1/
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.

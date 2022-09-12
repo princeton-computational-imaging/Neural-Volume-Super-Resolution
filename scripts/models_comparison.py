@@ -10,9 +10,9 @@ from train_utils import find_latest_checkpoint
 import torch
 import numpy as np
 
-config_file_LR = "/tigress/yb6751/projects/NeuralMFSR/logs/downsample_mip_0"
-config_file_refined = "/tigress/yb6751/projects/NeuralMFSR/logs/Refined_LR_mip_0"
-config_file_LR2 = "/tigress/yb6751/projects/NeuralMFSR/logs/downsample_mip_chair_0"
+config_file_LR = "/tigress/yb6751/projects/VolumetricEnhance/logs/downsample_mip_0"
+config_file_refined = "/tigress/yb6751/projects/VolumetricEnhance/logs/Refined_LR_mip_0"
+config_file_LR2 = "/tigress/yb6751/projects/VolumetricEnhance/logs/downsample_mip_chair_0"
 
 paths = [config_file_LR,config_file_refined,config_file_LR2]
 coarse_params,fine_params = [],[]

@@ -4,7 +4,7 @@ experiment:
   # id: downsample_mip_materials # debug-lego200
   id: HR_mip_lego # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
-  logdir: /tigress/yb6751/projects/NeuralMFSR/logs
+  logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
@@ -19,9 +19,9 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  # basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
-  # basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
-  root: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic
+  # basedir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic/lego
+  # basedir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic/lego
+  root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   dir: lego
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.

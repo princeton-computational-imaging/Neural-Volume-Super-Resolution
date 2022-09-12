@@ -3,7 +3,7 @@ experiment:
   # Unique experiment identifier
   id: SR_internal_SF2 # debug-lego200 
   # Experiment logs will be stored at "logdir"/"id"
-  logdir: /tigress/yb6751/projects/NeuralMFSR/logs
+  logdir: /scratch/gpfs/yb6751/6751/6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
@@ -18,7 +18,7 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  root: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic
+  root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   dir: lego
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
@@ -39,7 +39,7 @@ dataset:
 
 # Model parameters.
 models:
-  path: /tigress/yb6751/projects/NeuralMFSR/logs/planes_SepDecCF_Viewdir_Res64_32Lrgb2Lden2_LR2_4_noAlign_0
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_SepDecCF_Viewdir_Res64_32Lrgb2Lden2_LR2_4_noAlign_0
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.

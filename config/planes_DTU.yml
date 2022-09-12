@@ -3,7 +3,7 @@ experiment:
   # Unique experiment identifier
   id: DTU # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
-  logdir: /tigress/yb6751/projects/NeuralMFSR/logs
+  logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
@@ -19,8 +19,8 @@ experiment:
 dataset:
   # Base directory of dataset.
   type: DTU # DTU,synt
-  # root: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic
-  root: /tigress/yb6751/datasets/rs_dtu_4
+  # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
+  root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
     train: ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
   # Optionally, provide a path to the pre-cached dataset dir. This

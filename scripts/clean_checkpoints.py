@@ -2,7 +2,7 @@ import os
 from tensorboard.backend.event_processing import event_accumulator
 from re import search
 
-PARENT_FOLDER = '/tigress/yb6751/projects/NeuralMFSR/logs'
+PARENT_FOLDER = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs'
 KEYS = ['validation/eval_SR_psnr_gain','validation/SR_psnr_gain','validation/psnr']
 
 for folder in os.listdir(PARENT_FOLDER):

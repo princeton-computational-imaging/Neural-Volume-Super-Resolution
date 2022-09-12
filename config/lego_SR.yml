@@ -3,7 +3,7 @@ experiment:
   # Unique experiment identifier
   id: Refined_LR_mip # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
-  logdir: /tigress/yb6751/projects/NeuralMFSR/logs
+  logdir: /scratch/gpfs/yb6751/6751/6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
@@ -19,8 +19,8 @@ experiment:
 dataset:
   # Base directory of dataset.
   # basedir: cache/nerf_synthetic/lego
-  # basedir: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic/lego
-  root: /tigress/yb6751/projects/NeuralMFSR/cache/nerf_synthetic
+  # basedir: /scratch/gpfs/yb6751/6751/6751/projects/VolumetricEnhance/cache/nerf_synthetic/lego
+  root: /scratch/gpfs/yb6751/6751/projects/VolumetricEnhance/cache/nerf_synthetic
   dir: lego
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
@@ -40,9 +40,9 @@ dataset:
 
 # Model parameters.
 models:
-  path: /tigress/yb6751/projects/NeuralMFSR/logs/downsample_mip_0
-  # path: /tigress/yb6751/projects/NeuralMFSR/logs/downsample_oldmip_0
-  # path: /tigress/yb6751/projects/NeuralMFSR/logs/downsample_0
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/downsample_mip_0
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/downsample_oldmip_0
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/downsample_0
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.

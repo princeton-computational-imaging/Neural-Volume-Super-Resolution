@@ -30,7 +30,8 @@
             "type": "python",
             "request": "launch",
             "program": "train_nerf.py",
-            "console": "integratedTerminal",
+            "console":"integratedTerminal",
+            // "console": "integratedTerminal",
             "justMyCode": true,
             "args":["--config","config/planes.yml"]
         },
@@ -52,7 +53,7 @@
             "justMyCode": true,
             "args":[
                 "--config","config/planes_DTU.yml",
-                "--load-checkpoint","resume", //"/tigress/yb6751/projects/NeuralMFSR/logs/SR_dirs_encoding_L4C256W0001_0"
+                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
             ]
         },
         {
@@ -64,7 +65,7 @@
             "justMyCode": true,
             "args":[
                 "--config","config/planes.yml",
-                "--load-checkpoint","resume", //"/tigress/yb6751/projects/NeuralMFSR/logs/SR_dirs_encoding_L4C256W0001_0"
+                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
             ]
         },
         {
@@ -107,7 +108,7 @@
             "justMyCode": true,
             "args":[
                 "--config","config/planes_SR.yml",
-                "--load-checkpoint","resume", //"/tigress/yb6751/projects/NeuralMFSR/logs/SR_dirs_encoding_L4C256W0001_0"
+                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
             ]
         },
         {
@@ -147,8 +148,8 @@
             "args":
             [
                 // "--config","config/lego_SR.yml",
-                "--load-checkpoint","resume", //"/tigress/yb6751/projects/NeuralMFSR/logs/SR_dirs_encoding_L4C256W0001_0"
-                "--resume","/tigress/yb6751/projects/NeuralMFSR/logs/SR_spatial_model_0"
+                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
+                "--resume","/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_spatial_model_0"
             ]
         },
         {
@@ -161,8 +162,8 @@
             "args":
             [
                 "--config","config/lego.yml",
-                // "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/coarse_only/checkpoint05000.ckpt"
-                "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/coarse_and_fine"
+                // "--load-checkpoint","/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/coarse_only/checkpoint05000.ckpt"
+                "--load-checkpoint","/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/coarse_and_fine"
             ]
         },
         {
@@ -175,8 +176,8 @@
             "args":
             [
                 "--config","config/lego_ds.yml",
-                // "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/coarse_only/checkpoint05000.ckpt"
-                "--load-checkpoint","/tigress/yb6751/projects/NeuralMFSR/logs/downsample"
+                // "--load-checkpoint","/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/coarse_only/checkpoint05000.ckpt"
+                "--load-checkpoint","/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/downsample"
             ]
         },
     ]
