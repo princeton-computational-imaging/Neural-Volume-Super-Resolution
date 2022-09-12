@@ -3,7 +3,7 @@ experiment:
   # Unique experiment identifier
   id: planes_SepDecCF_Viewdir_Res64Lrgb4Lden4_allScenes # debug-lego200 
   # Experiment logs will be stored at "logdir"/"id"
-  logdir: /tigress/yb6751/projects/VolumetricEnhance/logs
+  logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
@@ -18,7 +18,7 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  root: /tigress/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
+  root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   dir:
     train: ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
   # dir: lego

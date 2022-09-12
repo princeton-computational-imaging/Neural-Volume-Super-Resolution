@@ -22,7 +22,7 @@ RESUME_TRAINING = 0
 # RESUME_TRAINING = None
 
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
-CONDA_ENV = "/tigress/yb6751/envs/neural_sr"
+CONDA_ENV = "volumetric_enhance"
 RUN_TIME = 13 # 20 # 10 # Hours
 
 with open(CONFIG_FILE, "r") as f:
