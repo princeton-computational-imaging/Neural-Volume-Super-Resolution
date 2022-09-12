@@ -35,6 +35,27 @@
             "args":["--config","config/planes.yml"]
         },
         {
+            "name": "train planes on DTU",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":["--config","config/planes_DTU.yml"]
+        },
+        {
+            "name": "resume planes DTU",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/planes_DTU.yml",
+                "--load-checkpoint","resume", //"/tigress/yb6751/projects/NeuralMFSR/logs/SR_dirs_encoding_L4C256W0001_0"
+            ]
+        },
+        {
             "name": "resume planes model",
             "type": "python",
             "request": "launch",
@@ -45,15 +66,6 @@
                 "--config","config/planes.yml",
                 "--load-checkpoint","resume", //"/tigress/yb6751/projects/NeuralMFSR/logs/SR_dirs_encoding_L4C256W0001_0"
             ]
-        },
-        {
-            "name": "Dual-res planes model",
-            "type": "python",
-            "request": "launch",
-            "program": "train_nerf.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args":["--config","config/planes_dualRes.yml"]
         },
         {
             "name": "multi-scene planes model",

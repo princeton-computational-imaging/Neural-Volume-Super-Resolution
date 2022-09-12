@@ -12,14 +12,16 @@ from deepdiff import DeepDiff
 # JOB_NAME = "temp"
 # CONFIG_FILE = "config/lego_SR.yml"
 # CONFIG_FILE = "config/lego_ds.yml"
-# CONFIG_FILE = "config/planes.yml"
-CONFIG_FILE = "config/planes_SR.yml"
+CONFIG_FILE = "config/planes.yml"
+# CONFIG_FILE = "config/planes_SR.yml"
+# CONFIG_FILE = "config/planes_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
 
 # RESUME_TRAINING = 0
 RESUME_TRAINING = None
 
+LOGS_FOLDER = "/tigress/yb6751/projects/NeuralMFSR/logs"
 CONDA_ENV = "/tigress/yb6751/envs/neural_sr"
 RUN_TIME = 20 # 20 # 10 # Hours
 
@@ -28,14 +30,17 @@ with open(CONFIG_FILE, "r") as f:
     cfg = CfgNode(cfg_dict)
     job_name = cfg.experiment.id
 
-existing_ids = [int(search("(?<="+job_name+"_)(\d)+(?=\.sh)",f).group(0)) for f in os.listdir("slurm/scripts") if search("^"+job_name+"_(\d)+.sh$",f) is not None]
+# existing_ids = [int(search("(?<="+job_name+"_)(\d)+(?=\.sh)",f).group(0)) for f in os.listdir("slurm/scripts") if search("^"+job_name+"_(\d)+.sh$",f) is not None]
+existing_ids = [int(search("(?<="+job_name+"_)(\d)+(?=$)",f).group(0)) for f in os.listdir(LOGS_FOLDER) if search("^"+job_name+"_(\d)+$",f) is not None]
 if RESUME_TRAINING is None:
     job_identifier = job_name+"_%d"%(0 if len(existing_ids)==0 else max(existing_ids)+1)
-    os.mkdir(os.path.join("slurm/code",job_identifier))
+    if not os.path.exists(os.path.join("slurm/code",job_identifier)):
+        os.mkdir(os.path.join("slurm/code",job_identifier))
+    os.mkdir(os.path.join(LOGS_FOLDER,job_identifier))
     print("Starting to train a new job: %s"%(job_identifier))
 else:
     job_identifier = job_name+"_%d"%(RESUME_TRAINING)
-    saved_models_folder = "/tigress/yb6751/projects/NeuralMFSR/logs/%s"%(job_identifier)
+    saved_models_folder = os.path.join(LOGS_FOLDER,job_identifier)
     assert os.path.isdir(saved_models_folder),"Cannot resume training, since folder %s does not exist."%(saved_models_folder)
     # if os.path.isfile(os.path.join("slurm/code",job_identifier,"config.yml")):
     # If a configuration file already exists, checking whether there are any differences with respect to the current confg used. It can happen that an old file does not exist if this is 
@@ -44,9 +49,10 @@ else:
         saved_config_dict = CfgNode(yaml.load(f, Loader=yaml.FullLoader))
     config_diffs = DeepDiff(saved_config_dict,cfg)
     diff_warnings = []
-    for k,v in config_diffs['values_changed'].items():
-        if k=="root['experiment']['id']":   continue
-        diff_warnings.append("Configuration values changed comapred to old file:\n %s: %s"%(k,v))
+    for ch_type in [c for c in ['values_changed','type_changes'] if c in config_diffs]:
+        for k,v in config_diffs[ch_type].items():
+            if k=="root['experiment']['id']":   continue
+            diff_warnings.append("(%s): Configuration values changed comapred to old file:\n %s: %s"%(ch_type,k,v))
     for ch_type in [c for c in ['dictionary_item_removed','dictionary_item_added'] if c in config_diffs]:
         for diff in config_diffs[ch_type]:
             diff_warnings.append("%s: %s"%(ch_type,diff))

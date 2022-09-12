@@ -1,7 +1,9 @@
+from collections import defaultdict,OrderedDict
 import torch
 import torch.nn as nn
-from nerf_helpers import calc_scene_box,cart2az_el
+from nerf_helpers import cart2az_el
 import math
+import numpy as np
 
 class VeryTinyNeRFModel(nn.Module):
     r"""Define a "very tiny" NeRF model comprising three fully connected layers.
@@ -334,44 +336,53 @@ class TwoDimPlanesModel(nn.Module):
         self,
         use_viewdirs,
         scene_id_plane_resolution,
-        scene_geometry,
+        # scene_geometry,
+        coords_normalization,
         dec_density_layers=4,
         dec_rgb_layers=4,
         dec_channels=128,
         # skip_connect_every=4,
         num_plane_channels=48,
         rgb_dec_input='projections',
+        proj_combination='sum',
         planes=None,
         plane_interp='bilinear',
         align_corners=True,
-        track_planes_coverage=False,
+        # track_planes_coverage=False,
     ):
+        self.N_PLANES_DENSITY = 3
+        self.INFER_ON_LEARNED = False
+
         super(TwoDimPlanesModel, self).__init__()
         # self.ds_2_res = dict([(v,k) for k,v in plane_resolutions.items()])
-        self.box_coords = calc_scene_box(scene_geometry=scene_geometry,including_dirs=use_viewdirs)
+        # self.box_coords = calc_scene_box(scene_geometry=scene_geometry,including_dirs=use_viewdirs)
+        self.box_coords = coords_normalization
         self.use_viewdirs = use_viewdirs
         self.align_corners = align_corners
-        assert rgb_dec_input in ['sum','projections','features']
+        assert rgb_dec_input in ['projections','features','projections_features']
         self.rgb_dec_input = rgb_dec_input
+        assert proj_combination in ['sum','concat']
+        self.proj_combination = proj_combination
         self.plane_interp = plane_interp
-        self.track_planes_coverage = track_planes_coverage
+        # self.track_planes_coverage = track_planes_coverage
         # Density (alpha) decoder:
         self.density_dec = nn.ModuleList()
+        self.debug = {'max_norm':defaultdict(lambda: torch.finfo(torch.float32).min),'min_norm':defaultdict(lambda: torch.finfo(torch.float32).max)}
         self.density_dec.append(
-            nn.Linear(num_plane_channels,dec_channels)
+            nn.Linear(num_plane_channels*(self.N_PLANES_DENSITY if proj_combination=='concat' else 1),dec_channels)
         )
         for layer_num in range(dec_density_layers-1):
             self.density_dec.append(
                 nn.Linear(dec_channels,dec_channels)
             )
         self.fc_alpha = nn.Linear(dec_channels,1)
-        if self.rgb_dec_input in ['sum','features']:
+        if 'features' in self.rgb_dec_input:
             self.fc_feat = nn.Linear(dec_channels,num_plane_channels)
 
         # RGB decoder:
         self.rgb_dec = nn.ModuleList()
         self.rgb_dec.append(
-            nn.Linear(num_plane_channels,dec_channels)
+            nn.Linear(num_plane_channels*(self.N_PLANES_DENSITY+1 if proj_combination=='concat' else 1),dec_channels)
         )
         for layer_num in range(dec_rgb_layers-1):
             self.rgb_dec.append(
@@ -380,19 +391,32 @@ class TwoDimPlanesModel(nn.Module):
         self.fc_rgb = nn.Linear(dec_channels,3)
 
         self.relu = nn.functional.relu
+        def create_plane(resolution):
+            return nn.Parameter(0.1*self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,resolution,resolution]))
+
         if planes is None:
             self.planes_ = nn.ParameterDict([
                 (self.plane_name(id,d),
-                nn.Parameter(self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,res,res])))
-                 for id,res in scene_id_plane_resolution.items() for d in range(3+use_viewdirs)])
-            # self.planes_ = [nn.ParameterList(
-            #     [nn.Parameter(self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,res,res]
-            #     )) for i in range(3+use_viewdirs)]) for res in plane_resolutions.keys()]
-            if self.track_planes_coverage:
-                raise Exception("Should be adapted to support multiple plane resolutions.")
-                self.planes_coverage = torch.zeros([len(self.planes_),plane_resolutions,plane_resolutions,]).type(torch.bool)
+                    create_plane(res[0] if d<self.N_PLANES_DENSITY else res[1])
+                    # nn.Parameter(0.1*self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,res,res]))
+                )
+                 for id,res in scene_id_plane_resolution.items() for d in range(self.N_PLANES_DENSITY+use_viewdirs)])
+            # if self.track_planes_coverage:
+            #     raise Exception("Should be adapted to support multiple plane resolutions.")
+            #     self.planes_coverage = torch.zeros([len(self.planes_),plane_resolutions,plane_resolutions,]).type(torch.bool)
         else:
             self.planes_ = planes
+        if self.INFER_ON_LEARNED:
+            self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items()])
+            assert not align_corners,'The following corresponding grid assumes -1 and 1 correspond to array corners (rather than the center of its corner pixels)'
+            self.corresponding_grid = OrderedDict()
+            # for k,v in self.planes_copy.items():
+                # self.corresponding_grid[k] = np.meshgrid(np.linspace(-1-1/v.shape[3],1+1/v.shape[3],v.shape[3]))
+
+    def eval(self):
+        super(TwoDimPlanesModel, self).eval()
+        if self.INFER_ON_LEARNED:
+            self.learned = OrderedDict([(k,np.all((self.planes_[k].detach().cpu().numpy()-self.planes_copy[k]!=0),1,keepdims=True)) for k in self.planes_.keys()])
 
     def plane_name(self,scene_id,dimension):
         return "sc%s_D%d"%(scene_id,dimension)
@@ -401,9 +425,6 @@ class TwoDimPlanesModel(nn.Module):
         self.SR_model = SR_model
         for k,v in self.planes_.items():
             self.SR_model.set_LR_planes(v.detach(),id=k,align_corners=self.align_corners)
-
-        # for id in self.model_ids:
-        #     self.SR_model.set_LR_planes([p.detach() for p in self.planes_[id]],id=id)
         self.skip_SR_ = False
 
     def set_cur_scene_id(self,scene_id):
@@ -411,19 +432,21 @@ class TwoDimPlanesModel(nn.Module):
 
     def normalize_coords(self,coords):
         EPSILON = 1e-5
-        normalized_coords = 2*(coords-self.box_coords.type(coords.type())[:1])/\
-            (self.box_coords[1:]-self.box_coords[:1]).type(coords.type())-1
-        assert normalized_coords.min()>=-1-EPSILON and normalized_coords.max()<=1+EPSILON,"Sanity check"
+        normalized_coords = 2*(coords-self.box_coords[self.cur_id].type(coords.type())[:1])/\
+            (self.box_coords[self.cur_id][1:]-self.box_coords[self.cur_id][:1]).type(coords.type())-1
+        # assert normalized_coords.min()>=-1-EPSILON and normalized_coords.max()<=1+EPSILON,"Sanity check"
+        self.debug['max_norm'][self.cur_id] = np.maximum(self.debug['max_norm'][self.cur_id],normalized_coords.max(0)[0].cpu().numpy())
+        self.debug['min_norm'][self.cur_id] = np.minimum(self.debug['min_norm'][self.cur_id],normalized_coords.min(0)[0].cpu().numpy())
         return normalized_coords
 
-    def grid2plane_inds(self,grid):
-        return (grid+1)/2*(self.planes_[0].shape[-1]-1)
+    # def grid2plane_inds(self,grid):
+    #     return (grid+1)/2*(self.planes_[0].shape[-1]-1)
 
-    def update_planes_coverage(self,plane_ind:int,grid:torch.tensor):
-        if self.track_planes_coverage and self.training:
-            for r_func in [torch.ceil,torch.floor]:
-                for c_func in [torch.ceil,torch.floor]:
-                    self.planes_coverage[plane_ind,r_func(self.grid2plane_inds(grid[...,0])).type(torch.long),c_func(self.grid2plane_inds(grid[...,1])).type(torch.long)] = True
+    # def update_planes_coverage(self,plane_ind:int,grid:torch.tensor):
+    #     if self.track_planes_coverage and self.training:
+    #         for r_func in [torch.ceil,torch.floor]:
+    #             for c_func in [torch.ceil,torch.floor]:
+    #                 self.planes_coverage[plane_ind,r_func(self.grid2plane_inds(grid[...,0])).type(torch.long),c_func(self.grid2plane_inds(grid[...,1])).type(torch.long)] = True
 
     def planes(self,dim_num:int)->torch.tensor:
         plane_name = self.plane_name(self.cur_id,dim_num)
@@ -431,9 +454,6 @@ class TwoDimPlanesModel(nn.Module):
             plane = self.SR_model(plane_name)
         else:
             plane = self.planes_[plane_name]#[self.cur_res][dim_num]
-        # plane = self.planes_[dim_num]
-        # if hasattr(self,'SR_model') and not self.skip_SR_:
-        #     plane = self.SR_model(plane)
         return plane
 
     def skip_SR(self,skip):
@@ -441,32 +461,42 @@ class TwoDimPlanesModel(nn.Module):
 
     def project_xyz(self,coords):
         projections = []
-        for d in range(3): # (Currently not supporting viewdir input)
+        for d in range(self.N_PLANES_DENSITY): # (Currently not supporting viewdir input)
             grid = coords[:,[c for c in range(3) if c!=d]].reshape([1,coords.shape[0],1,2])
-            self.update_planes_coverage(d,grid)
-            projections.append(nn.functional.grid_sample(
-                    input=self.planes(d),
-                    grid=grid,
-                    mode=self.plane_interp,
-                    align_corners=self.align_corners,
-                    padding_mode='border',
-                ))
-        projections = torch.sum(torch.stack(projections,0),0)
+            # self.update_planes_coverage(d,grid)
+            if not self.training and self.INFER_ON_LEARNED:
+                pass
+            else:
+                projections.append(nn.functional.grid_sample(
+                        input=self.planes(d),
+                        grid=grid,
+                        mode=self.plane_interp,
+                        align_corners=self.align_corners,
+                        padding_mode='border',
+                    ))
+        projections = self.sum_or_cat(projections)
         return projections.squeeze(0).squeeze(-1).permute(1,0)
 
     def project_viewdir(self,dirs):
         grid = dirs.reshape([1,dirs.shape[0],1,2])
-        self.update_planes_coverage(3,grid)
+        # self.update_planes_coverage(self.N_PLANES_DENSITY,grid)
         return nn.functional.grid_sample(
-                input=self.planes(3),
+                input=self.planes(self.N_PLANES_DENSITY),
                 grid=grid,
                 mode=self.plane_interp,
                 align_corners=self.align_corners,
                 padding_mode='border',
             ).squeeze(0).squeeze(-1).permute(1,0)
 
+    def sum_or_cat(self,tensors):
+        return torch.stack(tensors,0).sum(0) if self.proj_combination=='sum' else torch.cat(tensors,1)
 
     def forward(self, x):
+        if False:
+            change_maps = [torch.all((self.planes_[k]-self.planes_copy[k].cuda()!=0),1).squeeze(0) for k in self.planes_.keys()]
+            import matplotlib.pyplot as plt
+            for i,m in enumerate(change_maps):
+                plt.imsave('Changed%d.png'%(i),m.cpu(),cmap='gray')
         if self.use_viewdirs:
             x = torch.cat([x[...,:3],cart2az_el(x[...,3:])],-1)
         else:
@@ -481,15 +511,18 @@ class TwoDimPlanesModel(nn.Module):
         for l in self.density_dec:
             x = self.relu(l(x))
         alpha = self.fc_alpha(x)
-        x_rgb = 0
-        if self.rgb_dec_input in ['sum','features']:
+
+        # x_rgb = torch.zeros([len(projected_xyz),projected_xyz.shape[1] if self.proj_combination=='sum' else 0]).type(projected_xyz.type())
+        if 'features' in self.rgb_dec_input:
             x_rgb = self.fc_feat(x)
 
-        if self.rgb_dec_input in ['sum','projections']:
-            x_rgb = x_rgb+projected_xyz
+        if self.rgb_dec_input=='projections_features':
+            x_rgb = self.sum_or_cat([x_rgb,projected_xyz])
+        elif self.rgb_dec_input=='projections':
+            x_rgb = 1*projected_xyz
 
         if self.use_viewdirs:
-            x_rgb = x_rgb+projected_views
+            x_rgb = self.sum_or_cat([x_rgb,projected_views])
 
         for l in self.rgb_dec:
             x_rgb = self.relu(l(x_rgb))

@@ -2,7 +2,6 @@ from typing import Optional
 import numpy as np
 import math
 import torch
-from tqdm import tqdm
 from cfgnode import CfgNode
 import yaml
 import cv2
@@ -136,20 +135,27 @@ def cumprod_exclusive(tensor: torch.Tensor) -> torch.Tensor:
 
     return cumprod
 
+def get_focal(data,dim):
+    assert dim in ['H','W']
+    if isinstance(data,list):
+        # return data[0] if dim=='H' else data[1]
+        return data[1] if dim=='H' else data[0]
+    else:
+        return data
+
+
 def calc_scene_box(scene_geometry,including_dirs):
     FULL_AZ_RANGE = True # Manually set azimuth range to be [-pi,pi]
     FULL_EL_RANGE = [-np.pi/2,np.pi/2] #None
     num_frames = len(scene_geometry['camera_poses'])
     box = [[np.finfo(np.float).max,np.finfo(np.float).min] for i in range(3+2*including_dirs)]
-    for f_num in tqdm(range(num_frames)):
+    for f_num in range(num_frames):
         origin = scene_geometry['camera_poses'][f_num][:3, -1]
         for W in [0,scene_geometry['W'][f_num]-1]:
             for H in [0,scene_geometry['H'][f_num]-1]:
-        # for W in range(scene_geometry['W'][f_num]-1):
-        #     for H in range(scene_geometry['H'][f_num]-1):
                 coord = np.array([\
-                    (W-scene_geometry['W'][f_num]/2)/scene_geometry['f'][f_num],
-                    -(H-scene_geometry['H'][f_num]/2)/scene_geometry['f'][f_num],
+                    (W-scene_geometry['W'][f_num]/2)/get_focal(scene_geometry['f'][f_num],'W'),
+                    -(H-scene_geometry['H'][f_num]/2)/get_focal(scene_geometry['f'][f_num],'H'),
                     -1
                 ])
         # for corner in [np.array([i,j,1]) for i in [-1,1] for j in [-1,1]]:
@@ -206,8 +212,8 @@ def get_ray_bundle(
         jj = jj-padding_size
     directions = torch.stack(
         [
-            (ii - width * 0.5) / focal_length,
-            -(jj - height * 0.5) / focal_length,
+            (ii - width * 0.5) / get_focal(focal_length,'H'),
+            -(jj - height * 0.5) / get_focal(focal_length,'W'),
             -torch.ones_like(ii),
         ],
         dim=-1,
