@@ -4,7 +4,7 @@ import torch.nn as nn
 from nerf_helpers import cart2az_el
 import math
 import numpy as np
-
+from scipy.interpolate import griddata
 class VeryTinyNeRFModel(nn.Module):
     r"""Define a "very tiny" NeRF model comprising three fully connected layers.
     """
@@ -407,16 +407,36 @@ class TwoDimPlanesModel(nn.Module):
         else:
             self.planes_ = planes
         if self.INFER_ON_LEARNED:
-            self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items()])
+            self.copy_planes()
+            # self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items()])
             assert not align_corners,'The following corresponding grid assumes -1 and 1 correspond to array corners (rather than the center of its corner pixels)'
             self.corresponding_grid = OrderedDict()
-            # for k,v in self.planes_copy.items():
-                # self.corresponding_grid[k] = np.meshgrid(np.linspace(-1-1/v.shape[3],1+1/v.shape[3],v.shape[3]))
+            for k,v in self.planes_copy.items():
+                res = list(v.shape[2:])
+                self.corresponding_grid[k] = np.stack(np.meshgrid(np.linspace(-1+1/res[1],1-1/res[1],res[1]),np.linspace(-1+1/res[0],1-1/res[0],res[0])),-1)
+
+    def copy_planes(self):
+        self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items()])
 
     def eval(self):
         super(TwoDimPlanesModel, self).eval()
         if self.INFER_ON_LEARNED:
-            self.learned = OrderedDict([(k,np.all((self.planes_[k].detach().cpu().numpy()-self.planes_copy[k]!=0),1,keepdims=True)) for k in self.planes_.keys()])
+            self.learned = OrderedDict([(k,np.all((self.planes_[k].detach().cpu().numpy()-self.planes_copy[k]!=0),1).squeeze()) for k in self.planes_.keys()])
+            for k in self.learned.keys():
+                if np.any(self.learned[k]): self.interpolate_plane(k)
+
+    def interpolate_plane(self,k):
+        interpolated = griddata(\
+            points=self.corresponding_grid[k][self.learned[k]],
+            values=self.planes_[k].squeeze(0).detach().cpu().numpy().transpose(1,2,0)[self.learned[k]],
+            xi=self.corresponding_grid[k],
+            method='linear',
+            # fill_value=0.,
+        )
+        valid_indecis = np.logical_not(np.any(np.isnan(interpolated),-1))
+        self.planes_[k].data[:,:,valid_indecis] = torch.from_numpy(interpolated[valid_indecis].transpose()[None,...]).type(self.planes_[k].data.type())
+        self.planes_copy[k][...,np.logical_not(self.learned[k])] = self.planes_[k].detach().cpu().numpy()[...,np.logical_not(self.learned[k])]
+        # self.planes_[k]
 
     def plane_name(self,scene_id,dimension):
         return "sc%s_D%d"%(scene_id,dimension)
@@ -464,7 +484,7 @@ class TwoDimPlanesModel(nn.Module):
         for d in range(self.N_PLANES_DENSITY): # (Currently not supporting viewdir input)
             grid = coords[:,[c for c in range(3) if c!=d]].reshape([1,coords.shape[0],1,2])
             # self.update_planes_coverage(d,grid)
-            if not self.training and self.INFER_ON_LEARNED:
+            if False and not self.training and self.INFER_ON_LEARNED:
                 pass
             else:
                 projections.append(nn.functional.grid_sample(

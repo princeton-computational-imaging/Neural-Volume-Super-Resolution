@@ -60,15 +60,19 @@ def main():
 
     # Setup logging.
     logdir = os.path.join(cfg.experiment.logdir, cfg.experiment.id)
-    writer = SummaryWriter(logdir)
     if configargs.load_checkpoint=="resume":
         configargs.load_checkpoint = logdir
     else:
-        # os.makedirs(logdir, exist_ok=True)
-        # os.makedirs(logdir)
+        if configargs.load_checkpoint=='':
+            if os.path.exists(logdir):  assert len([f for f in os.listdir(logdir) if '.ckpt' in f])==0,'Folder %s already contains saved models.'%(logdir)
+            os.makedirs(logdir, exist_ok=True)
+            # os.makedirs(logdir)
         # Write out config parameters.
         with open(os.path.join(logdir, "config.yml"), "w") as f:
             f.write(cfg.dump())  # cfg, f, default_flow_style=False)
+    if configargs.load_checkpoint!='':
+        assert os.path.exists(configargs.load_checkpoint)
+    writer = SummaryWriter(logdir)
     load_saved_models = SR_experiment or os.path.exists(configargs.load_checkpoint)
 
     if planes_model:
@@ -458,8 +462,7 @@ def main():
                 model_coarse.load_state_dict(checkpoint["model_coarse_state_dict"])
                 model_fine.load_state_dict(checkpoint["model_fine_state_dict"])
 
-        # optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-
+        del checkpoint # Importent: Releases GPU memory occupied by loaded data.
     # # TODO: Prepare raybatch tensor if batching random rays
     spatial_padding_size = SR_model.receptive_field//2 if isinstance(SR_model,models.Conv3D) else 0
     spatial_sampling = spatial_padding_size>0 or cfg.nerf.train.get("spatial_sampling",False)
