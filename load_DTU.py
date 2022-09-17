@@ -171,10 +171,6 @@ class DVRDataset(torch.utils.data.Dataset):
     def __len__(self):
         if self.single_images:
             return len(self.im_IDs)
-            # if self.eval_mode:
-            #     return len(self.eval_inds)
-            # else:
-            #     return len(self.train_inds)
         else:
             return len(self.all_objs)
 

@@ -12,18 +12,20 @@ from deepdiff import DeepDiff
 # JOB_NAME = "temp"
 # CONFIG_FILE = "config/lego_SR.yml"
 # CONFIG_FILE = "config/lego_ds.yml"
-CONFIG_FILE = "config/planes.yml"
-# CONFIG_FILE = "config/planes_SR.yml"
+# CONFIG_FILE = "config/planes.yml"
+CONFIG_FILE = "config/planes_SR.yml"
 # CONFIG_FILE = "config/planes_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
 
-# RESUME_TRAINING = 0
-RESUME_TRAINING = None
+RESUME_TRAINING = 0
+# RESUME_TRAINING = None
 
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 CONDA_ENV = "volumetric_enhance"
 RUN_TIME = 30 # 20 # 10 # Hours
+
+OVERWRITE_RESUMED_CONFIG = False
 
 with open(CONFIG_FILE, "r") as f:
     cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
@@ -32,6 +34,7 @@ with open(CONFIG_FILE, "r") as f:
 
 # existing_ids = [int(search("(?<="+job_name+"_)(\d)+(?=\.sh)",f).group(0)) for f in os.listdir("slurm/scripts") if search("^"+job_name+"_(\d)+.sh$",f) is not None]
 existing_ids = [int(search("(?<="+job_name+"_)(\d)+(?=$)",f).group(0)) for f in os.listdir(LOGS_FOLDER) if search("^"+job_name+"_(\d)+$",f) is not None]
+config_file = ''+CONFIG_FILE
 if RESUME_TRAINING is None:
     job_identifier = job_name+"_%d"%(0 if len(existing_ids)==0 else max(existing_ids)+1)
     if not os.path.exists(os.path.join("slurm/code",job_identifier)):
@@ -56,8 +59,11 @@ else:
     for ch_type in [c for c in ['dictionary_item_removed','dictionary_item_added'] if c in config_diffs]:
         for diff in config_diffs[ch_type]:
             diff_warnings.append("%s: %s"%(ch_type,diff))
-    if len(diff_warnings)>0: 
-        shutil.copyfile(os.path.join(saved_models_folder,"config.yml"),os.path.join("slurm/code",job_identifier,"config_old.yml"))
+    if len(diff_warnings)>0:
+        if OVERWRITE_RESUMED_CONFIG:
+            shutil.copyfile(os.path.join(saved_models_folder,"config.yml"),os.path.join("slurm/code",job_identifier,"config_old.yml"))
+        else:
+            config_file = os.path.join(saved_models_folder,"config.yml")
         # shutil.copyfile(os.path.join("slurm/code",job_identifier,"config.yml"),os.path.join("slurm/code",job_identifier,"config_old.yml"))
         print("\n\n!!! WARNING: Differences in configurations file: !!!")
         for warn in diff_warnings:  print(warn)
@@ -69,7 +75,7 @@ for f in [f for f in os.listdir() if f[-3:]==".py"]:
 
 id_string = "  id: %s "%(job_name)
 with open(os.path.join("slurm/code",job_identifier,"config.yml"),"w") as f_write:
-    with open(CONFIG_FILE,"r") as f_read:
+    with open(config_file,"r") as f_read:
         for line in f_read:
             if line[:len(id_string)]==id_string:
                 f_write.write(line.replace(id_string,id_string.replace(job_name,job_identifier)))

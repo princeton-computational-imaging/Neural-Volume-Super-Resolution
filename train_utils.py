@@ -108,15 +108,12 @@ def predict_and_render_radiance(
         z_vals = lower + (upper - lower) * t_rand
     # pts -> (num_rays, N_samples, 3)
     pts = ro[..., None, :] + rd[..., None, :] * z_vals[..., :, None]
-    # planes_model = isinstance(model_coarse,models.TwoDimPlanesModel)
-    # if planes_model:
-    #     assert not mip_nerf,'Unsupported'
-    #     ds_factor *= 2 # In this scenario ds_factor is only used to pick the plane resolution, determined according to the image's downsampling factor. For super-resolution, the relevant plane resolution should fit the LR image DS.
+    SR_CHUNK_REDUCE = 2
     radiance_field = run_network(
         model_coarse,
         pts,
         ray_batch,
-        getattr(options.nerf, mode).chunksize,
+        getattr(options.nerf, mode).chunksize//(SR_CHUNK_REDUCE if hasattr(model_coarse,'SR_model') else 1),
         encode_position_fn,
         encode_direction_fn,
         mip_nerf=mip_nerf,
@@ -174,7 +171,7 @@ def predict_and_render_radiance(
             model_fine,
             pts,
             ray_batch,
-            getattr(options.nerf, mode).chunksize,
+            getattr(options.nerf, mode).chunksize//(SR_CHUNK_REDUCE if hasattr(model_fine,'SR_model') else 1),
             encode_position_fn,
             encode_direction_fn,
             return_input_grads=num_grads_2_return,

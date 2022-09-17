@@ -180,5 +180,12 @@
                 "--load-checkpoint","/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/downsample"
             ]
         },
-    ]
+        {
+            "name": "find resize offset",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/find_resize_offset.py",
+            "console": "integratedTerminal",
+        },
+   ]
 }

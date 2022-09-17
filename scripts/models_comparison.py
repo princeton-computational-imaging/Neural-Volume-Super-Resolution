@@ -27,7 +27,7 @@ for path in paths:
         num_encoding_fn_dir=cfg.models.coarse.num_encoding_fn_dir,
         include_input_xyz=cfg.models.coarse.include_input_xyz,
         include_input_dir=cfg.models.coarse.include_input_dir,
-        use_viewdirs=cfg.models.coarse.use_viewdirs,
+        use_viewdirs=cfg.nerf.use_viewdirs,
     )
     model_coarse.load_state_dict(checkpoint["model_coarse_state_dict"])
     coarse_params.append(list(model_coarse.named_parameters()))
@@ -36,7 +36,7 @@ for path in paths:
         num_encoding_fn_dir=cfg.models.fine.num_encoding_fn_dir,
         include_input_xyz=cfg.models.fine.include_input_xyz,
         include_input_dir=cfg.models.fine.include_input_dir,
-        use_viewdirs=cfg.models.fine.use_viewdirs,
+        use_viewdirs=cfg.nerf.use_viewdirs,
     )
     model_fine.load_state_dict(checkpoint["model_fine_state_dict"])
     fine_params.append(list(model_fine.named_parameters()))

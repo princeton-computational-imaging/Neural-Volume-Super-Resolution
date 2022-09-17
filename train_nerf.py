@@ -14,8 +14,7 @@ import models
 # from cfgnode import CfgNode
 from load_blender import load_blender_data
 from load_DTU import DVRDataset
-from nerf_helpers import * #(get_ray_bundle, img2mse, meshgrid_xy, mse2psnr,
-                        #   positional_encoding,chunksize_to_2D,get_config,arange_ims,assert_list)
+from nerf_helpers import * 
 from train_utils import eval_nerf, run_one_iter_of_nerf,find_latest_checkpoint
 from mip import IntegratedPositionalEncoding
 from deepdiff import DeepDiff
@@ -49,6 +48,7 @@ def main():
         config_file = os.path.join(configargs.resume,"config.yml")
     else:
         config_file = configargs.config
+    print('Using configuration file %s'%(config_file))
     cfg = get_config(config_file)
     print("Running experiment %s"%(cfg.experiment.id))
     SR_experiment = None
@@ -60,6 +60,7 @@ def main():
 
     # Setup logging.
     logdir = os.path.join(cfg.experiment.logdir, cfg.experiment.id)
+    print('Saving logs and models into %s'%(logdir))
     if configargs.load_checkpoint=="resume":
         configargs.load_checkpoint = logdir
     else:
@@ -143,7 +144,7 @@ def main():
                         scene_id_plane_resolution[scene_id] = plane_resolutions[min(len(plane_resolutions)-1,ds_num)]
                     cur_images, cur_poses, cur_render_poses, cur_hwfDs, cur_i_split = load_blender_data(
                         os.path.join(cfg.dataset.root,basedir),
-                        half_res=cfg.dataset.half_res,
+                        half_res=getattr(cfg.dataset,'half_res',False),
                         testskip=cfg.dataset.testskip,
                         downsampling_factor=cfg.super_resolution.ds_factor if internal_SR else factor,
                         val_downsampling_factor=1 if internal_SR else None,
@@ -152,7 +153,7 @@ def main():
                     )
                     if planes_model and not load_saved_models: # No need to calculate the per-scene normalization coefficients as those will be loaded with the saved model.
                         coords_normalization[basedir] =\
-                            calc_scene_box({'camera_poses':cur_poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':cur_hwfDs[0],'W':cur_hwfDs[1],'f':cur_hwfDs[2]},including_dirs=cfg.models.coarse.use_viewdirs)
+                            calc_scene_box({'camera_poses':cur_poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':cur_hwfDs[0],'W':cur_hwfDs[1],'f':cur_hwfDs[2]},including_dirs=cfg.nerf.use_viewdirs)
                     i_val[scene_id] = [v+len(images) for v in cur_i_split[1]]
                     i_train[scene_id] = [v+len(images) for v in cur_i_split[0]]
                     # for i in range(len(i_split)):
@@ -167,17 +168,6 @@ def main():
                 # validation images.
                 assert scene_id==0
                 scene_ids = [0 if i in i_split[1] else 1 for i in range(len(scene_ids))]
-            # i_train, i_val, i_test = i_split
-            # i_val = defaultdict(list)
-            # for ind in i_split[1]:
-            #     i_val[scene_ids[ind]].append(ind)
-            # assert all([len(i_val[basedirs[0]])==len(i_val[id]) for id in basedirs]),'Assuming all scenes have the same number of evaluation images'
-            # if isinstance(i_train,tuple):
-            #     raise Exception('Revisit after enabling multi-scene.')
-            #     SR_HR_im_inds = i_train[0]
-            #     SR_LR_im_inds = i_train[1]
-            #     val_ims_dict = i_val[1]
-            #     i_val = i_val[0]
             H, W, focal,ds_factor = hwfDs
         else:
             dataset = DVRDataset(path=cfg.dataset.root,stage='train_val',eval_ratio=0.1,\
@@ -193,7 +183,7 @@ def main():
             for id in trange(dataset.num_scenes()):
                 scene_info = dataset.scene_info(id)
                 scene_info.update({'near':dataset.z_near,'far':dataset.z_far})
-                coords_normalization[dataset.DTU_sceneID(id)] = calc_scene_box(scene_info,including_dirs=cfg.models.coarse.use_viewdirs)
+                coords_normalization[dataset.DTU_sceneID(id)] = calc_scene_box(scene_info,including_dirs=cfg.nerf.use_viewdirs)
                 basedirs.append(dataset.DTU_sceneID(id))
             i_val = dataset.i_val
             # assert all([len(i_val[basedirs[0]])==len(i_val[id]) for id in basedirs]),'Assuming all scenes have the same number of evaluation images'
@@ -247,12 +237,12 @@ def main():
     else:
         encode_position_fn = None
         encode_direction_fn = None
-    if getattr(cfg.models.coarse,"use_viewdirs",False) or getattr(cfg.models.fine,"use_viewdirs",False):    assert cfg.nerf.use_viewdirs
+    # if getattr(cfg.models.coarse,"use_viewdirs",False) or getattr(cfg.models.fine,"use_viewdirs",False):    assert cfg.nerf.use_viewdirs
     if planes_model:
+        if hasattr(cfg.nerf.train,'viewdir_downsampling'):  assert hasattr(cfg.nerf.train,'max_plane_downsampling')
         model_coarse = models.TwoDimPlanesModel(
-            use_viewdirs=cfg.models.coarse.use_viewdirs,
+            use_viewdirs=cfg.nerf.use_viewdirs,
             scene_id_plane_resolution=scene_id_plane_resolution,
-            # scene_geometry = {'camera_poses':poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':H,'W':W,'f':focal},
             coords_normalization = coords_normalization,
             dec_density_layers=getattr(cfg.models.coarse,'dec_density_layers',4),
             dec_rgb_layers=getattr(cfg.models.coarse,'dec_rgb_layers',4),
@@ -262,6 +252,8 @@ def main():
             proj_combination=getattr(cfg.models.coarse,'proj_combination','sum'),
             plane_interp=getattr(cfg.models.coarse,'plane_interp','bilinear'),
             align_corners=getattr(cfg.models.coarse,'align_corners',True),
+            interp_viewdirs=getattr(cfg.models.coarse,'interp_viewdirs',None),
+            viewdir_downsampling=getattr(cfg.nerf.train,'viewdir_downsampling',True),
         )
         
     else:
@@ -274,7 +266,7 @@ def main():
             num_encoding_fn_dir=cfg.models.coarse.num_encoding_fn_dir,
             include_input_xyz=cfg.models.coarse.include_input_xyz,
             include_input_dir=cfg.models.coarse.include_input_dir,
-            use_viewdirs=cfg.models.coarse.use_viewdirs,
+            use_viewdirs=cfg.nerf.use_viewdirs,
         )
 
     print("Coarse model: %d parameters"%num_parameters(model_coarse))
@@ -291,9 +283,8 @@ def main():
                     if k not in cfg.models.fine:
                         setattr(cfg.models.fine,k,getattr(cfg.models.coarse,k))
                 model_fine = models.TwoDimPlanesModel(
-                    use_viewdirs=cfg.models.fine.use_viewdirs,
+                    use_viewdirs=cfg.nerf.use_viewdirs,
                     scene_id_plane_resolution=scene_id_plane_resolution,
-                    # scene_geometry = {'camera_poses':poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':H,'W':W,'f':focal},
                     coords_normalization = coords_normalization,
                     dec_density_layers=getattr(cfg.models.fine,'dec_density_layers',4),
                     dec_rgb_layers=getattr(cfg.models.fine,'dec_rgb_layers',4),
@@ -304,6 +295,8 @@ def main():
                     planes=model_coarse.planes_ if getattr(cfg.models.fine,'use_coarse_planes',False) else None,
                     plane_interp=getattr(cfg.models.fine,'plane_interp','bilinear'),
                     align_corners=getattr(cfg.models.fine,'align_corners',True),
+                    interp_viewdirs=getattr(cfg.models.fine,'interp_viewdirs',None),
+                    viewdir_downsampling=getattr(cfg.nerf.train,'viewdir_downsampling',True),
                 )
             else:
                 model_fine = getattr(models, cfg.models.fine.type)(
@@ -311,7 +304,7 @@ def main():
                     num_encoding_fn_dir=cfg.models.fine.num_encoding_fn_dir,
                     include_input_xyz=cfg.models.fine.include_input_xyz,
                     include_input_dir=cfg.models.fine.include_input_dir,
-                    use_viewdirs=cfg.models.fine.use_viewdirs,
+                    use_viewdirs=cfg.nerf.use_viewdirs,
                 )
             print("Fine model: %d parameters"%num_parameters(model_fine))
             model_fine.to(device)
@@ -391,7 +384,7 @@ def main():
     start_i = 0
     if load_saved_models:
         if SR_experiment:
-            saved_rgb_fine = [{} for i in train_dirs+val_only_dirs]
+            saved_rgb_fine = [{} for i in i_val.keys()]
             checkpoint = find_latest_checkpoint(cfg.models.path)
             print("Using LR model %s"%(checkpoint))
             if SR_experiment=="model" and os.path.exists(configargs.load_checkpoint):
@@ -411,14 +404,18 @@ def main():
             print("Resuming training on model %s"%(checkpoint))
         checkpoint_config = get_config(os.path.join('/'.join(checkpoint.split('/')[:-1]),'config.yml'))
         config_diffs = DeepDiff(checkpoint_config.models,cfg.models)
-        for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed']:
+        if SR_experiment:   assert getattr(cfg.dataset,'half_res',False)==getattr(checkpoint_config.dataset,'half_res',False),'Unsupported "half-res" mismatch'
+        ok = True
+        for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed','type_changes']:
             if ch_type not in config_diffs: continue
             for diff in config_diffs[ch_type]:
-                if ch_type=='dictionary_item_added' and diff=="[root['path']]":  continue
+                if ch_type=='dictionary_item_added' and diff=="root['path']":  continue
+                if ch_type=='dictionary_item_removed' and "['use_viewdirs']" in diff:  continue
                 elif ch_type=='dictionary_item_added' and diff[:len("root['fine']")]=="root['fine']":  continue
                 elif ch_type=='dictionary_item_removed' and "root['fine']" in str(config_diffs[ch_type]):   continue
                 print(ch_type,diff)
-                raise Exception('Inconsistent model onfig')
+                ok = False
+        if not ok:  raise Exception('Inconsistent model config')
         checkpoint = torch.load(checkpoint)
         def update_saved_names(state_dict):
             # if any(['planes_.sc0' in k for k in state_dict.keys()]):
@@ -469,10 +466,20 @@ def main():
 
     if planes_model and SR_model is not None:
         if getattr(cfg.super_resolution,'apply_2_coarse',False):
-            model_coarse.assign_SR_model(SR_model)
+            model_coarse.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir)
         else:
             assert getattr(cfg.super_resolution.training,'loss','both')=='fine'
-        model_fine.assign_SR_model(SR_model)
+        model_fine.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir)
+
+    # downsampling_offset = lambda ds_factor: np.floor((ds_factor-1)/2)/ds_factor
+    downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor)
+    # if SR_experiment and '/planes_Res200Lrgb4Lden4_LR4_allScenes_0' in cfg.models.path:
+    #     print('WARNING: Applying a temprary patch...')
+    #     CORRECTION_OFFSET = 1
+    #     downsampling_offset = lambda dummy: -CORRECTION_OFFSET
+    #     images = [torch.nn.functional.pad(im[CORRECTION_OFFSET:,CORRECTION_OFFSET:,:],(0,0,0,CORRECTION_OFFSET,0,CORRECTION_OFFSET),mode='constant') for im in images]
+    # if any([v/2==v//2  for v in ds_factor]):    print('*** WARNING: Using an even downsampling factor, which causes misalignment with the full scale image ***')
+    # assert [v in [1,4] for v in ds_factor],'The above function (using floor) was only checked for 4 (and 1). Should verify that is the case for other factors too'
 
     for iter in trange(start_i,cfg.experiment.train_iters):
         # Validation
@@ -524,20 +531,14 @@ def main():
 
                     coarse_loss,fine_loss,loss,psnr,rgb_coarse,rgb_fine,rgb_SR,target_ray_values = defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list)
                     for scene_num,img_idx in enumerate(img_indecis):
-                        # scene_id = list(i_val.keys())[scene_num]
                         if dataset_type=='synt':
                             img_target = images[img_idx].to(device)
                             pose_target = poses[img_idx, :3, :4].to(device)
-                            cur_H,cur_W,cur_focal = H[img_idx], W[img_idx], focal[img_idx]
+                            cur_H,cur_W,cur_focal,cur_ds_factor = H[img_idx], W[img_idx], focal[img_idx],ds_factor[img_idx]
                         else:
                             img_target,pose_target,cur_H,cur_W,cur_focal = dataset.item(img_idx,device)
-                            # data_item = dataset.__getitem__(img_idx)
-                            # cur_focal = data_item['focal'].numpy().tolist()
-                            # img_target = data_item['images'].squeeze(0).permute([1,2,0]).to(device)
-                            # pose_target = data_item['poses'].squeeze(0)[:3].to(device)
-                            # cur_H,cur_W = img_target.shape[:2]
                         ray_origins, ray_directions = get_ray_bundle(
-                            cur_H, cur_W, cur_focal, pose_target,padding_size=spatial_padding_size
+                            cur_H, cur_W, cur_focal, pose_target,padding_size=spatial_padding_size,downsampling_offset=downsampling_offset(cur_ds_factor),
                         )
                         rgb_coarse_, _, _, rgb_fine_, _, _,rgb_SR_,_,_ = eval_nerf(
                             cur_H,
@@ -597,27 +598,29 @@ def main():
                         rgb_fine[val_strings[scene_num]].append(rgb_fine_)
                         rgb_SR[val_strings[scene_num]].append(rgb_SR_)
                         psnr[val_strings[scene_num]].append(mse2psnr(loss[val_strings[scene_num]][-1]))
+                    SAVE_COARSE_IMAGES = False
                     for val_set in set(val_strings):
                         font_scale = 4/downsampling_factor[0]
                         if SR_experiment:
                             writer.add_scalar("%s/SR_psnr_gain"%(val_set), np.mean([psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in range(len(psnr[val_set]))]), iter)
                             writer.add_image(
-                                "%s/rgb_SR"%(val_set), arange_ims(rgb_SR[val_set],str(val_ind(val_set)),font_scale),iter
+                                "%s/rgb_SR"%(val_set), arange_ims(rgb_SR[val_set],str(val_ind(val_set)),psnrs=psnr[val_set],fontScale=font_scale),iter
                             )
-                            writer.add_scalar("%s/fine_loss"%(val_set), np.mean(fine_loss[val_set]), iter)
-                            writer.add_scalar("%s/fine_psnr"%(val_set), np.mean([mse2psnr(l) for l in fine_loss[val_set]]), iter)
+                        writer.add_scalar("%s/fine_loss"%(val_set), np.mean(fine_loss[val_set]), iter)
+                        writer.add_scalar("%s/fine_psnr"%(val_set), np.mean([mse2psnr(l) for l in fine_loss[val_set]]), iter)
                         writer.add_scalar("%s/loss"%(val_set), np.mean(loss[val_set]), iter)
                         writer.add_scalar("%s/psnr"%(val_set), np.mean(psnr[val_set]), iter)
                         writer.add_scalar("%s/coarse_loss"%(val_set), np.mean(coarse_loss[val_set]), iter)
                         if len(rgb_fine[val_set])>0:
                             if record_fine:
                                 writer.add_scalar("%s/fine_loss"%(val_set), np.mean(fine_loss[val_set]), val_ind(val_set) if SR_experiment else iter)
-                                writer.add_image("%s/rgb_fine"%(val_set), arange_ims(rgb_fine[val_set],str(val_ind(val_set)),font_scale),val_ind(val_set) if SR_experiment else iter)
+                                writer.add_image("%s/rgb_fine"%(val_set), arange_ims(rgb_fine[val_set],str(val_ind(val_set)),psnrs=[mse2psnr(l) for l in fine_loss[val_set]],fontScale=font_scale),val_ind(val_set) if SR_experiment else iter)
+                        if SAVE_COARSE_IMAGES:
+                            writer.add_image(
+                                "%s/rgb_coarse"%(val_set), arange_ims(rgb_coarse[val_set],str(val_ind(val_set)),psnrs=[mse2psnr(l) for l in coarse_loss[val_set]],fontScale=font_scale),iter
+                            )
                         writer.add_image(
-                            "%s/rgb_coarse"%(val_set), arange_ims(rgb_coarse[val_set],str(val_ind(val_set)),font_scale),iter
-                        )
-                        writer.add_image(
-                            "%s/img_target"%(val_set), arange_ims(target_ray_values[val_set],str(val_ind(val_set)),font_scale),iter
+                            "%s/img_target"%(val_set), arange_ims(target_ray_values[val_set],str(val_ind(val_set)),fontScale=font_scale),iter
                         )
                         tqdm.write(
                             "%s Validation loss: "%(val_set)
@@ -636,6 +639,10 @@ def main():
             model_coarse.train()
             if model_fine:
                 model_fine.train()
+            if getattr(cfg.nerf.train,'max_plane_downsampling',1)>1:
+                plane_downsampling = 1 if np.random.uniform()>0.5 else 1+np.random.randint(cfg.nerf.train.max_plane_downsampling)
+                model_coarse.use_downsampled_planes(plane_downsampling)
+                model_fine.use_downsampled_planes(plane_downsampling)
 
         rgb_coarse, rgb_fine = None, None
         target_ray_values = None
@@ -684,11 +691,11 @@ def main():
             if dataset_type=='synt':
                 img_target = images[img_idx].to(device)
                 pose_target = poses[img_idx, :3, :4].to(device)
-                cur_H,cur_W,cur_focal = H[img_idx], W[img_idx], focal[img_idx]
+                cur_H,cur_W,cur_focal,cur_ds_factor = H[img_idx], W[img_idx], focal[img_idx],ds_factor[img_idx]
             else:
                 img_target,pose_target,cur_H,cur_W,cur_focal = dataset.item(img_idx,device)
 
-            ray_origins, ray_directions = get_ray_bundle(cur_H, cur_W, cur_focal, pose_target,padding_size=spatial_padding_size)
+            ray_origins, ray_directions = get_ray_bundle(cur_H, cur_W, cur_focal, pose_target,padding_size=spatial_padding_size,downsampling_offset=downsampling_offset(cur_ds_factor),)
             coords = torch.stack(
                 meshgrid_xy(torch.arange(cur_H+2*spatial_padding_size).to(device), torch.arange(cur_W+2*spatial_padding_size).to(device)),
                 dim=-1,
@@ -755,6 +762,8 @@ def main():
         loss.backward()
         psnr = mse2psnr(loss.item())
         optimizer.step()
+        # If training an SR model operating on planes, discarding super-resolved planes after updating the model:
+        if planes_model and SR_experiment=='model': SR_model.weights_updated()
         optimizer.zero_grad()
         if iter % cfg.experiment.print_every == 0 or iter == cfg.experiment.train_iters - 1:
             tqdm.write(
@@ -771,6 +780,7 @@ def main():
                 writer.add_scalar("train/coarse_loss", coarse_loss.item(), iter)
             if fine_loss is not None:
                 writer.add_scalar("train/fine_loss", fine_loss.item(), iter)
+                writer.add_scalar("train/fine_psnr", mse2psnr(fine_loss.item()), iter)
         writer.add_scalar("train/psnr", psnr, iter)
 
         if iter>0 and iter % cfg.experiment.save_every == 0 or iter == cfg.experiment.train_iters - 1:

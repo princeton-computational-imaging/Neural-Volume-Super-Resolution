@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR2vs2Scenes_10B64C_OneSF # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  id: SR6vs2Scenes_8B256C_SFpos_LR4full_aligned_SFonePos #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -20,17 +20,19 @@ dataset:
   # Base directory of dataset.
   root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   dir:
-    # train: ['chair','drums','ficus','hotdog','lego','materials',]
+    train: ['chair','drums','ficus','hotdog','lego','materials',]
+    # train: ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
     # train: ['chair','drums'] #,'ficus','hotdog','lego','materials',]
     # train: ['ficus','hotdog'] #,'lego','materials',]
-    train: ['lego','materials',]
+    # train: lego
     val: ['mic','ship']
+    # val: mic
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
   # For the Blender datasets (synthetic), optionally return images
   # at half the original resolution of 800 x 800, to save space.
-  half_res: True
+  # half_res: True
   # Stride (include one per "testskip" images in the dataset).
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
@@ -43,24 +45,31 @@ dataset:
 
 # Model parameters.
 models:
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_SepDecCF_Viewdir_Res32Lrgb2Lden2_LR4_noAlign_allScenes_1/checkpoint240000.ckpt
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_SepDecCF_Viewdir_Res32Lrgb2Lden2_LR4_noAlign_allScenes_1/checkpoint240000.ckpt
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_SepDecCF_Viewdir_Res32Lrgb2Lden2_LR4_noAlign_allScenes_1/
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res200Lrgb4Lden4_LR4_allScenes_0
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res400_32_Lrgb4Lden4_LR4floatOffset_allScenes_FullSize_0
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.
     type: TwoDimPlanesModel
     # Plane side size:
-    plane_resolutions: 32
+    plane_resolutions: 400
+    # Plane side size for view-direction plane. Can be a list like plane_resolutions.
+    viewdir_plane_resolution: 32
     # Planes interpolation method (default to bilinear):
     plane_interp: bilinear # bicubic # bilinear
     # Number of layers in the density decoder.
-    dec_density_layers: 2
+    dec_density_layers: 4
     # Number of layers in the rgb decoder.
-    dec_rgb_layers: 2
+    dec_rgb_layers: 4
+    # dec_channels: 256
+    # num_plane_channels: 256
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
+    # proj_combination: concat
     # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
-    align_corners: False #True #False
+    align_corners: False
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
     # hidden_size: 256
@@ -68,7 +77,9 @@ models:
     # won't take affect unless num_layers > skip_connect_every.
     # skip_connect_every: 3
     # Additionally use viewing directions as input.
-    use_viewdirs: True
+    # use_viewdirs: True
+    # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
+    # interp_viewdirs: bicubic #'bilinear','bicubic',None
   fine:
     # Name of the torch.nn.Module class that implements the model.
     # type: use_same
@@ -145,13 +156,15 @@ super_resolution:
   #   LR_ims_chance: 0.5
     loss: fine # fine,coarse,both
   apply_2_coarse: False #True # False
+  # Super-resolve view-directions plane as well, or only positional planes:
+  SR_viewdir: False
   model:
     # Name of the torch.nn.Module class that implements the model.
     type: EDSR
     # Number of layers in the model.
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
-    hidden_size: 64 #256
+    hidden_size: 256
     # Number of residual blocks (originally 32):
-    n_blocks: 10
+    n_blocks: 8
     scale_factor: one #one #sqrt #linear

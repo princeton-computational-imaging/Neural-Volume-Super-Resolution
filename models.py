@@ -348,22 +348,29 @@ class TwoDimPlanesModel(nn.Module):
         planes=None,
         plane_interp='bilinear',
         align_corners=True,
+        interp_viewdirs=None,
+        viewdir_downsampling=True,
         # track_planes_coverage=False,
     ):
         self.N_PLANES_DENSITY = 3
-        self.INFER_ON_LEARNED = False
+        self.PLANES_2_INFER = [self.N_PLANES_DENSITY]
+        # self.PLANES_2_INFER = [i for i in range(self.N_PLANES_DENSITY+1)]
 
         super(TwoDimPlanesModel, self).__init__()
         # self.ds_2_res = dict([(v,k) for k,v in plane_resolutions.items()])
         # self.box_coords = calc_scene_box(scene_geometry=scene_geometry,including_dirs=use_viewdirs)
         self.box_coords = coords_normalization
         self.use_viewdirs = use_viewdirs
+        assert interp_viewdirs in ['bilinear','bicubic',None]
+        self.interp_from_learned = interp_viewdirs
+        self.viewdir_downsampling = viewdir_downsampling
         self.align_corners = align_corners
         assert rgb_dec_input in ['projections','features','projections_features']
         self.rgb_dec_input = rgb_dec_input
         assert proj_combination in ['sum','concat']
         self.proj_combination = proj_combination
         self.plane_interp = plane_interp
+        self.planes_ds_factor = 1
         # self.track_planes_coverage = track_planes_coverage
         # Density (alpha) decoder:
         self.density_dec = nn.ModuleList()
@@ -392,7 +399,10 @@ class TwoDimPlanesModel(nn.Module):
 
         self.relu = nn.functional.relu
         def create_plane(resolution):
-            return nn.Parameter(0.1*self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,resolution,resolution]))
+            init_STD = 0.1*self.fc_alpha.weight.data.std()
+            # init_STD = 0.1*self.fc_alpha.weight.data.std()/np.sqrt(resolution/400)
+            # init_STD = 0.14
+            return nn.Parameter(init_STD*torch.randn(size=[1,num_plane_channels,resolution,resolution]))
 
         if planes is None:
             self.planes_ = nn.ParameterDict([
@@ -404,24 +414,26 @@ class TwoDimPlanesModel(nn.Module):
             # if self.track_planes_coverage:
             #     raise Exception("Should be adapted to support multiple plane resolutions.")
             #     self.planes_coverage = torch.zeros([len(self.planes_),plane_resolutions,plane_resolutions,]).type(torch.bool)
+            if self.interp_from_learned:
+                self.copy_planes()
+                # self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items()])
+                assert not align_corners,'The following corresponding grid assumes -1 and 1 correspond to array corners (rather than the center of its corner pixels)'
+                self.corresponding_grid = OrderedDict()
+                for k,v in self.planes_copy.items():
+                    res = list(v.shape[2:])
+                    # Dimensions of self.corresponding_grid[k] are resolution X resolution X 2, where the last dimension corresponds to indecis [x,y] (column,row):
+                    self.corresponding_grid[k] = np.stack(np.meshgrid(np.linspace(-1+1/res[1],1-1/res[1],res[1]),np.linspace(-1+1/res[0],1-1/res[0],res[0])),-1)
         else:
             self.planes_ = planes
-        if self.INFER_ON_LEARNED:
-            self.copy_planes()
-            # self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items()])
-            assert not align_corners,'The following corresponding grid assumes -1 and 1 correspond to array corners (rather than the center of its corner pixels)'
-            self.corresponding_grid = OrderedDict()
-            for k,v in self.planes_copy.items():
-                res = list(v.shape[2:])
-                self.corresponding_grid[k] = np.stack(np.meshgrid(np.linspace(-1+1/res[1],1-1/res[1],res[1]),np.linspace(-1+1/res[0],1-1/res[0],res[0])),-1)
 
     def copy_planes(self):
-        self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items()])
+        self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items() if any([self.plane_name(None,d) in k for d in self.PLANES_2_INFER])])
 
     def eval(self):
         super(TwoDimPlanesModel, self).eval()
-        if self.INFER_ON_LEARNED:
-            self.learned = OrderedDict([(k,np.all((self.planes_[k].detach().cpu().numpy()-self.planes_copy[k]!=0),1).squeeze()) for k in self.planes_.keys()])
+        self.use_downsampled_planes(1)
+        if self.interp_from_learned and hasattr(self,'planes_copy'):
+            self.learned = OrderedDict([(k,np.all((self.planes_[k].detach().cpu().numpy()-self.planes_copy[k]!=0),1).squeeze()) for k in self.planes_copy.keys()])
             for k in self.learned.keys():
                 if np.any(self.learned[k]): self.interpolate_plane(k)
 
@@ -430,20 +442,58 @@ class TwoDimPlanesModel(nn.Module):
             points=self.corresponding_grid[k][self.learned[k]],
             values=self.planes_[k].squeeze(0).detach().cpu().numpy().transpose(1,2,0)[self.learned[k]],
             xi=self.corresponding_grid[k],
-            method='linear',
+            method=self.interp_from_learned[2:],
             # fill_value=0.,
         )
         valid_indecis = np.logical_not(np.any(np.isnan(interpolated),-1))
+        # For debug:
+        if False:
+            import matplotlib.pyplot as plt
+            learned_plane0 = self.planes_[k].squeeze(0).detach().cpu().numpy().transpose(1,2,0)[...,0]*self.learned[k]
+            plt.imsave('learned.png',learned_plane0)
+            interpolated0 = np.zeros_like(learned_plane0)
+            interpolated0[valid_indecis] = interpolated[valid_indecis][:,0]
+            plt.imsave('interpolated.png',interpolated0)
+            interpolated_lin = griddata(\
+                points=self.corresponding_grid[k][self.learned[k]],
+                values=self.planes_[k].squeeze(0).detach().cpu().numpy().transpose(1,2,0)[self.learned[k]],
+                xi=self.corresponding_grid[k],
+                method='linear',
+                )
+            interpolated0_lin = np.zeros_like(learned_plane0)
+            valid_lin = np.logical_not(np.any(np.isnan(interpolated),-1))
+            interpolated0_lin[valid_lin] = interpolated_lin[valid_lin][:,0]
+            plt.imsave('interpolated_lin.png',interpolated0_lin)
+            interpolated_nearest = griddata(\
+                points=self.corresponding_grid[k][self.learned[k]],
+                values=self.planes_[k].squeeze(0).detach().cpu().numpy().transpose(1,2,0)[self.learned[k]],
+                xi=self.corresponding_grid[k],
+                method='nearest',
+                )
+            interpolated0_nearest = np.zeros_like(learned_plane0)
+            valid_nearest = np.logical_not(np.any(np.isnan(interpolated),-1))
+            interpolated0_nearest[valid_nearest] = interpolated_nearest[valid_nearest][:,0]
+            plt.imsave('interpolated_nearest.png',interpolated0_nearest)
+            plane0 = self.planes_[k].squeeze(0).detach().cpu().numpy().transpose(1,2,0)[...,0]
+            plt.imsave('plane0.png',plane0)
+        print('%s: Interpolating %.2f of values based on %.2f of them'%(k,np.logical_and(np.logical_not(self.learned[k]),valid_indecis).mean(),self.learned[k].mean()))
         self.planes_[k].data[:,:,valid_indecis] = torch.from_numpy(interpolated[valid_indecis].transpose()[None,...]).type(self.planes_[k].data.type())
+        if False:
+            plane0 = self.planes_[k].squeeze(0).detach().cpu().numpy().transpose(1,2,0)[...,0]
+            plt.imsave('plane0_after.png',plane0)
+
         self.planes_copy[k][...,np.logical_not(self.learned[k])] = self.planes_[k].detach().cpu().numpy()[...,np.logical_not(self.learned[k])]
         # self.planes_[k]
 
     def plane_name(self,scene_id,dimension):
+        if scene_id is None:
+            return "_D%d"%(dimension)    
         return "sc%s_D%d"%(scene_id,dimension)
         
-    def assign_SR_model(self,SR_model):
+    def assign_SR_model(self,SR_model,SR_viewdir):
         self.SR_model = SR_model
         for k,v in self.planes_.items():
+            if not SR_viewdir and self.plane_name(None,self.N_PLANES_DENSITY) in k:  continue
             self.SR_model.set_LR_planes(v.detach(),id=k,align_corners=self.align_corners)
         self.skip_SR_ = False
 
@@ -459,21 +509,19 @@ class TwoDimPlanesModel(nn.Module):
         self.debug['min_norm'][self.cur_id] = np.minimum(self.debug['min_norm'][self.cur_id],normalized_coords.min(0)[0].cpu().numpy())
         return normalized_coords
 
-    # def grid2plane_inds(self,grid):
-    #     return (grid+1)/2*(self.planes_[0].shape[-1]-1)
-
-    # def update_planes_coverage(self,plane_ind:int,grid:torch.tensor):
-    #     if self.track_planes_coverage and self.training:
-    #         for r_func in [torch.ceil,torch.floor]:
-    #             for c_func in [torch.ceil,torch.floor]:
-    #                 self.planes_coverage[plane_ind,r_func(self.grid2plane_inds(grid[...,0])).type(torch.long),c_func(self.grid2plane_inds(grid[...,1])).type(torch.long)] = True
+    def use_downsampled_planes(self,ds_factor:int): # USed for debug
+        self.planes_ds_factor = ds_factor
 
     def planes(self,dim_num:int)->torch.tensor:
         plane_name = self.plane_name(self.cur_id,dim_num)
-        if hasattr(self,'SR_model') and not self.skip_SR_:
+        if hasattr(self,'SR_model') and plane_name in self.SR_model.LR_planes and not self.skip_SR_:
             plane = self.SR_model(plane_name)
         else:
-            plane = self.planes_[plane_name]#[self.cur_res][dim_num]
+            if self.planes_ds_factor>1 and (self.viewdir_downsampling or dim_num<self.N_PLANES_DENSITY): # USed for debug or enforcing loss
+                plane = nn.functional.interpolate(self.planes_[plane_name],scale_factor=1/self.planes_ds_factor,
+                    align_corners=self.align_corners,mode=self.plane_interp,antialias=True)
+            else:
+                plane = self.planes_[plane_name]
         return plane
 
     def skip_SR(self,skip):
@@ -483,17 +531,13 @@ class TwoDimPlanesModel(nn.Module):
         projections = []
         for d in range(self.N_PLANES_DENSITY): # (Currently not supporting viewdir input)
             grid = coords[:,[c for c in range(3) if c!=d]].reshape([1,coords.shape[0],1,2])
-            # self.update_planes_coverage(d,grid)
-            if False and not self.training and self.INFER_ON_LEARNED:
-                pass
-            else:
-                projections.append(nn.functional.grid_sample(
-                        input=self.planes(d),
-                        grid=grid,
-                        mode=self.plane_interp,
-                        align_corners=self.align_corners,
-                        padding_mode='border',
-                    ))
+            projections.append(nn.functional.grid_sample(
+                    input=self.planes(d),
+                    grid=grid,
+                    mode=self.plane_interp,
+                    align_corners=self.align_corners,
+                    padding_mode='border',
+                ))
         projections = self.sum_or_cat(projections)
         return projections.squeeze(0).squeeze(-1).permute(1,0)
 
@@ -553,12 +597,12 @@ class TwoDimPlanesModel(nn.Module):
 
 # EDSR code taken and modified from https://github.com/twtygqyy/pytorch-edsr/blob/master/edsr.py
 class _Residual_Block(nn.Module): 
-    def __init__(self,hidden_size):
+    def __init__(self,hidden_size,padding,kernel_size):
         super(_Residual_Block, self).__init__()
 
-        self.conv1 = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=kernel_size, stride=1, padding=padding, bias=False)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=kernel_size, stride=1, padding=padding, bias=False)
 
     def forward(self, x): 
         identity_data = x
@@ -576,24 +620,31 @@ class EDSR(nn.Module):
         # self.sub_mean = MeanShift(rgb_mean, -1)
         self.scale_factor = scale_factor
         self.plane_interp = plane_interp
-        self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=3, stride=1, padding=1, bias=False)
+        PADDING,KERNEL_SIZE = 1,3
+        self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False)
+        self.required_padding,rf_factor = KERNEL_SIZE/2,1
 
-        self.residual = self.make_layer(_Residual_Block,{'hidden_size':hidden_size}, n_blocks)
+        self.residual = self.make_layer(_Residual_Block,{'hidden_size':hidden_size,'padding':PADDING,'kernel_size':KERNEL_SIZE}, n_blocks)
+        self.required_padding += rf_factor*2*n_blocks*(KERNEL_SIZE-1)/2
 
-        self.conv_mid = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv_mid = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False)
+        self.required_padding += rf_factor*(KERNEL_SIZE-1)/2
         assert math.log2(scale_factor)==int(math.log2(scale_factor)),"Supperting only scale factors that are an integer power of 2."
         upscaling_layers = []
         for _ in range(int(math.log2(scale_factor))):
             upscaling_layers += [
-                nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size*4, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size*4, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False),
                 nn.PixelShuffle(2),
             ]
+            self.required_padding += rf_factor*(KERNEL_SIZE-1)/2
+            rf_factor /= 2
+
         self.upscale = nn.Sequential(*upscaling_layers)
 
-        self.conv_output = nn.Conv2d(in_channels=hidden_size, out_channels=out_channels, kernel_size=3, stride=1, padding=1, bias=False)
-
+        self.conv_output = nn.Conv2d(in_channels=hidden_size, out_channels=out_channels, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False)
+        self.required_padding += rf_factor*(KERNEL_SIZE-1)/2
+        self.required_padding = int(np.ceil(self.required_padding))
         # self.add_mean = MeanShift(rgb_mean, 1)
-
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -605,7 +656,8 @@ class EDSR(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-        self.LR_planes,self.residual_planes,self.SR_planes,self.SR_updated = {},{},{},{}
+        self.LR_planes,self.residual_planes,self.SR_planes = {},{},{}
+        # self.SR_updated = {},
 
     def make_layer(self, block,args, num_of_layer):
         layers = []
@@ -618,26 +670,55 @@ class EDSR(nn.Module):
         self.LR_planes[id] = plane
         self.residual_planes[id] = torch.nn.functional.interpolate(plane,scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=align_corners)
         self.SR_planes[id] = 1*self.residual_planes[id]
-        self.SR_updated[id] = True
+        # print('WARNING!!!!!!!!!!!!!!!!!!!!!!!! uncomment above')
+
+    def weights_updated(self):
+        self.SR_planes = {}
 
     def forward(self, plane_name):
-        if self.training or not self.SR_updated[plane_name]:
-            if self.training:   self.SR_updated = dict([(id,False) for id in self.SR_updated.keys()])
-            x = self.LR_planes[plane_name].detach()
-        # def forward(self, x):
-            # residual = x
-            out = self.conv_input(x)
-            # residual = out
-            out = self.conv_mid(self.residual(out))
-            # out = torch.add(out,residual)
-            out = self.upscale(out)
-            out = self.conv_output(out)
-            # out = torch.add(out,torch.nn.functional.interpolate(residual,size=tuple(out.shape[2:]),mode=self.plane_interp,align_corners=True))
-            out = torch.add(out,self.residual_planes[plane_name])
-            if not self.training:
-                self.SR_planes[plane_name] = out
-                self.SR_updated[plane_name] = True
-        else:
+        if plane_name in self.SR_planes:
             out = self.SR_planes[plane_name]
+        else:
+            x = self.LR_planes[plane_name].detach()
+            success,num_batches = False,1
+            take_last = lambda ind: -ind if ind>0 else None
+            while not success:
+                spatial_dims = np.array([int(np.ceil(v/num_batches)) for v in  x.shape[2:]])
+                try:
+                    out = torch.zeros_like(self.residual_planes[plane_name])
+                    for b_num in range(num_batches):
+                        min_index = b_num*spatial_dims
+                        max_index = np.minimum((b_num+1)*spatial_dims,np.array(x.shape[2:]))
+                        min_index[1],max_index[1] = 0,x.shape[3]
+                        pre_padding = np.minimum(min_index,self.required_padding)
+                        post_padding = np.minimum(np.array(x.shape[2:])-max_index,self.required_padding)
+                        difference = self.inner_forward(
+                            x[...,min_index[0]-pre_padding[0]:max_index[0]+post_padding[0],
+                            min_index[1]-pre_padding[1]:max_index[1]+post_padding[1]])
+                        min_index *= self.scale_factor
+                        max_index *= self.scale_factor
+                        out[...,min_index[0]:max_index[0],min_index[1]:max_index[1]] = torch.add(
+                            difference[...,self.scale_factor*pre_padding[0]:take_last(self.scale_factor*post_padding[0]),
+                                self.scale_factor*pre_padding[1]:take_last(self.scale_factor*post_padding[1])],
+                            self.residual_planes[plane_name][...,min_index[0]:max_index[0],min_index[1]:max_index[1]])
+                    success = True
+                except Exception as e:
+                    if 'CUDA out of memory.' in e.args[0]:
+                        num_batches += 1
+                    else:
+                        raise e
+            # out = self.conv_input(x)
+            # out = self.conv_mid(self.residual(out))
+
+            # out = self.upscale(out)
+            # out = self.conv_output(out)
+            # out = torch.add(out,self.residual_planes[plane_name])
+            self.SR_planes[plane_name] = out
         return out
- 
+
+    def inner_forward(self,x):
+        out = self.conv_input(x)
+        out = self.conv_mid(self.residual(out))
+        out = self.upscale(out)
+        return self.conv_output(out)
+        # return torch.add(out,residual)

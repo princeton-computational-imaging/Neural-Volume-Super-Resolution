@@ -46,24 +46,25 @@ def get_config(config_path):
         cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
         return CfgNode(cfg_dict)
 
-def arange_ims(ims_tensor_list,text,fontScale=1):
+def arange_ims(ims_tensor_list,text,psnrs=[],fontScale=1):
     num_cols = int(np.ceil(np.sqrt(len(ims_tensor_list))))
     im_sides = [t.shape[0] for t in ims_tensor_list]
     max_side = max(im_sides)
     rows = []
+    psnrs += (len(ims_tensor_list)-len(psnrs))*[None]
     for im_num,im in enumerate(ims_tensor_list):
         if im_num%num_cols==0:
             if im_num>0:    rows.append(np.concatenate(row,1))
             row = []
         row.append(cv2.resize(
-            cast_to_image(im,text if im_num==0 else None,fontScale).transpose(1,2,0),
+            cast_to_image(im,img_text=text if im_num==0 else None,psnr=psnrs[im_num],fontScale=fontScale).transpose(1,2,0),
             dsize=(max_side,max_side),
             interpolation=cv2.INTER_CUBIC))
     row = np.concatenate(row,1)
     rows.append(np.pad(row,((0,0),(0,num_cols*max_side-row.shape[1]),(0,0)),))
     return np.concatenate(rows,0).transpose(2,0,1)
 
-def cast_to_image(tensor,img_text=None,fontScale=1):
+def cast_to_image(tensor,img_text=None,psnr=None,fontScale=1):
     # Input tensor is (H, W, 3). Convert to (3, H, W).
     tensor = tensor.permute(2, 0, 1)
     # Conver to PIL Image and then np.array (output shape: (H, W, 3))
@@ -75,6 +76,17 @@ def cast_to_image(tensor,img_text=None,fontScale=1):
             img.transpose(1,2,0),
             img_text,
             (0,int(fontScale*15)),
+            # (img.shape[1]-20*len(img_text),50),
+            cv2.FONT_HERSHEY_PLAIN,
+            fontScale=fontScale,
+            color=[255,255,255],
+            thickness=int(np.ceil(np.sqrt(fontScale))),
+        ).transpose(2,0,1)
+    if psnr is not None:
+        img = cv2.cv2.putText(
+            img.transpose(1,2,0),
+            '%.2f'%(psnr),
+            (img.shape[1]//2,img.shape[2]),
             # (img.shape[1]-20*len(img_text),50),
             cv2.FONT_HERSHEY_PLAIN,
             fontScale=fontScale,
@@ -181,7 +193,7 @@ def cart2az_el(dirs):
     return torch.stack([az,el],-1)
 
 def get_ray_bundle(
-    height: int, width: int, focal_length: float, tform_cam2world: torch.Tensor,padding_size: int=0
+    height: int, width: int, focal_length: float, tform_cam2world: torch.Tensor,padding_size: int=0,downsampling_offset: float=0
 ):
     r"""Compute the bundle of rays passing through all pixels of an image (one ray per pixel).
 
@@ -204,8 +216,8 @@ def get_ray_bundle(
     """
     # TESTED
     ii, jj = meshgrid_xy(
-        torch.arange(width+2*padding_size).to(tform_cam2world),
-        torch.arange(height+2*padding_size).to(tform_cam2world),
+        (torch.arange(width+2*padding_size)+downsampling_offset).to(tform_cam2world),
+        (torch.arange(height+2*padding_size)+downsampling_offset).to(tform_cam2world),
     )
     if padding_size>0:
         ii = ii-padding_size

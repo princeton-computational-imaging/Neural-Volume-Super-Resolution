@@ -38,16 +38,13 @@ def pose_spherical(theta, phi, radius):
 
 
 def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
-    downsampling_factor=1,val_downsampling_factor=None,cfg=None,val_only=False):
+        downsampling_factor=1,val_downsampling_factor=None,cfg=None,val_only=False):
     assert cfg is not None,"As of now, expecting to get the entire configuration"
     train_im_inds = None
     if cfg.get("super_resolution",None) is not None:
         train_im_inds = cfg.super_resolution.get("dataset",{}).get("train_im_inds",None)
-    # if not isinstance(downsampling_factor,list):    downsampling_factor = [downsampling_factor]
-    # assert (len(downsampling_factor)==1 and downsampling_factor[0]==1) or train_im_inds is None,"Should not use a global downsampling_factor when training an SR model, only when learning the LR representation"
     assert downsampling_factor==1 or train_im_inds is None,"Should not use a global downsampling_factor when training an SR model, only when learning the LR representation"
-    if downsampling_factor!=1: assert half_res,"Assuming half_res is True"
-    # if any([d!=1 for d in downsampling_factor]): assert half_res,"Assuming half_res is True"
+    # if downsampling_factor!=1: assert half_res,"Assuming half_res is True"
     if val_downsampling_factor is None:
         val_downsampling_factor = downsampling_factor
     splits = ["train", "val", "test"]
@@ -78,11 +75,9 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
         for f_num,frame in enumerate(meta["frames"][::skip]):
             fname = os.path.join(basedir, frame["file_path"] + ".png")
             img = (imageio.imread(fname)/ 255.0).astype(np.float32)
-            # per_im_ds_factor = 1*downsampling_factor
             if s=='val':
                 per_im_ds_factor = 1*val_downsampling_factor
             else:
-            # per_im_ds_factor = np.random.choice(downsampling_factor,1)
                 per_im_ds_factor = 1*downsampling_factor
             if s=="train" and train_im_inds is not None and (f_num not in train_im_inds if isinstance(train_im_inds,list) else f_num>train_im_inds*total_split_frames):
                 per_im_ds_factor = cfg.super_resolution.ds_factor
@@ -91,9 +86,10 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
             H.append(img.shape[0])
             W.append(img.shape[1])
             if half_res:
-                H[-1] //= (2*per_im_ds_factor)
-                W[-1] //= (2*per_im_ds_factor)
-                resized_img = torch.from_numpy(cv2.resize(img, dsize=(400//per_im_ds_factor, 400//per_im_ds_factor), interpolation=cv2.INTER_AREA))
+                per_im_ds_factor *= 2
+            H[-1] //= (per_im_ds_factor)
+            W[-1] //= (per_im_ds_factor)
+            resized_img = torch.from_numpy(cv2.resize(img, dsize=(img.shape[1]//per_im_ds_factor, img.shape[0]//per_im_ds_factor), interpolation=cv2.INTER_AREA))
 
             focal.append(focal_over_W*W[-1])
             ds_factor.append(per_im_ds_factor)
