@@ -1,3 +1,5 @@
+from collections import defaultdict
+from pickletools import uint8
 from typing import Optional
 import numpy as np
 import math
@@ -9,6 +11,42 @@ import torchvision
 
 # import torchsearchsorted
 
+class null_with:
+    def __enter__(self):
+        pass
+    def __exit__(self,a,b,c):
+        pass
+
+def set_config_defaults(source,target):
+    for k in source.keys():
+        if k not in target: setattr(target,k,getattr(source,k))
+
+def is_background_white(image):
+    perimeter = torch.cat([image[0,...].reshape([-1]),image[-1,...].reshape([-1]),image[:,0,...].reshape([-1]),image[:,-1,...].reshape([-1]),])
+    black_portion = (perimeter<=10/256).float().mean()
+    white_portion = (perimeter>=246/256).float().mean()
+    # black_portion = (image<=10/256).float().mean()
+    # white_portion = (image>=246/256).float().mean()
+    # PORTION_THRESHOLD = 0.4
+    # assert torch.bitwise_xor(black_portion>PORTION_THRESHOLD,white_portion>PORTION_THRESHOLD),'Not sure about the background color: %.2f black, %.2f white'%(black_portion,white_portion)
+    # if black_portion>PORTION_THRESHOLD:
+    #     return 0
+    # elif white_portion>PORTION_THRESHOLD:
+    #     return 1
+    return white_portion>black_portion
+    #     return 1
+    # else:
+    #     return 0
+
+
+def compute_patches_distribution(image,patch_size):
+    white_bg = is_background_white(image)
+    image = integral_image(torch.any(image<246/256 if white_bg else image>10/256,-1))
+    image = image[patch_size:,patch_size:]+image[:-(patch_size),:-(patch_size)]-image[patch_size:,:-(patch_size)]-image[:-(patch_size),patch_size:]
+    return image.float()/image.sum()
+
+def integral_image(image):
+    return torch.cat([torch.zeros([1+image.shape[0],1]).type(image.type()),torch.cat([torch.zeros([1,image.shape[1]]).type(image.type()),torch.cumsum(torch.cumsum(image,0),1)],0)],1)
 
 def img2mse(img_src, img_tgt):
     return torch.nn.functional.mse_loss(img_src, img_tgt)
@@ -47,9 +85,16 @@ def get_config(config_path):
         return CfgNode(cfg_dict)
 
 def arange_ims(ims_tensor_list,text,psnrs=[],fontScale=1):
-    num_cols = int(np.ceil(np.sqrt(len(ims_tensor_list))))
-    im_sides = [t.shape[0] for t in ims_tensor_list]
-    max_side = max(im_sides)
+    # num_cols = int(np.ceil(np.sqrt(len(ims_tensor_list))))
+    num_rows = lambda n_cols:   int(np.ceil(len(ims_tensor_list)/n_cols))
+    num_cols = 1 #len(ims_tensor_list)
+    while num_cols*ims_tensor_list[0].shape[1]<num_rows(num_cols)*ims_tensor_list[0].shape[0]:
+        if num_cols==len(ims_tensor_list): break
+        num_cols += 1
+    assert all([t.shape[:2]==ims_tensor_list[0].shape[:2] for t in ims_tensor_list[1:]]),'Currently assuming all images have the same dimensions.'
+    # im_sides = [np.array(t.shape[:2]) for t in ims_tensor_list]
+    # max_side = max(im_sides)
+    ims_size = tuple(ims_tensor_list[0].shape[:2])
     rows = []
     psnrs += (len(ims_tensor_list)-len(psnrs))*[None]
     for im_num,im in enumerate(ims_tensor_list):
@@ -58,10 +103,10 @@ def arange_ims(ims_tensor_list,text,psnrs=[],fontScale=1):
             row = []
         row.append(cv2.resize(
             cast_to_image(im,img_text=text if im_num==0 else None,psnr=psnrs[im_num],fontScale=fontScale).transpose(1,2,0),
-            dsize=(max_side,max_side),
+            dsize=(ims_size[1],ims_size[0]),#(max_side,max_side),
             interpolation=cv2.INTER_CUBIC))
     row = np.concatenate(row,1)
-    rows.append(np.pad(row,((0,0),(0,num_cols*max_side-row.shape[1]),(0,0)),))
+    rows.append(np.pad(row,((0,0),(0,num_cols*ims_size[1]-row.shape[1]),(0,0)),))
     return np.concatenate(rows,0).transpose(2,0,1)
 
 def cast_to_image(tensor,img_text=None,psnr=None,fontScale=1):
@@ -72,6 +117,7 @@ def cast_to_image(tensor,img_text=None,psnr=None,fontScale=1):
     # Map back to shape (3, H, W), as tensorboard needs channels first.
     img = np.moveaxis(img, [-1], [0])
     if img_text is not None:
+        text_color = ((np.mean(img[:,:int(fontScale*img.shape[1]//24),:int(fontScale*15)],axis=(1,2)).astype(np.uint8)+[128,128,128])%256).tolist()
         img = cv2.cv2.putText(
             img.transpose(1,2,0),
             img_text,
@@ -79,18 +125,20 @@ def cast_to_image(tensor,img_text=None,psnr=None,fontScale=1):
             # (img.shape[1]-20*len(img_text),50),
             cv2.FONT_HERSHEY_PLAIN,
             fontScale=fontScale,
-            color=[255,255,255],
+            color=text_color,#[255,255,255],
             thickness=int(np.ceil(np.sqrt(fontScale))),
         ).transpose(2,0,1)
     if psnr is not None:
+        psnr_color = ((np.mean(img[:,-int(fontScale*img.shape[1]//24):,img.shape[2]//2:],axis=(1,2)).astype(np.uint8)+[128,128,128])%256).tolist()
         img = cv2.cv2.putText(
             img.transpose(1,2,0),
             '%.2f'%(psnr),
-            (img.shape[1]//2,img.shape[2]),
+            (img.shape[2]//2,img.shape[1]),
             # (img.shape[1]-20*len(img_text),50),
             cv2.FONT_HERSHEY_PLAIN,
             fontScale=fontScale,
-            color=[255,255,255],
+            # color=[255,255,255],
+            color=psnr_color,
             thickness=int(np.ceil(np.sqrt(fontScale))),
         ).transpose(2,0,1)
 
@@ -120,7 +168,7 @@ def meshgrid_xy(tensor1: torch.Tensor, tensor2: torch.Tensor) -> tuple((torch.Te
       tensor2 (torch.Tensor): Tensor whose elements define the second dimension of the returned meshgrid.
     """
     # TESTED
-    ii, jj = torch.meshgrid(tensor1, tensor2)
+    ii, jj = torch.meshgrid(tensor1, tensor2,indexing='ij')
     return ii.transpose(-1, -2), jj.transpose(-1, -2)
 
 

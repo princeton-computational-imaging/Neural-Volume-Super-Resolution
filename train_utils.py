@@ -39,8 +39,12 @@ def run_network(network_fn, pts, ray_batch, chunksize, embed_fn,\
         embedded_dirs = embeddirs_fn(input_dirs_flat)
         embedded = torch.cat((embedded, embedded_dirs), dim=-1)
 
+
     # chunksize = embedded.shape[0]
-    batches = get_minibatches(embedded, chunksize=chunksize)
+    if chunksize is None:
+        batches = [embedded]
+    else:
+        batches = get_minibatches(embedded, chunksize=chunksize)
     preds = []
     if isinstance(network_fn,models.TwoDimPlanesModel):
         network_fn.set_cur_scene_id(ds_factor_or_id)
@@ -84,57 +88,57 @@ def predict_and_render_radiance(
     if encode_direction_fn is None:
         encode_direction_fn = identity_encoding
 
-    # num_rays = ray_batch.shape[0]
-    ro, rd = ray_batch[..., :3], ray_batch[..., 3:6]
-    bounds = ray_batch[..., 6:8].reshape(list(ray_batch.shape)[:-1]+[1, 2])
-    near, far = bounds[..., 0], bounds[..., 1]
+    with model_coarse.optional_no_grad():
+        ro, rd = ray_batch[..., :3], ray_batch[..., 3:6]
+        bounds = ray_batch[..., 6:8].reshape(list(ray_batch.shape)[:-1]+[1, 2])
+        near, far = bounds[..., 0], bounds[..., 1]
 
-    # TODO: Use actual values for "near" and "far" (instead of 0. and 1.)
-    # when not enabling "ndc".
-    t_vals = torch.linspace(0.0, 1.0, getattr(options.nerf, mode).num_coarse+mip_nerf).to(ro)
-    if not getattr(options.nerf, mode).lindisp:
-        z_vals = near * (1.0 - t_vals) + far * t_vals
-    else:
-        z_vals = 1.0 / (1.0 / near * (1.0 - t_vals) + 1.0 / far * t_vals)
-    z_vals = z_vals.expand(list(ray_batch.shape)[:-1]+[getattr(options.nerf, mode).num_coarse+mip_nerf])
+        # TODO: Use actual values for "near" and "far" (instead of 0. and 1.)
+        # when not enabling "ndc".
+        t_vals = torch.linspace(0.0, 1.0, getattr(options.nerf, mode).num_coarse+mip_nerf).to(ro)
+        if not getattr(options.nerf, mode).lindisp:
+            z_vals = near * (1.0 - t_vals) + far * t_vals
+        else:
+            z_vals = 1.0 / (1.0 / near * (1.0 - t_vals) + 1.0 / far * t_vals)
+        z_vals = z_vals.expand(list(ray_batch.shape)[:-1]+[getattr(options.nerf, mode).num_coarse+mip_nerf])
 
-    if getattr(options.nerf, mode).perturb:
-        # Get intervals between samples.
-        mids = 0.5 * (z_vals[..., 1:] + z_vals[..., :-1])
-        upper = torch.cat((mids, z_vals[..., -1:]), dim=-1)
-        lower = torch.cat((z_vals[..., :1], mids), dim=-1)
-        # Stratified samples in those intervals.
-        t_rand = torch.rand(z_vals.shape).to(ro)
-        z_vals = lower + (upper - lower) * t_rand
-    # pts -> (num_rays, N_samples, 3)
-    pts = ro[..., None, :] + rd[..., None, :] * z_vals[..., :, None]
-    SR_CHUNK_REDUCE = 2
-    radiance_field = run_network(
-        model_coarse,
-        pts,
-        ray_batch,
-        getattr(options.nerf, mode).chunksize//(SR_CHUNK_REDUCE if hasattr(model_coarse,'SR_model') else 1),
-        encode_position_fn,
-        encode_direction_fn,
-        mip_nerf=mip_nerf,
-        z_vals=z_vals,
-        ds_factor_or_id=ds_factor_or_id,
-    )
+        if getattr(options.nerf, mode).perturb:
+            # Get intervals between samples.
+            mids = 0.5 * (z_vals[..., 1:] + z_vals[..., :-1])
+            upper = torch.cat((mids, z_vals[..., -1:]), dim=-1)
+            lower = torch.cat((z_vals[..., :1], mids), dim=-1)
+            # Stratified samples in those intervals.
+            t_rand = torch.rand(z_vals.shape).to(ro)
+            z_vals = lower + (upper - lower) * t_rand
+        # pts -> (num_rays, N_samples, 3)
+        pts = ro[..., None, :] + rd[..., None, :] * z_vals[..., :, None]
+        SR_CHUNK_REDUCE = 2
+        radiance_field = run_network(
+            model_coarse,
+            pts,
+            ray_batch,
+            getattr(options.nerf, mode).chunksize//(SR_CHUNK_REDUCE if hasattr(model_coarse,'SR_model') else 1),
+            encode_position_fn,
+            encode_direction_fn,
+            mip_nerf=mip_nerf,
+            z_vals=z_vals,
+            ds_factor_or_id=ds_factor_or_id,
+        )
 
-    (
-        rgb_coarse,
-        disp_coarse,
-        acc_coarse,
-        weights,
-        depth_coarse,
-    ) = volume_render_radiance_field(
-        radiance_field,
-        z_vals,
-        rd,
-        radiance_field_noise_std=getattr(options.nerf, mode).radiance_field_noise_std,
-        white_background=getattr(options.nerf, mode).white_background,
-        mip_nerf=mip_nerf,
-    )
+        (
+            rgb_coarse,
+            disp_coarse,
+            acc_coarse,
+            weights,
+            depth_coarse,
+        ) = volume_render_radiance_field(
+            radiance_field,
+            z_vals,
+            rd,
+            radiance_field_noise_std=getattr(options.nerf, mode).radiance_field_noise_std,
+            white_background=getattr(options.nerf, mode).white_background,
+            mip_nerf=mip_nerf,
+        )
 
     # TODO: Implement importance sampling, and finer network.
     rgb_fine, disp_fine, acc_fine,rgb_SR,disp_SR,acc_SR = None, None, None, None, None, None
@@ -171,7 +175,8 @@ def predict_and_render_radiance(
             model_fine,
             pts,
             ray_batch,
-            getattr(options.nerf, mode).chunksize//(SR_CHUNK_REDUCE if hasattr(model_fine,'SR_model') else 1),
+            None if hasattr(model_fine,'SR_model') else getattr(options.nerf, mode).chunksize,
+            # getattr(options.nerf, mode).chunksize//(SR_CHUNK_REDUCE if hasattr(model_fine,'SR_model') else 1),
             encode_position_fn,
             encode_direction_fn,
             return_input_grads=num_grads_2_return,
@@ -317,9 +322,11 @@ def run_one_iter_of_nerf(
 
     # chunk_size = getattr(options.nerf, mode).chunksize*64//max([getattr(options.nerf, mode).num_coarse,getattr(options.nerf, mode).num_fine])
     chunk_size = getattr(options.nerf, mode).chunksize
-    if SR_model is not None:
-        chunk_size //= 32
-    if spatial_margin is not None:
+    if SR_model is not None or hasattr(model_fine,'SR_model'):
+        chunk_size //= 5 #(2*int(np.ceil(np.log2(model_fine.SR_model.n_blocks))))
+        # if model_fine.SR_model.training:
+        #     chunk_size //= int(2*np.ceil(np.log2(model_fine.SR_model.n_blocks)))
+    if spatial_margin is not None: # and not hasattr(model_fine,'SR_model'):
         rays = rays.reshape([H+2*spatial_margin,W+2*spatial_margin,-1])
     elif hasattr(options.nerf,'encode_position_fn') and options.nerf.encode_position_fn=="mip":
         chunk_size //= 4 # For some reason I get memory problems when using MipNeRF, so I'm using this arbitrary factor of 4.

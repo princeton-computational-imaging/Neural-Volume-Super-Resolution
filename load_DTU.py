@@ -26,6 +26,9 @@ def get_mask_to_tensor():
         [transforms.ToTensor(), transforms.Normalize((0.0,), (1.0,))]
     )
 
+def old_DTU_sceneID(id):
+    return 'DTU'+str(id)
+
 class DVRDataset(torch.utils.data.Dataset):
     """
     Dataset from DVR (Niemeyer et al. 2020)
@@ -46,6 +49,8 @@ class DVRDataset(torch.utils.data.Dataset):
         single_images:bool=True,
         eval_ratio:float=None,
         max_scenes:int=None,
+        downsampling_factor:int=1,
+        excluded_scenes:list=None,
     ):
         """
         :param path dataset root path, contains metadata.yml
@@ -62,6 +67,7 @@ class DVRDataset(torch.utils.data.Dataset):
         super().__init__()
         self.base_path = path
         self.single_images = single_images
+        self.downsampling_factor = downsampling_factor
         assert eval_ratio is None or single_images,'eval_ratio can only be used when loader returns images, not full scenes.'
         assert os.path.exists(self.base_path)
 
@@ -83,7 +89,8 @@ class DVRDataset(torch.utils.data.Dataset):
             base_dir = os.path.dirname(file_list)
             cat = os.path.basename(base_dir)
             with open(file_list, "r") as f:
-                objs = sorted([(cat, os.path.join(base_dir, x.strip())) for x in f.readlines()])
+                # objs = sorted([(cat, os.path.join(base_dir, x.strip())) for x in f.readlines()])
+                objs = [(cat, os.path.join(base_dir, x.strip())) for x in f.readlines()]
             if max_scenes is not None and len(objs)+len(self.all_objs)>max_scenes:
                 # For saving time during debug
                 print('!!! Keeping only %d scenes!!!'%(max_scenes))
@@ -94,7 +101,19 @@ class DVRDataset(torch.utils.data.Dataset):
             if l_num in val_lists:  self.val_scenes.extend([i+len(self.all_objs) for i in range(len(objs))])
             self.all_objs.extend(objs)
 
-        self.all_objs = self.all_objs
+        if excluded_scenes is not None:
+            scene_names = [self.DTU_sceneID(i) for i in range(len(self.all_objs))]
+            scenes_2_remove = []
+            for s in excluded_scenes:
+                scenes_2_remove.append(scene_names.index(s))
+            temp = 1*self.val_scenes
+            self.val_scenes = []
+            for s_num in temp:
+                if s_num in scenes_2_remove:    continue
+                self.val_scenes.append(s_num-sum([v<s_num for v in scenes_2_remove]))
+            self.all_objs = [s for i,s in enumerate(self.all_objs) if i not in scenes_2_remove]
+
+        self.all_objs = sorted(self.all_objs)
         if self.single_images:
             self.im_IDs = []
             # self.train_inds = []
@@ -158,9 +177,9 @@ class DVRDataset(torch.utils.data.Dataset):
 
     # def eval(self,eval):
     #     self.eval_mode = eval
-
     def DTU_sceneID(self,id):
-        return 'DTU'+str(id)
+        return self.all_objs[id][1].split('/')[-1]
+        # return 'DTU'+str(id)
 
     def val_scene_IDs(self):
         return [self.DTU_sceneID(id) for id in self.val_scenes]
@@ -194,7 +213,8 @@ class DVRDataset(torch.utils.data.Dataset):
         img_target = data_item['images'].squeeze(0).permute([1,2,0]).to(device)
         pose_target = data_item['poses'].squeeze(0)[:3].to(device)
         cur_H,cur_W = img_target.shape[:2]
-        return img_target,pose_target,cur_H,cur_W,cur_focal
+        ds_factor = data_item['ds_factor']
+        return img_target,pose_target,cur_H,cur_W,cur_focal,ds_factor
 
     def __getitem__(self, index):
         if self.single_images:
@@ -239,10 +259,19 @@ class DVRDataset(torch.utils.data.Dataset):
         for idx, (rgb_path, mask_path) in enumerate(zip(rgb_paths, mask_paths)):
             i = sel_indices[idx]
             img = imageio.imread(rgb_path)[..., :3]
+            if self.downsampling_factor!=1:
+                resized_img = cv2.resize(img, dsize=(img.shape[1]//self.downsampling_factor, img.shape[0]//self.downsampling_factor), interpolation=cv2.INTER_AREA)
+
+                # raise Exception('Unsupported yet')
             if self.scale_focal:
                 x_scale = img.shape[1] / 2.0
                 y_scale = img.shape[0] / 2.0
                 xy_delta = 1.0
+            elif self.downsampling_factor!=1:
+                x_scale = resized_img.shape[1]/img.shape[1]
+                y_scale = resized_img.shape[0]/img.shape[0]
+                xy_delta = 0.0
+                img = resized_img
             else:
                 x_scale = y_scale = 1.0
                 xy_delta = 0.0
@@ -362,6 +391,7 @@ class DVRDataset(torch.utils.data.Dataset):
             "focal": focal,
             "images": all_imgs,
             "poses": all_poses,
+            "ds_factor": self.downsampling_factor
         }
         if all_masks is not None:
             result["masks"] = all_masks

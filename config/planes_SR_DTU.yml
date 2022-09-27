@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR1vs1Scenes_32B256C_SFpos_LR4 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  id: SRallDTUScenes_32B256C_SFpos_LR4 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -18,80 +18,34 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
-  dir:
-    # train: ['chair','drums','ficus','hotdog','lego','materials',]
-    # train: ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-    # train: ['chair','drums'] #,'ficus','hotdog','lego','materials',]
-    # train: ['ficus','hotdog'] #,'lego','materials',]
-    train: lego
-    # val: ['mic','ship']
-    val: mic
+  type: DTU # DTU,synt
+  # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
+  root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
+  excluded_scenes:  ['scan4']
+  # Load only some of the scenes in the dataset:
+  # max_scenes: 5
+  # Save images corresponding to up to 
+  # max_scene_savings:  9
+  # Evaluate up to so many scenes:
+  max_scenes_eval:  9
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
-  # For the Blender datasets (synthetic), optionally return images
-  # at half the original resolution of 800 x 800, to save space.
-  half_res: True
-  # Stride (include one per "testskip" images in the dataset).
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
   no_ndc: True
   # Near clip plane (clip all depth values closer than this threshold).
-  near: 2
+  near: 0.1
   # Far clip plane (clip all depth values farther than this threshold).
-  far: 6
+  far: 5
 
 # Model parameters.
 models:
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res200_32Lrgb4Lden4_LR4corrected_allScenes_0/checkpoint245000.ckpt
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/DTU_Res200_32_DSpos12_Cdec256CplnCat_LR100_allScenes_0
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/DTU_Res200_32_DSpos12_CplnCat_LR100_allScenes_0
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res400_32_Lrgb4Lden4_LR4floatOffset_allScenes_FullSize_0
-  # Coarse model.
-  coarse:
-    # Name of the torch.nn.Module class that implements the model.
-    type: TwoDimPlanesModel
-    # Plane side size:
-    plane_resolutions: 200
-    # Plane side size for view-direction plane. Can be a list like plane_resolutions.
-    viewdir_plane_resolution: 32
-    # Planes interpolation method (default to bilinear):
-    plane_interp: bilinear # bicubic # bilinear
-    # Number of layers in the density decoder.
-    dec_density_layers: 4
-    # Number of layers in the rgb decoder.
-    dec_rgb_layers: 4
-    # dec_channels: 256
-    # num_plane_channels: 256
-    # What is the input to the rgb decoder, apart from view directions (if used)
-    rgb_dec_input:  projections # projections, features
-    # proj_combination: concat
-    # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
-    align_corners: False
-    # Number of hidden units in each layer of the MLP (multi-layer
-    # perceptron).
-    # hidden_size: 256
-    # Add a skip connection once in a while. Note: This parameter
-    # won't take affect unless num_layers > skip_connect_every.
-    # skip_connect_every: 3
-    # Additionally use viewing directions as input.
-    # use_viewdirs: True
-    # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
-    # interp_viewdirs: bicubic #'bilinear','bicubic',None
-  fine:
-    # Name of the torch.nn.Module class that implements the model.
-    # type: use_same
-    type: TwoDimPlanesModel
-    # Plane side size:
-    # plane_resolutions: 128
-    # # Number of layers in the density decoder.
-    # dec_density_layers: 2
-    # # Number of layers in the rgb decoder.
-    # dec_rgb_layers: 2
-    # Share the planes with the coarse model:
-    use_coarse_planes: True
-    # # Additionally use viewing directions as input.
-    # use_viewdirs: False
+
 # Optimizer params.
 optimizer:
   # Name of the torch.optim class used for optimization.
@@ -103,10 +57,6 @@ optimizer:
 nerf:
   # Use viewing directions as input, in addition to the X, Y, Z coordinates.
   use_viewdirs: True
-  # # Encoding function for position (X, Y, Z).
-  # encode_position_fn: None
-  # # Encoding function for ray direction (theta, phi).
-  # encode_direction_fn: None
   train:
     # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
     spatial_sampling: 1.
@@ -117,7 +67,10 @@ nerf:
     # the network)
     chunksize: 131072  # 131072  # 1024 * 32
     # Save GPU memory by holding plane variables on cpu memory until needed:
-    save_GPU_memory: True
+    # save_GPU_memory: True
+    store_planes:
+      buffer_size:  3 #5
+      steps_per_buffer: 40
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
@@ -168,5 +121,5 @@ super_resolution:
     # perceptron).
     hidden_size: 256 #128 #256
     # Number of residual blocks (originally 32):
-    n_blocks: 32 # 32
+    n_blocks: 32
     # scale_factor: one #one #sqrt #linear

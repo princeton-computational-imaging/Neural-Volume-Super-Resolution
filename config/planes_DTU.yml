@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: DTU # debug-lego200 # DTU
+  id: DTU_Res800_32_DSpos12_CplnCat_allScenes # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -9,9 +9,9 @@ experiment:
   # Number of training iterations.
   train_iters: 750050
   # Number of training iterations after which to validate.
-  validate_every: 50
+  validate_every: [0.1,1000] #50
   # Number of training iterations after which to checkpoint.
-  save_every: 5000
+  save_every: 10.0 #5000
   # Number of training iterations after which to print progress.
   print_every: 100
 
@@ -21,16 +21,18 @@ dataset:
   type: DTU # DTU,synt
   # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
-  dir:
-    train: ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-  # Optionally, provide a path to the pre-cached dataset dir. This
-  # overrides the other dataset options.
-  cachedir: cache/legocache200
+  # excluded_scenes:  ['scan4']
+  # Load only some of the scenes in the dataset:
+  # max_scenes: 10
+  # Save images corresponding to up to 
+  # max_scene_savings:  9
+  # Evaluate up to so many scenes:
+  max_scenes_eval:  9
   # For the Blender datasets (synthetic), optionally return images
   # at half the original resolution of 800 x 800, to save space.
-  half_res: True
+  # half_res: True
   # Stride (include one per "testskip" images in the dataset).
-  # downsampling_factor: 4 # downsampling factor for the downsampling experiment
+  downsampling_factor: 4 # downsampling factor for the downsampling experiment
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
@@ -46,18 +48,21 @@ models:
   coarse:
     # Name of the torch.nn.Module class that implements the model.
     type: TwoDimPlanesModel
-    # Plane side size:
-    plane_resolutions: 64 #32
+    # Plane side size. Integer or a list of integers to match different scenes.
+    plane_resolutions: 200 #64 #32
+    # Plane side size for view-direction plane. Can be a list like plane_resolutions.
+    viewdir_plane_resolution: 32
     # Planes interpolation method (default to bilinear):
     plane_interp: bilinear # bicubic # bilinear
     # Number of layers in the density decoder.
-    dec_density_layers: 2
+    dec_density_layers: 14 #4
     # Number of layers in the rgb decoder.
-    dec_rgb_layers: 2
+    dec_rgb_layers: 14 #4
     # dec_channels: 256
-    # num_plane_channels: 96
+    # num_plane_channels: 256
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
+    proj_combination: concat
     # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
     align_corners: False
     # Number of hidden units in each layer of the MLP (multi-layer
@@ -65,9 +70,11 @@ models:
     # hidden_size: 256
     # Add a skip connection once in a while. Note: This parameter
     # won't take affect unless num_layers > skip_connect_every.
-    # skip_connect_every: 3
+    skip_connect_every: 3
     # Additionally use viewing directions as input.
-    use_viewdirs: True
+    # use_viewdirs: True
+    # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
+    # interp_viewdirs: bilinear #'bilinear','bicubic',None
   fine:
     # Name of the torch.nn.Module class that implements the model.
     # type: use_same
@@ -92,7 +99,7 @@ optimizer:
 # NeRF parameters.
 nerf:
   # Use viewing directions as input, in addition to the X, Y, Z coordinates.
-  use_viewdirs: True
+  use_viewdirs: True #False #True
   # # Encoding function for position (X, Y, Z).
   # encode_position_fn: None
   # # Encoding function for ray direction (theta, phi).
@@ -104,6 +111,12 @@ nerf:
     # Size of each chunk (rays are batched into "chunks" and passed through
     # the network)
     chunksize: 131072  # 131072  # 1024 * 32
+    # Save GPU memory by holding plane variables on cpu memory until needed:
+    # save_GPU_memory: True
+    # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
+    store_planes:
+      buffer_size:  5
+      steps_per_buffer: 40
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
@@ -117,6 +130,9 @@ nerf:
     radiance_field_noise_std: 0.2
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
+    # Randomly downsamples plane during training to enforce multi-resolution loss:
+    max_plane_downsampling: 12
+    viewdir_downsampling: False
   # Validation-specific parameters.
   validation:
     # Number of random rays to retain from each image.

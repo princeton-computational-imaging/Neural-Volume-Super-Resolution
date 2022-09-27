@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: planes_Res800_32_DSpos25_Lrgb4Lden4_ficus # debug-lego200 # DTU
+  id: planes_Res800_32_DSpos12_Lrgb4Lden4CplnConcat_ficus_0 # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -9,9 +9,9 @@ experiment:
   # Number of training iterations.
   train_iters: 750050
   # Number of training iterations after which to validate.
-  validate_every: 50
+  validate_every: [0.1,1000] #50
   # Number of training iterations after which to checkpoint.
-  save_every: 5000
+  save_every: 10.0 #5000
   # Number of training iterations after which to print progress.
   print_every: 100
 
@@ -23,8 +23,11 @@ dataset:
   # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
     # train: ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+    # train: ['chair','drums','ficus']
     train: ficus
     # train: lego
+  # Save images corresponding to up to 
+  # max_scene_savings:  6
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -32,7 +35,7 @@ dataset:
   # at half the original resolution of 800 x 800, to save space.
   half_res: True
   # Stride (include one per "testskip" images in the dataset).
-  # downsampling_factor: 4 # downsampling factor for the downsampling experiment
+  # downsampling_factor: 16 # downsampling factor for the downsampling experiment
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
@@ -62,7 +65,10 @@ models:
     # num_plane_channels: 256
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
-    # proj_combination: concat
+    # How to combine projections from different planes:
+    proj_combination: concat
+    # How to combine projection from viewdir plane with the ones from position planes. Defaults to proj_combination:
+    # viewdir_proj_combination: mult
     # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
     align_corners: False
     # Number of hidden units in each layer of the MLP (multi-layer
@@ -111,6 +117,12 @@ nerf:
     # Size of each chunk (rays are batched into "chunks" and passed through
     # the network)
     chunksize: 131072  # 131072  # 1024 * 32
+    # Save GPU memory by holding plane variables on cpu memory until needed:
+    # save_GPU_memory: True
+    # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
+    # store_planes:
+    #   buffer_size:  5
+    #   steps_per_buffer: 40
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
@@ -125,7 +137,7 @@ nerf:
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
     # Randomly downsamples plane during training to enforce multi-resolution loss:
-    max_plane_downsampling: 25
+    max_plane_downsampling: 12 #12
     viewdir_downsampling: False
   # Validation-specific parameters.
   validation:

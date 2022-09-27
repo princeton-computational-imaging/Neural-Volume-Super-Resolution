@@ -32,7 +32,7 @@
             "program": "train_nerf.py",
             "console":"integratedTerminal",
             // "console": "integratedTerminal",
-            "justMyCode": true,
+            // "justMyCode": false,
             "args":["--config","config/planes.yml"]
         },
         {
@@ -86,6 +86,30 @@
             "justMyCode": true,
             "args":[
                 "--config","config/planes_SR.yml"
+            ]
+        },
+        {
+            "name": "train DTU SR",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/planes_SR_DTU.yml"
+            ]
+        },
+        {
+            "name": "resume DTU SR",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":
+            [
+                "--config","config/planes_SR_DTU.yml",
+                "--load-checkpoint","resume",
             ]
         },
         {
@@ -185,6 +209,13 @@
             "type": "python",
             "request": "launch",
             "program": "scripts/find_resize_offset.py",
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "convert DTU scene names",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/convert_DTU_scene_names.py",
             "console": "integratedTerminal",
         },
    ]

@@ -5,10 +5,13 @@ from nerf_helpers import cart2az_el
 import math
 import numpy as np
 from scipy.interpolate import griddata
+from re import search
+import os
+from tqdm import tqdm
+from shutil import copyfile
 class VeryTinyNeRFModel(nn.Module):
     r"""Define a "very tiny" NeRF model comprising three fully connected layers.
     """
-
     def __init__(self, filter_size=128, num_encoding_functions=6, use_viewdirs=True):
         super(VeryTinyNeRFModel, self).__init__()
         self.num_encoding_functions = num_encoding_functions
@@ -331,17 +334,26 @@ class FlexibleNeRFModel(nn.Module):
         else:
             return self.fc_out(x)
 
+def get_plane_name(scene_id,dimension):
+    if scene_id is None:
+        return "_D%d"%(dimension)    
+    return "sc%s_D%d"%(scene_id,dimension)
+
+# def decode_plane_name(name):
+#     scene_id = search('(?<=sc)(\w)+(?=_D)',name).group(0)
+#     dim = int(search('(?<=_D)(\d)+(?=$)',name).group(0))
+#     return scene_id,dim
+
 class TwoDimPlanesModel(nn.Module):
     def __init__(
         self,
         use_viewdirs,
         scene_id_plane_resolution,
-        # scene_geometry,
         coords_normalization,
         dec_density_layers=4,
         dec_rgb_layers=4,
         dec_channels=128,
-        # skip_connect_every=4,
+        skip_connect_every=None,
         num_plane_channels=48,
         rgb_dec_input='projections',
         proj_combination='sum',
@@ -350,17 +362,15 @@ class TwoDimPlanesModel(nn.Module):
         align_corners=True,
         interp_viewdirs=None,
         viewdir_downsampling=True,
-        # track_planes_coverage=False,
+        viewdir_proj_combination=None,
     ):
         self.N_PLANES_DENSITY = 3
         self.PLANES_2_INFER = [self.N_PLANES_DENSITY]
-        # self.PLANES_2_INFER = [i for i in range(self.N_PLANES_DENSITY+1)]
 
         super(TwoDimPlanesModel, self).__init__()
-        # self.ds_2_res = dict([(v,k) for k,v in plane_resolutions.items()])
-        # self.box_coords = calc_scene_box(scene_geometry=scene_geometry,including_dirs=use_viewdirs)
         self.box_coords = coords_normalization
         self.use_viewdirs = use_viewdirs
+        self.num_plane_channels = num_plane_channels
         assert interp_viewdirs in ['bilinear','bicubic',None]
         self.interp_from_learned = interp_viewdirs
         self.viewdir_downsampling = viewdir_downsampling
@@ -368,66 +378,77 @@ class TwoDimPlanesModel(nn.Module):
         assert rgb_dec_input in ['projections','features','projections_features']
         self.rgb_dec_input = rgb_dec_input
         assert proj_combination in ['sum','concat']
+        assert use_viewdirs or viewdir_proj_combination is None
+        if viewdir_proj_combination is None:    viewdir_proj_combination = proj_combination
+        assert viewdir_proj_combination in ['sum','concat','mult']
         self.proj_combination = proj_combination
+        self.viewdir_proj_combination = viewdir_proj_combination
         self.plane_interp = plane_interp
         self.planes_ds_factor = 1
-        # self.track_planes_coverage = track_planes_coverage
+        self.skip_connect_every = skip_connect_every # if skip_connect_every is not None else max(dec_rgb_layers,dec_density_layers)
+
         # Density (alpha) decoder:
         self.density_dec = nn.ModuleList()
         self.debug = {'max_norm':defaultdict(lambda: torch.finfo(torch.float32).min),'min_norm':defaultdict(lambda: torch.finfo(torch.float32).max)}
-        self.density_dec.append(
-            nn.Linear(num_plane_channels*(self.N_PLANES_DENSITY if proj_combination=='concat' else 1),dec_channels)
-        )
+        in_channels = num_plane_channels*(self.N_PLANES_DENSITY if proj_combination=='concat' else 1)
+        self.density_dec.append(nn.Linear(in_channels,dec_channels))
         for layer_num in range(dec_density_layers-1):
-            self.density_dec.append(
-                nn.Linear(dec_channels,dec_channels)
-            )
+            if self.is_skip_layer(layer_num=layer_num):
+            # if layer_num % self.skip_connect_every == 0 and layer_num > 0: # and layer_num != dec_density_layers-1:
+                self.density_dec.append(nn.Linear(in_channels + dec_channels, dec_channels))
+            else:
+                self.density_dec.append(nn.Linear(dec_channels,dec_channels))
         self.fc_alpha = nn.Linear(dec_channels,1)
         if 'features' in self.rgb_dec_input:
             self.fc_feat = nn.Linear(dec_channels,num_plane_channels)
 
         # RGB decoder:
         self.rgb_dec = nn.ModuleList()
-        self.rgb_dec.append(
-            nn.Linear(num_plane_channels*(self.N_PLANES_DENSITY+1 if proj_combination=='concat' else 1),dec_channels)
-        )
+        plane_C_mult = 1
+        if proj_combination=='concat':  plane_C_mult += self.N_PLANES_DENSITY-1
+        if viewdir_proj_combination=='concat':  plane_C_mult +=1
+
+        self.rgb_dec.append(nn.Linear(num_plane_channels*plane_C_mult,dec_channels))
         for layer_num in range(dec_rgb_layers-1):
-            self.rgb_dec.append(
-                nn.Linear(dec_channels,dec_channels)
-            )
+            if self.is_skip_layer(layer_num=layer_num):
+            # if layer_num % self.skip_connect_every == 0 and layer_num > 0: # and layer_num != dec_rgb_layers-1:
+                self.rgb_dec.append(nn.Linear(num_plane_channels*plane_C_mult + dec_channels, dec_channels))
+            else:
+                self.rgb_dec.append(nn.Linear(dec_channels,dec_channels))
         self.fc_rgb = nn.Linear(dec_channels,3)
 
         self.relu = nn.functional.relu
-        def create_plane(resolution):
-            init_STD = 0.1*self.fc_alpha.weight.data.std()
-            # init_STD = 0.1*self.fc_alpha.weight.data.std()/np.sqrt(resolution/400)
-            # init_STD = 0.14
-            return nn.Parameter(init_STD*torch.randn(size=[1,num_plane_channels,resolution,resolution]))
 
-        if planes is None:
-            self.planes_ = nn.ParameterDict([
-                (self.plane_name(id,d),
-                    create_plane(res[0] if d<self.N_PLANES_DENSITY else res[1])
-                    # nn.Parameter(0.1*self.fc_alpha.weight.data.std()*torch.randn(size=[1,num_plane_channels,res,res]))
-                )
-                 for id,res in scene_id_plane_resolution.items() for d in range(self.N_PLANES_DENSITY+use_viewdirs)])
-            # if self.track_planes_coverage:
-            #     raise Exception("Should be adapted to support multiple plane resolutions.")
-            #     self.planes_coverage = torch.zeros([len(self.planes_),plane_resolutions,plane_resolutions,]).type(torch.bool)
-            if self.interp_from_learned:
-                self.copy_planes()
-                # self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items()])
-                assert not align_corners,'The following corresponding grid assumes -1 and 1 correspond to array corners (rather than the center of its corner pixels)'
-                self.corresponding_grid = OrderedDict()
-                for k,v in self.planes_copy.items():
-                    res = list(v.shape[2:])
-                    # Dimensions of self.corresponding_grid[k] are resolution X resolution X 2, where the last dimension corresponds to indecis [x,y] (column,row):
-                    self.corresponding_grid[k] = np.stack(np.meshgrid(np.linspace(-1+1/res[1],1-1/res[1],res[1]),np.linspace(-1+1/res[0],1-1/res[0],res[0])),-1)
+        if scene_id_plane_resolution is not None: #If not using the store_panes configuration
+            if planes is None:
+                self.planes_ = nn.ParameterDict([
+                    (get_plane_name(id,d),
+                        create_plane(res[0] if d<self.N_PLANES_DENSITY else res[1],num_plane_channels=num_plane_channels,init_STD=0.1*self.fc_alpha.weight.data.std())
+                    )
+                    for id,res in scene_id_plane_resolution.items() for d in range(self.N_PLANES_DENSITY+use_viewdirs)])
+                if self.interp_from_learned:
+                    self.copy_planes()
+                    assert not align_corners,'The following corresponding grid assumes -1 and 1 correspond to array corners (rather than the center of its corner pixels)'
+                    self.corresponding_grid = OrderedDict()
+                    for k,v in self.planes_copy.items():
+                        res = list(v.shape[2:])
+                        # Dimensions of self.corresponding_grid[k] are resolution X resolution X 2, where the last dimension corresponds to indecis [x,y] (column,row):
+                        self.corresponding_grid[k] = np.stack(np.meshgrid(np.linspace(-1+1/res[1],1-1/res[1],res[1]),np.linspace(-1+1/res[0],1-1/res[0],res[0])),-1)
+            else:
+                self.planes_ = planes
+
+    def planes2cpu(self):
+        for p in self.planes_.values():
+            p.data = p.data.to("cpu")
+
+    def is_skip_layer(self,layer_num):
+        if self.skip_connect_every is None:
+            return False
         else:
-            self.planes_ = planes
+            return layer_num % self.skip_connect_every == 0 and layer_num > 0 # and layer_num != dec_rgb_layers-1:
 
     def copy_planes(self):
-        self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items() if any([self.plane_name(None,d) in k for d in self.PLANES_2_INFER])])
+        self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items() if any([get_plane_name(None,d) in k for d in self.PLANES_2_INFER])])
 
     def eval(self):
         super(TwoDimPlanesModel, self).eval()
@@ -483,19 +504,18 @@ class TwoDimPlanesModel(nn.Module):
             plt.imsave('plane0_after.png',plane0)
 
         self.planes_copy[k][...,np.logical_not(self.learned[k])] = self.planes_[k].detach().cpu().numpy()[...,np.logical_not(self.learned[k])]
-        # self.planes_[k]
-
-    def plane_name(self,scene_id,dimension):
-        if scene_id is None:
-            return "_D%d"%(dimension)    
-        return "sc%s_D%d"%(scene_id,dimension)
         
-    def assign_SR_model(self,SR_model,SR_viewdir):
+    def assign_SR_model(self,SR_model,SR_viewdir,save_interpolated=True,set_planes=True):
         self.SR_model = SR_model
-        for k,v in self.planes_.items():
-            if not SR_viewdir and self.plane_name(None,self.N_PLANES_DENSITY) in k:  continue
-            self.SR_model.set_LR_planes(v.detach(),id=k,align_corners=self.align_corners)
+        self.SR_model.align_corners = self.align_corners
+        self.SR_model.SR_viewdir = SR_viewdir
         self.skip_SR_ = False
+        if set_planes:
+            for k,v in self.planes_.items():
+                if not SR_viewdir and get_plane_name(None,self.N_PLANES_DENSITY) in k:  continue
+                self.SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=save_interpolated)
+        # else:
+        #     self.SR_model.LR_planes = None
 
     def set_cur_scene_id(self,scene_id):
         self.cur_id = scene_id
@@ -512,17 +532,21 @@ class TwoDimPlanesModel(nn.Module):
     def use_downsampled_planes(self,ds_factor:int): # USed for debug
         self.planes_ds_factor = ds_factor
 
-    def planes(self,dim_num:int)->torch.tensor:
-        plane_name = self.plane_name(self.cur_id,dim_num)
-        if hasattr(self,'SR_model') and plane_name in self.SR_model.LR_planes and not self.skip_SR_:
+    def planes(self,dim_num:int,grid:torch.tensor=None)->torch.tensor:
+        plane_name = get_plane_name(self.cur_id,dim_num)
+        if hasattr(self,'SR_model') and not self.skip_SR_ and plane_name in self.SR_model.LR_planes:
+            if grid is not None and self.SR_model.training:
+                roi = torch.stack([grid.min(1)[0].squeeze(),grid.max(1)[0].squeeze()],0)
+                roi = torch.stack([roi[:,1],roi[:,0]],1) # Converting from (x,y) to (y,x) on the columns dimension
+                plane_name = (plane_name,roi)
             plane = self.SR_model(plane_name)
         else:
-            if self.planes_ds_factor>1 and (self.viewdir_downsampling or dim_num<self.N_PLANES_DENSITY): # USed for debug or enforcing loss
+            if self.planes_ds_factor>1 and (self.viewdir_downsampling or dim_num<self.N_PLANES_DENSITY): # Used for debug or enforcing loss
                 plane = nn.functional.interpolate(self.planes_[plane_name],scale_factor=1/self.planes_ds_factor,
                     align_corners=self.align_corners,mode=self.plane_interp,antialias=True)
             else:
                 plane = self.planes_[plane_name]
-        return plane
+        return plane.cuda()
 
     def skip_SR(self,skip):
         self.skip_SR_ = skip
@@ -532,28 +556,40 @@ class TwoDimPlanesModel(nn.Module):
         for d in range(self.N_PLANES_DENSITY): # (Currently not supporting viewdir input)
             grid = coords[:,[c for c in range(3) if c!=d]].reshape([1,coords.shape[0],1,2])
             projections.append(nn.functional.grid_sample(
-                    input=self.planes(d),
+                    input=self.planes(d,grid),
                     grid=grid,
                     mode=self.plane_interp,
                     align_corners=self.align_corners,
                     padding_mode='border',
                 ))
-        projections = self.sum_or_cat(projections)
+        projections = self.combine_pos_planes(projections)
         return projections.squeeze(0).squeeze(-1).permute(1,0)
 
     def project_viewdir(self,dirs):
         grid = dirs.reshape([1,dirs.shape[0],1,2])
         # self.update_planes_coverage(self.N_PLANES_DENSITY,grid)
         return nn.functional.grid_sample(
-                input=self.planes(self.N_PLANES_DENSITY),
+                input=self.planes(self.N_PLANES_DENSITY,grid),
                 grid=grid,
                 mode=self.plane_interp,
                 align_corners=self.align_corners,
                 padding_mode='border',
             ).squeeze(0).squeeze(-1).permute(1,0)
 
-    def sum_or_cat(self,tensors):
+    def combine_pos_planes(self,tensors):
         return torch.stack(tensors,0).sum(0) if self.proj_combination=='sum' else torch.cat(tensors,1)
+
+    def combine_all_planes(self,pos_planes,viewdir_planes):
+        pos_planes_shape = pos_planes.shape
+        if self.viewdir_proj_combination!='concat' and pos_planes_shape[1]>viewdir_planes.shape[1]:
+            pos_planes = pos_planes.reshape([pos_planes_shape[0],viewdir_planes.shape[1],-1])
+            viewdir_planes = viewdir_planes.unsqueeze(-1)
+        if self.viewdir_proj_combination=='sum':
+            return torch.reshape(pos_planes+viewdir_planes,pos_planes_shape)
+        elif self.viewdir_proj_combination=='mult':
+            return torch.reshape(pos_planes*(1+viewdir_planes),pos_planes_shape)
+        elif self.viewdir_proj_combination=='concat':
+            return torch.cat([pos_planes,viewdir_planes],1)
 
     def forward(self, x):
         if False:
@@ -572,40 +608,231 @@ class TwoDimPlanesModel(nn.Module):
 
         # Projecting and summing
         x = 1*projected_xyz
-        for l in self.density_dec:
+        for layer_num,l in enumerate(self.density_dec):
+            if self.is_skip_layer(layer_num=layer_num-1):
+                x = torch.cat((x, projected_xyz), dim=-1)
             x = self.relu(l(x))
         alpha = self.fc_alpha(x)
 
-        # x_rgb = torch.zeros([len(projected_xyz),projected_xyz.shape[1] if self.proj_combination=='sum' else 0]).type(projected_xyz.type())
         if 'features' in self.rgb_dec_input:
             x_rgb = self.fc_feat(x)
 
         if self.rgb_dec_input=='projections_features':
-            x_rgb = self.sum_or_cat([x_rgb,projected_xyz])
+            x_rgb = self.combine_pos_planes([x_rgb,projected_xyz])
         elif self.rgb_dec_input=='projections':
             x_rgb = 1*projected_xyz
 
         if self.use_viewdirs:
-            x_rgb = self.sum_or_cat([x_rgb,projected_views])
+            x_rgb = self.combine_all_planes(pos_planes=x_rgb,viewdir_planes=projected_views)
 
-        for l in self.rgb_dec:
-            x_rgb = self.relu(l(x_rgb))
-        rgb = self.fc_rgb(x_rgb)
+        if self.skip_connect_every is None:
+            for layer_num,l in enumerate(self.rgb_dec):
+                x_rgb = self.relu(l(x_rgb))
+            rgb = self.fc_rgb(x_rgb)
+        else:
+            x = x_rgb
+            for layer_num,l in enumerate(self.rgb_dec):
+                if self.is_skip_layer(layer_num=layer_num-1):
+                    x = torch.cat((x, x_rgb), dim=-1)
+                x = self.relu(l(x))
+            rgb = self.fc_rgb(x)
 
         return torch.cat((rgb, alpha), dim=-1)
+
+def create_plane(resolution,num_plane_channels,init_STD):
+    # if init_STD is None:
+    #     init_STD = 0.1*self.fc_alpha.weight.data.std()
+    return nn.Parameter(init_STD*torch.randn(size=[1,num_plane_channels,resolution,resolution]))
+
+class SceneSampler:
+    def __init__(self,scenes) -> None:
+        self.scenes = scenes
+        self.sample_from = []
+
+    def shuffle(self):
+        self.sample_from = [self.scenes[i] for i in np.random.permutation(len(self.scenes))]
+
+    def sample(self,n):
+        assert n<=len(self.scenes)
+        sampled = []
+        cursor = 0
+        while len(sampled)<n:
+            if len(self.sample_from)==0:
+                self.shuffle()
+                cursor = 0
+            if self.sample_from[cursor] not in sampled:
+                sampled.append(self.sample_from.pop(cursor))
+            else:
+                cursor += 1
+        return sampled
+
+class PlanesOptimizer(nn.Module):
+    def __init__(self,optimizer_type:str,scene_id_plane_resolution:dict,options,save_location:str,
+            lr:float,model_coarse:TwoDimPlanesModel,model_fine:TwoDimPlanesModel,use_coarse_planes:bool,
+            init_params:bool,optimize:bool,training_scenes:list=None) -> None:
+        super(PlanesOptimizer,self).__init__()
+        self.scenes = list(scene_id_plane_resolution.keys())
+        if training_scenes is None:
+            training_scenes = 1*self.scenes
+        assert all([s in self.scenes for s in training_scenes])
+        self.training_scenes = training_scenes
+        self.scene_sampler = SceneSampler(self.training_scenes)
+        self.models = {}
+        self.buffer_size = options.buffer_size
+        assert use_coarse_planes,'Unsupported yet, probably requires adding a param_group to the optimizer'
+        assert not init_params or optimize,'This would means using (frozen) random planes...' 
+        self.use_coarse_planes = use_coarse_planes
+        self.save_location = save_location
+        assert optimizer_type=='Adam'
+        self.lr = lr
+        self.steps_per_buffer,self.steps_since_drawing = options.steps_per_buffer,0
+        if self.buffer_size>=len(self.training_scenes):  self.steps_per_buffer = -1
+        for model_name,model in zip(['coarse','fine'],[model_coarse,model_fine]):
+            self.models[model_name] = model
+            if model_name=='fine' and use_coarse_planes:    continue
+            self.planes_per_scene = model.N_PLANES_DENSITY+model.use_viewdirs
+            if init_params:
+                for scene in tqdm(self.scenes):
+                    res = scene_id_plane_resolution[scene]
+                    params = nn.ParameterDict([
+                        (get_plane_name(scene,d),
+                            create_plane(res[0] if d<model.N_PLANES_DENSITY else res[1],num_plane_channels=model.num_plane_channels,init_STD=0.1*model.fc_alpha.weight.data.std().cpu())
+                        )
+                        for d in range(self.planes_per_scene)])
+                    torch.save({'params':params},self.param_path(model_name=model_name,scene=scene))
+        self.optimize = optimize
+        self.optimizer = None
+        self.saving_needed = False
+        # self.cur_scenes = []
+        # if optimize:    
+        self.draw_scenes()
+
+    def load_scene(self,scene):
+        # if scene in self.cur_scenes:
+        #     return
+        if self.saving_needed:
+            self.save_params()
+        for model_name in ['coarse','fine']:
+            if model_name=='coarse' or not self.use_coarse_planes:
+                loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))['params']
+            self.models[model_name].planes_ = loaded_params
+            if hasattr(self.models[model_name],'SR_model'):
+                self.models[model_name].SR_model.clear_SR_planes(all_planes=True)
+                for k,v in loaded_params.items():
+                    # self.models[model_name].SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=True)
+                    if not self.models[model_name].SR_model.SR_viewdir and get_plane_name(None,self.models[model_name].N_PLANES_DENSITY) in k:  continue
+                    self.models[model_name].SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=False)
+        self.cur_scenes = [scene]
+
+    def load_from_checkpoint(self,checkpoint):
+        model_name = 'coarse'
+        param2num = dict([(k,i) for i,k in enumerate(checkpoint['plane_parameters'])])
+        for scene in self.scenes:
+            params = nn.ParameterDict([(get_plane_name(scene,d),checkpoint['plane_parameters'][get_plane_name(scene,d)]) for d in range(self.planes_per_scene)])
+            opt_states = [checkpoint['plane_optimizer_states'][param2num[get_plane_name(scene,d)]] for d in range(self.planes_per_scene)]
+            torch.save({'params':params,'opt_states':opt_states},self.param_path(model_name=model_name,scene=scene))
+
+    def param_path(self,model_name,scene):
+        return os.path.join(self.save_location,"%s_%s.par"%(model_name,scene))
+
+    def save_params(self,to_checkpoint=False):
+        assert self.optimize,'Why would you want to save if not optimizing?'
+        model_name = 'coarse'
+        model = self.models[model_name]
+        scenes_list = self.scenes if to_checkpoint else self.cur_scenes
+        if to_checkpoint:
+            all_params,all_states = nn.ParameterDict(),[]
+        scene_num = 0
+        for scene in scenes_list:
+            if scene in self.cur_scenes:
+                params = nn.ParameterDict([(get_plane_name(scene,d),model.planes_[get_plane_name(scene,d)]) for d in range(self.planes_per_scene)])
+                opt_states = [self.optimizer.state_dict()['state'][i+scene_num*self.planes_per_scene] if (i+scene_num*self.planes_per_scene) in self.optimizer.state_dict()['state'] else None for i in range(self.planes_per_scene)]
+                scene_num += 1
+            else:
+                loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
+                params = loaded_params['params']
+                opt_states = loaded_params['opt_states'] if 'opt_states' in loaded_params else [None for p in params]
+            if to_checkpoint:
+                all_params.update(params)
+                all_states.extend(opt_states)
+            else:
+                param_file_name = self.param_path(model_name=model_name,scene=scene)
+                del_temp = False
+                if os.path.isfile(param_file_name):
+                    del_temp = True
+                    copyfile(param_file_name,param_file_name.replace('.par','.par_temp'))
+                torch.save({'params':params,'opt_states':opt_states},param_file_name)
+                if del_temp:
+                    os.remove(param_file_name.replace('.par','.par_temp'))
+
+        if to_checkpoint:
+            return all_params,all_states
+        else:
+            self.saving_needed = False
+
+    def draw_scenes(self):
+        if self.saving_needed:
+            self.save_params()
+        self.steps_since_drawing = 0
+        self.cur_scenes = self.scene_sampler.sample(self.buffer_size)
+        for model_name in ['coarse','fine']:
+            model = self.models[model_name]
+            if model_name=='coarse' or not self.use_coarse_planes:
+                params_dict,optimizer_states = nn.ParameterDict(),[]
+                for scene in self.cur_scenes:
+                    loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
+                    params_dict.update(loaded_params['params'])
+                    if self.optimize:
+                        if 'opt_states' in loaded_params:
+                            optimizer_states.extend(loaded_params['opt_states'])
+                        else:
+                            optimizer_states.extend([None for p in loaded_params['params']])
+            model.planes_ = params_dict.cuda()
+            if hasattr(model,'SR_model'):
+                model.SR_model.clear_SR_planes(all_planes=True)
+                for k,v in params_dict.items():
+                    # model.SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=True)
+                    if not model.SR_model.SR_viewdir and get_plane_name(None,model.N_PLANES_DENSITY) in k:  continue
+                    model.SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=False)
+            if not self.optimize:   continue
+            if model_name=='coarse' or not self.use_coarse_planes:
+                params = list(model.planes_.values())
+                if self.optimizer is None:
+                    self.optimizer = torch.optim.Adam(params, lr=self.lr)
+                else:
+                    self.optimizer.param_groups[0]['params'] = params
+                self.optimizer.state = defaultdict(dict,[(params[i],v) for i,v in enumerate(optimizer_states) if v is not None])
+        self.saving_needed = False
+
+    def step(self):
+        if self.optimize:
+            self.optimizer.step()
+            self.saving_needed = True
+        self.steps_since_drawing += 1
+        if self.steps_since_drawing==self.steps_per_buffer:
+            self.draw_scenes()
+            return self.cur_scenes
+        else:
+            return None
+
+    def zero_grad(self):
+        if self.optimize:   self.optimizer.zero_grad()
 
 
 # EDSR code taken and modified from https://github.com/twtygqyy/pytorch-edsr/blob/master/edsr.py
 class _Residual_Block(nn.Module): 
     def __init__(self,hidden_size,padding,kernel_size):
         super(_Residual_Block, self).__init__()
-
+        self.margins = None if padding else 2*(kernel_size//2)
         self.conv1 = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=kernel_size, stride=1, padding=padding, bias=False)
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=kernel_size, stride=1, padding=padding, bias=False)
 
     def forward(self, x): 
-        identity_data = x
+        if self.margins is None:
+            identity_data = x
+        else:
+            identity_data = x[...,self.margins:-self.margins,self.margins:-self.margins]
         output = self.relu(self.conv1(x))
         output = self.conv2(output)
         output *= 0.1
@@ -620,15 +847,16 @@ class EDSR(nn.Module):
         # self.sub_mean = MeanShift(rgb_mean, -1)
         self.scale_factor = scale_factor
         self.plane_interp = plane_interp
-        PADDING,KERNEL_SIZE = 1,3
+        self.n_blocks = n_blocks
+        PADDING,KERNEL_SIZE = 0,3
         self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False)
-        self.required_padding,rf_factor = KERNEL_SIZE/2,1
+        self.required_padding,rf_factor = KERNEL_SIZE//2,1
 
         self.residual = self.make_layer(_Residual_Block,{'hidden_size':hidden_size,'padding':PADDING,'kernel_size':KERNEL_SIZE}, n_blocks)
-        self.required_padding += rf_factor*2*n_blocks*(KERNEL_SIZE-1)/2
+        self.required_padding += rf_factor*2*n_blocks*((KERNEL_SIZE-1)//2)
 
         self.conv_mid = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False)
-        self.required_padding += rf_factor*(KERNEL_SIZE-1)/2
+        self.required_padding += rf_factor*((KERNEL_SIZE-1)//2)
         assert math.log2(scale_factor)==int(math.log2(scale_factor)),"Supperting only scale factors that are an integer power of 2."
         upscaling_layers = []
         for _ in range(int(math.log2(scale_factor))):
@@ -636,14 +864,16 @@ class EDSR(nn.Module):
                 nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size*4, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False),
                 nn.PixelShuffle(2),
             ]
-            self.required_padding += rf_factor*(KERNEL_SIZE-1)/2
+            self.required_padding += rf_factor*((KERNEL_SIZE-1)//2)
             rf_factor /= 2
 
         self.upscale = nn.Sequential(*upscaling_layers)
 
         self.conv_output = nn.Conv2d(in_channels=hidden_size, out_channels=out_channels, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False)
-        self.required_padding += rf_factor*(KERNEL_SIZE-1)/2
+        self.required_padding += rf_factor*((KERNEL_SIZE-1)//2)
+        self.HR_overpadding = int(self.required_padding*self.scale_factor)
         self.required_padding = int(np.ceil(self.required_padding))
+        self.HR_overpadding = self.required_padding*self.scale_factor-self.HR_overpadding
         # self.add_mean = MeanShift(rgb_mean, 1)
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -656,7 +886,7 @@ class EDSR(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-        self.LR_planes,self.residual_planes,self.SR_planes = {},{},{}
+        self.clear_SR_planes(all_planes=True)
         # self.SR_updated = {},
 
     def make_layer(self, block,args, num_of_layer):
@@ -665,55 +895,73 @@ class EDSR(nn.Module):
             layers.append(block(**args))
         return nn.Sequential(*layers)
 
-    def set_LR_planes(self,plane,id,align_corners):
+    def interpolate_LR(self,id):
+        return torch.nn.functional.interpolate(self.LR_planes[id].cuda(),scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=self.align_corners)
+
+    def residual_plane(self,id):
+        if id in self.residual_planes:
+            return self.residual_planes[id].cuda()
+        else:
+            return self.interpolate_LR(id)
+
+    def set_LR_planes(self,plane,id:str,save_interpolated:bool):
         assert id not in self.LR_planes,"Plane ID already exists."
         self.LR_planes[id] = plane
-        self.residual_planes[id] = torch.nn.functional.interpolate(plane,scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=align_corners)
-        self.SR_planes[id] = 1*self.residual_planes[id]
-        # print('WARNING!!!!!!!!!!!!!!!!!!!!!!!! uncomment above')
+        if save_interpolated:
+            # self.residual_planes[id] = torch.nn.functional.interpolate(plane.cuda(),scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=align_corners).cpu()
+            self.residual_planes[id] = self.interpolate_LR(id).cpu()
+        # self.SR_planes[id] = 1*self.residual_planes[id]
 
-    def weights_updated(self):
-        self.SR_planes = {}
+    def clear_SR_planes(self,all_planes=False):
+        planes_2_clear = ['SR_planes']
+        if all_planes:
+            planes_2_clear += ['LR_planes','residual_planes']
+        for attr in planes_2_clear:
+            setattr(self,attr,{})
 
     def forward(self, plane_name):
-        if plane_name in self.SR_planes:
-            out = self.SR_planes[plane_name]
+        if isinstance(plane_name,tuple):
+            full_plane = False
+            plane_roi = plane_name[1]
+            plane_name = plane_name[0]
         else:
-            x = self.LR_planes[plane_name].detach()
-            success,num_batches = False,1
+            full_plane = True
+            plane_roi = torch.tensor([[-1,-1],[1,1]]).type(self.LR_planes[plane_name].type()).cuda()
+        # if full_plane and plane_name in self.SR_planes:
+        if plane_name in self.SR_planes:
+            # assert plane_roi is None,'Unsupported yet'
+            out = self.SR_planes[plane_name].cuda()
+        else:
+            x = self.LR_planes[plane_name].detach().cuda()
+            plane_roi = (torch.tensor(x.shape[2:])).to(plane_roi.device)*(1+plane_roi)/2
+            plane_roi = torch.stack([torch.floor(plane_roi[0]),torch.ceil(plane_roi[1])],0).cpu().numpy().astype(np.int32)
+            plane_roi[0] = np.maximum(0,plane_roi[0]-1)
+            plane_roi[1] = np.minimum(np.array(x.shape[2:]),plane_roi[1]+1)
+            pre_padding = np.minimum(plane_roi[0],self.required_padding)
+            post_padding = np.minimum(np.array(x.shape[2:])-plane_roi[1],self.required_padding)
             take_last = lambda ind: -ind if ind>0 else None
-            while not success:
-                spatial_dims = np.array([int(np.ceil(v/num_batches)) for v in  x.shape[2:]])
-                try:
-                    out = torch.zeros_like(self.residual_planes[plane_name])
-                    for b_num in range(num_batches):
-                        min_index = b_num*spatial_dims
-                        max_index = np.minimum((b_num+1)*spatial_dims,np.array(x.shape[2:]))
-                        min_index[1],max_index[1] = 0,x.shape[3]
-                        pre_padding = np.minimum(min_index,self.required_padding)
-                        post_padding = np.minimum(np.array(x.shape[2:])-max_index,self.required_padding)
-                        difference = self.inner_forward(
-                            x[...,min_index[0]-pre_padding[0]:max_index[0]+post_padding[0],
-                            min_index[1]-pre_padding[1]:max_index[1]+post_padding[1]])
-                        min_index *= self.scale_factor
-                        max_index *= self.scale_factor
-                        out[...,min_index[0]:max_index[0],min_index[1]:max_index[1]] = torch.add(
-                            difference[...,self.scale_factor*pre_padding[0]:take_last(self.scale_factor*post_padding[0]),
-                                self.scale_factor*pre_padding[1]:take_last(self.scale_factor*post_padding[1])],
-                            self.residual_planes[plane_name][...,min_index[0]:max_index[0],min_index[1]:max_index[1]])
-                    success = True
-                except Exception as e:
-                    if 'CUDA out of memory.' in e.args[0]:
-                        num_batches += 1
-                    else:
-                        raise e
-            # out = self.conv_input(x)
-            # out = self.conv_mid(self.residual(out))
+            DEBUG = False
+            if DEBUG:   print('!! WARNING !!!!')
+            x = torch.nn.functional.pad(x[...,plane_roi[0,0]-pre_padding[0]:plane_roi[1,0]+post_padding[0],
+                plane_roi[0,1]-pre_padding[1]:plane_roi[1,1]+post_padding[1]],
+                pad=(self.required_padding-pre_padding[1],self.required_padding-post_padding[1],self.required_padding-pre_padding[0],self.required_padding-post_padding[0]),
+                mode='replicate') 
+            difference = self.inner_forward(x)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
+            min_index = plane_roi[0]*self.scale_factor
+            max_index = plane_roi[1]*self.scale_factor
+            if DEBUG:
+                residual_plane = self.residual_plane(plane_name)[...,min_index[0]:max_index[0],min_index[1]:max_index[1]]
+            else:
+                residual_plane = self.residual_plane(plane_name)
+            out = (torch.ones_like(residual_plane)*float('nan'))
+            if DEBUG:
+                out = torch.add(difference,residual_plane)
+            else:
+                out[...,min_index[0]:max_index[0],min_index[1]:max_index[1]] = torch.add(
+                    difference,
+                    residual_plane[...,min_index[0]:max_index[0],min_index[1]:max_index[1]])
 
-            # out = self.upscale(out)
-            # out = self.conv_output(out)
-            # out = torch.add(out,self.residual_planes[plane_name])
-            self.SR_planes[plane_name] = out
+                if full_plane:   self.SR_planes[plane_name] = out.cpu()
         return out
 
     def inner_forward(self,x):

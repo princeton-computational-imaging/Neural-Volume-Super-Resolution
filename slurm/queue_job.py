@@ -13,19 +13,21 @@ from deepdiff import DeepDiff
 # CONFIG_FILE = "config/lego_SR.yml"
 # CONFIG_FILE = "config/lego_ds.yml"
 # CONFIG_FILE = "config/planes.yml"
-CONFIG_FILE = "config/planes_SR.yml"
+# CONFIG_FILE = "config/planes_SR.yml"
 # CONFIG_FILE = "config/planes_DTU.yml"
+CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
 
-RESUME_TRAINING = 0
-# RESUME_TRAINING = None
+# RESUME_TRAINING = 0
+RESUME_TRAINING = None
 
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 CONDA_ENV = "volumetric_enhance"
-RUN_TIME = 30 # 20 # 10 # Hours
+RUN_TIME = 40 # 20 # 10 # Hours
 
 OVERWRITE_RESUMED_CONFIG = False
+# OVERWRITE_RESUMED_CONFIG = True
 
 with open(CONFIG_FILE, "r") as f:
     cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
@@ -60,14 +62,14 @@ else:
         for diff in config_diffs[ch_type]:
             diff_warnings.append("%s: %s"%(ch_type,diff))
     if len(diff_warnings)>0:
+        print("\n\n!!! WARNING: Differences in configurations file: !!!")
+        for warn in diff_warnings:  print(warn)
+        print("\n")
         if OVERWRITE_RESUMED_CONFIG:
             shutil.copyfile(os.path.join(saved_models_folder,"config.yml"),os.path.join("slurm/code",job_identifier,"config_old.yml"))
         else:
             config_file = os.path.join(saved_models_folder,"config.yml")
         # shutil.copyfile(os.path.join("slurm/code",job_identifier,"config.yml"),os.path.join("slurm/code",job_identifier,"config_old.yml"))
-        print("\n\n!!! WARNING: Differences in configurations file: !!!")
-        for warn in diff_warnings:  print(warn)
-        print("\n")
     print("Resuming training on job %s"%(job_identifier))
 
 for f in [f for f in os.listdir() if f[-3:]==".py"]:
