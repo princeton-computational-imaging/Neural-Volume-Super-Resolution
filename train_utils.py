@@ -1,5 +1,5 @@
 import torch
-
+import socket
 from nerf_helpers import get_minibatches, ndc_rays,spatial_batch_merge
 from nerf_helpers import sample_pdf_2 as sample_pdf
 from volume_rendering_utils import volume_render_radiance_field
@@ -112,12 +112,16 @@ def predict_and_render_radiance(
             z_vals = lower + (upper - lower) * t_rand
         # pts -> (num_rays, N_samples, 3)
         pts = ro[..., None, :] + rd[..., None, :] * z_vals[..., :, None]
-        SR_CHUNK_REDUCE = 2
+        # SR_CHUNK_REDUCE = 2
+        chunksize = getattr(options.nerf, mode).chunksize
+        if 'della-' in socket.gethostname():
+            chunksize *= 10
         radiance_field = run_network(
             model_coarse,
             pts,
             ray_batch,
-            getattr(options.nerf, mode).chunksize//(SR_CHUNK_REDUCE if hasattr(model_coarse,'SR_model') else 1),
+            chunksize,
+            # getattr(options.nerf, mode).chunksize, # //(SR_CHUNK_REDUCE if hasattr(model_coarse,'SR_model') else 1),
             encode_position_fn,
             encode_direction_fn,
             mip_nerf=mip_nerf,
@@ -322,7 +326,9 @@ def run_one_iter_of_nerf(
 
     # chunk_size = getattr(options.nerf, mode).chunksize*64//max([getattr(options.nerf, mode).num_coarse,getattr(options.nerf, mode).num_fine])
     chunk_size = getattr(options.nerf, mode).chunksize
-    if SR_model is not None or hasattr(model_fine,'SR_model'):
+    if 'della-' in socket.gethostname():
+        chunk_size *= 10
+    elif (SR_model is not None or hasattr(model_fine,'SR_model')):
         chunk_size //= 10 #5 #(2*int(np.ceil(np.log2(model_fine.SR_model.n_blocks))))
         # if model_fine.SR_model.training:
         #     chunk_size //= int(2*np.ceil(np.log2(model_fine.SR_model.n_blocks)))
