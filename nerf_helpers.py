@@ -155,7 +155,7 @@ def cast_to_image(tensor,img_text=None,psnr=None,fontScale=1):
     img = np.moveaxis(img, [-1], [0])
     if img_text is not None:
         text_color = ((np.mean(img[:,:int(fontScale*img.shape[1]//24),:int(fontScale*15)],axis=(1,2)).astype(np.uint8)+[128,128,128])%256).tolist()
-        img = cv2.cv2.putText(
+        img = cv2.putText(
             img.transpose(1,2,0),
             img_text,
             (0,int(fontScale*15)),
@@ -167,7 +167,7 @@ def cast_to_image(tensor,img_text=None,psnr=None,fontScale=1):
         ).transpose(2,0,1)
     if psnr is not None:
         psnr_color = ((np.mean(img[:,-int(fontScale*img.shape[1]//24):,img.shape[2]//2:],axis=(1,2)).astype(np.uint8)+[128,128,128])%256).tolist()
-        img = cv2.cv2.putText(
+        img = cv2.putText(
             img.transpose(1,2,0),
             '%.2f'%(psnr),
             (img.shape[2]//2,img.shape[1]),

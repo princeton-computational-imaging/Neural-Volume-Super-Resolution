@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: DTU_Res800_32_DSpos12_CplnCat_9Scenes # debug-lego200 # DTU
+  id: DTU_Res200_32_DSpos12_Cdec256CplnCat_LR100_allScenes # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
