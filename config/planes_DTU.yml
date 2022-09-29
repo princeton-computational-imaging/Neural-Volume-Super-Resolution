@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: DTU_Res200_32_DSpos12_Cdec256CplnCat_LR100_allScenes # debug-lego200 # DTU
+  id: DTU_Res800_32_DSpos12_CplnCat_9Scenes # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -23,7 +23,7 @@ dataset:
   root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   # excluded_scenes:  ['scan4']
   # Load only some of the scenes in the dataset:
-  # max_scenes: 10
+  max_scenes: 9
   # Save images corresponding to up to 
   # max_scene_savings:  9
   # Evaluate up to so many scenes:
@@ -32,7 +32,7 @@ dataset:
   # at half the original resolution of 800 x 800, to save space.
   # half_res: True
   # Stride (include one per "testskip" images in the dataset).
-  downsampling_factor: 4 # downsampling factor for the downsampling experiment
+  # downsampling_factor: 4 # downsampling factor for the downsampling experiment
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
@@ -49,15 +49,15 @@ models:
     # Name of the torch.nn.Module class that implements the model.
     type: TwoDimPlanesModel
     # Plane side size. Integer or a list of integers to match different scenes.
-    plane_resolutions: 200 #64 #32
+    plane_resolutions: 800 #64 #32
     # Plane side size for view-direction plane. Can be a list like plane_resolutions.
     viewdir_plane_resolution: 32
     # Planes interpolation method (default to bilinear):
     plane_interp: bilinear # bicubic # bilinear
     # Number of layers in the density decoder.
-    dec_density_layers: 8 #4
+    dec_density_layers: 4
     # Number of layers in the rgb decoder.
-    dec_rgb_layers: 8 #4
+    dec_rgb_layers: 4
     # dec_channels: 256
     # num_plane_channels: 256
     # What is the input to the rgb decoder, apart from view directions (if used)
@@ -70,7 +70,7 @@ models:
     # hidden_size: 256
     # Add a skip connection once in a while. Note: This parameter
     # won't take affect unless num_layers > skip_connect_every.
-    skip_connect_every: 3
+    # skip_connect_every: 3
     # Additionally use viewing directions as input.
     # use_viewdirs: True
     # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:

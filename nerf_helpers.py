@@ -17,6 +17,18 @@ class null_with:
     def __exit__(self,a,b,c):
         pass
 
+class Counter:
+    def __init__(self) -> None:
+        self.counter = 0
+
+    def count(self):
+        return self.counter
+
+    def step(self,print_str:str=None):
+        self.counter += 1
+        if print_str is not None:
+            print(print_str+str(self.count()))
+
 def set_config_defaults(source,target):
     for k in source.keys():
         if k not in target: setattr(target,k,getattr(source,k))
@@ -37,6 +49,31 @@ def is_background_white(image):
     #     return 1
     # else:
     #     return 0
+
+def subsample_dataset(scenes_dict,max_scenes,val_only_scenes=[],scene_id_func=None):
+    convert2list, = False,
+    val_scene_as_inds = len(val_only_scenes)>0 and isinstance(val_only_scenes[0],int)
+    if val_scene_as_inds:
+        val_only_scenes = [scene_id_func(i) for i in val_only_scenes]
+    if isinstance(scenes_dict,list):
+        convert2list = True
+        scenes_dict = dict(zip([scene_id_func(i) for i in range(len(scenes_dict))],scenes_dict))
+    else:
+        assert scene_id_func is None
+        scene_id_func = lambda x:x
+    i_val_val_only = [(k,v) for k,v in scenes_dict.items() if k in val_only_scenes]
+    i_val_others = [(k,v) for k,v in scenes_dict.items() if k not in val_only_scenes]
+    sampled_dict = dict([i_val_others[i] for i in np.unique(np.round(np.linspace(0,len(i_val_others)-1,max_scenes)).astype(int))])
+    sampled_val_only_scenes = []
+    if len(i_val_val_only)>0:
+        sampled_val_only_scenes = [i_val_val_only[i] for i in np.unique(np.round(np.linspace(0,len(i_val_val_only)-1,max_scenes)).astype(int))]
+        sampled_dict.update(dict(sampled_val_only_scenes))
+        sampled_val_only_scenes = [s[0] for s in sampled_val_only_scenes]
+        if val_scene_as_inds:
+            sampled_val_only_scenes = [list(sampled_dict.keys()).index(s) for s in sampled_val_only_scenes]
+    if convert2list:
+        sampled_dict = list(sampled_dict.values())
+    return sampled_dict,sampled_val_only_scenes
 
 
 def compute_patches_distribution(image,patch_size):

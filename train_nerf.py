@@ -67,7 +67,7 @@ def main():
 
     # Setup logging.
     logdir = os.path.join(cfg.experiment.logdir, cfg.experiment.id)
-    print('Saving logs and models into %s'%(logdir))
+    print('Logs and models will be saved into %s'%(logdir))
     if configargs.load_checkpoint=="resume":
         configargs.load_checkpoint = logdir
     else:
@@ -184,7 +184,8 @@ def main():
 
             scene_id_plane_resolution = dict(zip([dataset.DTU_sceneID(i) for i in range(total_scenes_num)],[plane_resolutions[0] for i in range(total_scenes_num)]))
             basedirs,coords_normalization = [],{}
-            for id in trange(dataset.num_scenes(),desc='Computing scene bounding boxes'):
+            scene_iterator = range(dataset.num_scenes()) if load_saved_models else trange(dataset.num_scenes(),desc='Computing scene bounding boxes')
+            for id in scene_iterator:
                 if not load_saved_models:
                     scene_info = dataset.scene_info(id)
                     scene_info.update({'near':dataset.z_near,'far':dataset.z_far})
@@ -195,11 +196,12 @@ def main():
             i_train = dataset.train_ims_per_scene
         # assert all([len(i_val[basedirs[0]])==len(i_val[id]) for id in basedirs]),'Assuming all scenes have the same number of evaluation images'
         if hasattr(cfg.dataset,'max_scenes_eval'):
-            i_val_val_only = [(k,v) for k,v in i_val.items() if k in val_only_scene_ids]
-            i_val_others = [(k,v) for k,v in i_val.items() if k not in val_only_scene_ids]
-            i_val = dict([i_val_others[i] for i in np.unique(np.round(np.linspace(0,len(i_val_others)-1,cfg.dataset.max_scenes_eval)).astype(int))])
-            if len(i_val_val_only)>0:
-                i_val.update(dict([i_val_val_only[i] for i in np.unique(np.round(np.linspace(0,len(i_val_val_only)-1,cfg.dataset.max_scenes_eval)).astype(int))]))
+            i_val,val_only_scene_ids = subsample_dataset(scenes_dict=i_val,max_scenes=cfg.dataset.max_scenes_eval,val_only_scenes=val_only_scene_ids)
+            # i_val_val_only = [(k,v) for k,v in i_val.items() if k in val_only_scene_ids]
+            # i_val_others = [(k,v) for k,v in i_val.items() if k not in val_only_scene_ids]
+            # i_val = dict([i_val_others[i] for i in np.unique(np.round(np.linspace(0,len(i_val_others)-1,cfg.dataset.max_scenes_eval)).astype(int))])
+            # if len(i_val_val_only)>0:
+            #     i_val.update(dict([i_val_val_only[i] for i in np.unique(np.round(np.linspace(0,len(i_val_val_only)-1,cfg.dataset.max_scenes_eval)).astype(int))]))
         scenes4which2save_ims = 1*list(i_val.keys())
         if hasattr(cfg.dataset,'max_scene_savings'):
             raise Exception('Should be fixed after adding max_scenes_eval')
@@ -546,10 +548,12 @@ def main():
                 torch.save(checkpoint,checkpoint_name)
         else:
             os.mkdir(planes_folder)
+        scenes_cycle_counter = Counter()
         planes_opt = models.PlanesOptimizer(optimizer_type=cfg.optimizer.type,
             scene_id_plane_resolution=scene_id_plane_resolution,options=cfg.nerf.train.store_planes,save_location=planes_folder,lr=cfg.optimizer.lr,
             model_coarse=model_coarse,model_fine=model_fine,use_coarse_planes=getattr(cfg.models.fine,'use_coarse_planes',False),
-            init_params=not load_saved_models,optimize=not SR_experiment,training_scenes=training_scenes,coords_normalization=None if load_saved_models else coords_normalization)
+            init_params=not load_saved_models,optimize=not SR_experiment,training_scenes=training_scenes,
+            coords_normalization=None if load_saved_models else coords_normalization,do_when_reshuffling=lambda:scenes_cycle_counter.step(print_str='Number of scene cycles performed: '))
         # available_train_inds = [i for i in i_train if scene_ids[i] in planes_opt.cur_scenes]
 
     downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor)

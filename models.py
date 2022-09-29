@@ -645,12 +645,15 @@ def create_plane(resolution,num_plane_channels,init_STD):
     return nn.Parameter(init_STD*torch.randn(size=[1,num_plane_channels,resolution,resolution]))
 
 class SceneSampler:
-    def __init__(self,scenes) -> None:
+    def __init__(self,scenes:list,do_when_reshuffling=lambda:None) -> None:
         self.scenes = scenes
-        self.sample_from = []
+        self.do_when_reshuffling = lambda:None
+        self.shuffle()
+        self.do_when_reshuffling = do_when_reshuffling
 
     def shuffle(self):
         self.sample_from = [self.scenes[i] for i in np.random.permutation(len(self.scenes))]
+        self.do_when_reshuffling()
 
     def sample(self,n):
         assert n<=len(self.scenes)
@@ -669,14 +672,14 @@ class SceneSampler:
 class PlanesOptimizer(nn.Module):
     def __init__(self,optimizer_type:str,scene_id_plane_resolution:dict,options,save_location:str,
             lr:float,model_coarse:TwoDimPlanesModel,model_fine:TwoDimPlanesModel,use_coarse_planes:bool,
-            init_params:bool,optimize:bool,training_scenes:list=None,coords_normalization:dict=None) -> None:
+            init_params:bool,optimize:bool,training_scenes:list=None,coords_normalization:dict=None,do_when_reshuffling=lambda:None) -> None:
         super(PlanesOptimizer,self).__init__()
         self.scenes = list(scene_id_plane_resolution.keys())
         if training_scenes is None:
             training_scenes = 1*self.scenes
         assert all([s in self.scenes for s in training_scenes])
         self.training_scenes = training_scenes
-        self.scene_sampler = SceneSampler(self.training_scenes)
+        self.scene_sampler = SceneSampler(self.training_scenes,do_when_reshuffling=do_when_reshuffling)
         self.models = {}
         self.buffer_size = options.buffer_size
         assert use_coarse_planes,'Unsupported yet, probably requires adding a param_group to the optimizer'
@@ -703,7 +706,7 @@ class PlanesOptimizer(nn.Module):
         self.optimize = optimize
         self.optimizer = None
         self.saving_needed = False
-        self.draw_scenes()
+        # self.draw_scenes()
 
     def load_scene(self,scene):
         if self.saving_needed:
@@ -795,7 +798,7 @@ class PlanesOptimizer(nn.Module):
             if not self.optimize:   continue
             if model_name=='coarse' or not self.use_coarse_planes:
                 params = list(model.planes_.values())
-                if self.optimizer is None:
+                if self.optimizer is None: # First call to this function:
                     self.optimizer = torch.optim.Adam(params, lr=self.lr)
                 else:
                     self.optimizer.param_groups[0]['params'] = params

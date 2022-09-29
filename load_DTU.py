@@ -10,6 +10,7 @@ import numpy as np
 import cv2
 from torchvision import transforms
 from collections import OrderedDict
+from nerf_helpers import subsample_dataset
 
 def get_image_to_tensor_balanced(image_size=0):
     ops = []
@@ -89,23 +90,31 @@ class DVRDataset(torch.utils.data.Dataset):
             base_dir = os.path.dirname(file_list)
             cat = os.path.basename(base_dir)
             with open(file_list, "r") as f:
-                # objs = sorted([(cat, os.path.join(base_dir, x.strip())) for x in f.readlines()])
                 objs = [(cat, os.path.join(base_dir, x.strip())) for x in f.readlines()]
-            if max_scenes is not None and len(objs)+len(self.all_objs)>max_scenes:
-                # For saving time during debug
-                print('!!! Keeping only %d scenes!!!'%(max_scenes))
-                if len(self.all_objs)>=max_scenes:
-                    if len(self.val_scenes)==0: self.val_scenes = [max_scenes-1]
-                    break
-                objs = objs[:max_scenes-len(self.all_objs)]
+            # if max_scenes is not None and len(objs)+len(self.all_objs)>max_scenes:
+            #     # For saving time during debug
+            #     print('!!! Keeping only %d scenes!!!'%(max_scenes))
+            #     if len(self.all_objs)>=max_scenes:
+            #         if len(self.val_scenes)==0: self.val_scenes = [max_scenes-1]
+            #         break
+            #     objs = objs[:max_scenes-len(self.all_objs)]
             if l_num in val_lists:  self.val_scenes.extend([i+len(self.all_objs) for i in range(len(objs))])
             self.all_objs.extend(objs)
+
+        self.all_objs = sorted(self.all_objs)
+
+        if max_scenes is not None and len(self.all_objs)>max_scenes:    # For saving time during debug
+            print('!!! Keeping only %d scenes!!!'%(max_scenes))
+            self.all_objs,self.val_scenes = subsample_dataset(scenes_dict=self.all_objs,max_scenes=max_scenes,val_only_scenes=self.val_scenes,scene_id_func=self.DTU_sceneID)
+            # scenes_list = [self.sceneObj_2_name(obj) for obj in self.all_objs]
+            # self.val_scenes = [i for i,s in enumerate(self.val_scene_IDs()) if s in scenes_list]
 
         if excluded_scenes is not None:
             scene_names = [self.DTU_sceneID(i) for i in range(len(self.all_objs))]
             scenes_2_remove = []
             for s in excluded_scenes:
-                scenes_2_remove.append(scene_names.index(s))
+                if s in scene_names:
+                    scenes_2_remove.append(scene_names.index(s))
             temp = 1*self.val_scenes
             self.val_scenes = []
             for s_num in temp:
@@ -113,10 +122,8 @@ class DVRDataset(torch.utils.data.Dataset):
                 self.val_scenes.append(s_num-sum([v<s_num for v in scenes_2_remove]))
             self.all_objs = [s for i,s in enumerate(self.all_objs) if i not in scenes_2_remove]
 
-        self.all_objs = sorted(self.all_objs)
         if self.single_images:
             self.im_IDs = []
-            # self.train_inds = []
             self.eval_inds,self.train_ims_per_scene = [],OrderedDict()
             self.i_val = {}
             counter = 0
@@ -126,9 +133,7 @@ class DVRDataset(torch.utils.data.Dataset):
                 eval_freq = n//(1 if eval_ratio is None else int(np.floor(eval_ratio*n)))
                 if id not in self.val_scenes:
                     self.train_ims_per_scene[self.DTU_sceneID(id)] = [i+counter for i in range(n) if (i+1)%eval_freq!=0]
-                    # self.train_inds += self.train_ims_per_scene[self.DTU_sceneID(id)]
                 eval_inds = [i+counter for i in range(n) if (i+1)%eval_freq==0]
-                # self.i_val[self.DTU_sceneID(id)] = [i for i in range(len(self.eval_inds),len(self.eval_inds+eval_inds))]
                 self.i_val[self.DTU_sceneID(id)] = eval_inds
                 self.eval_inds += eval_inds
                 counter += n
@@ -175,11 +180,11 @@ class DVRDataset(torch.utils.data.Dataset):
         self.z_far = z_far
         self.lindisp = False
 
-    # def eval(self,eval):
-    #     self.eval_mode = eval
     def DTU_sceneID(self,id):
-        return self.all_objs[id][1].split('/')[-1]
-        # return 'DTU'+str(id)
+        return self.sceneObj_2_name(self.all_objs[id])
+
+    def sceneObj_2_name(self,obj):
+        return obj[1].split('/')[-1]
 
     def val_scene_IDs(self):
         return [self.DTU_sceneID(id) for id in self.val_scenes]
@@ -218,7 +223,6 @@ class DVRDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         if self.single_images:
-            # index = self.eval_inds[index] if self.eval_mode else self.train_inds[index]
             im_ind,index = self.im_IDs[index]
         cat, root_dir = self.all_objs[index]
 
