@@ -4,7 +4,7 @@ from nerf_helpers import get_minibatches, ndc_rays,spatial_batch_merge
 from nerf_helpers import sample_pdf_2 as sample_pdf
 from volume_rendering_utils import volume_render_radiance_field
 
-from functorch import vjp#make_functional_with_buffers, vmap, grad
+# from functorch import vjp#make_functional_with_buffers, vmap, grad
 import mip
 import numpy as np
 from torch.nn.functional import pad
