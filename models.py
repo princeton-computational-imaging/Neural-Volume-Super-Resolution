@@ -625,7 +625,7 @@ class TwoDimPlanesModel(nn.Module):
         if self.use_viewdirs:
             x_rgb = self.combine_all_planes(pos_planes=x_rgb,viewdir_planes=projected_views)
 
-        if self.skip_connect_every is None:
+        if False and self.skip_connect_every is None:
             for layer_num,l in enumerate(self.rgb_dec):
                 x_rgb = self.relu(l(x_rgb))
             rgb = self.fc_rgb(x_rgb)
@@ -669,7 +669,7 @@ class SceneSampler:
 class PlanesOptimizer(nn.Module):
     def __init__(self,optimizer_type:str,scene_id_plane_resolution:dict,options,save_location:str,
             lr:float,model_coarse:TwoDimPlanesModel,model_fine:TwoDimPlanesModel,use_coarse_planes:bool,
-            init_params:bool,optimize:bool,training_scenes:list=None) -> None:
+            init_params:bool,optimize:bool,training_scenes:list=None,coords_normalization:dict=None) -> None:
         super(PlanesOptimizer,self).__init__()
         self.scenes = list(scene_id_plane_resolution.keys())
         if training_scenes is None:
@@ -692,34 +692,30 @@ class PlanesOptimizer(nn.Module):
             if model_name=='fine' and use_coarse_planes:    continue
             self.planes_per_scene = model.N_PLANES_DENSITY+model.use_viewdirs
             if init_params:
-                for scene in tqdm(self.scenes):
+                for scene in tqdm(self.scenes,desc='Initializing scene planes',):
                     res = scene_id_plane_resolution[scene]
                     params = nn.ParameterDict([
                         (get_plane_name(scene,d),
                             create_plane(res[0] if d<model.N_PLANES_DENSITY else res[1],num_plane_channels=model.num_plane_channels,init_STD=0.1*model.fc_alpha.weight.data.std().cpu())
                         )
                         for d in range(self.planes_per_scene)])
-                    torch.save({'params':params},self.param_path(model_name=model_name,scene=scene))
+                    torch.save({'params':params,'coords_normalization':coords_normalization[scene]},self.param_path(model_name=model_name,scene=scene))
         self.optimize = optimize
         self.optimizer = None
         self.saving_needed = False
-        # self.cur_scenes = []
-        # if optimize:    
         self.draw_scenes()
 
     def load_scene(self,scene):
-        # if scene in self.cur_scenes:
-        #     return
         if self.saving_needed:
             self.save_params()
         for model_name in ['coarse','fine']:
             if model_name=='coarse' or not self.use_coarse_planes:
-                loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))['params']
-            self.models[model_name].planes_ = loaded_params
+                loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
+            self.models[model_name].planes_ = loaded_params['params']
+            self.models[model_name].box_coords = {scene:loaded_params['coords_normalization']}
             if hasattr(self.models[model_name],'SR_model'):
                 self.models[model_name].SR_model.clear_SR_planes(all_planes=True)
-                for k,v in loaded_params.items():
-                    # self.models[model_name].SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=True)
+                for k,v in loaded_params['params'].items():
                     if not self.models[model_name].SR_model.SR_viewdir and get_plane_name(None,self.models[model_name].N_PLANES_DENSITY) in k:  continue
                     self.models[model_name].SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=False)
         self.cur_scenes = [scene]
@@ -761,7 +757,7 @@ class PlanesOptimizer(nn.Module):
                 if os.path.isfile(param_file_name):
                     del_temp = True
                     copyfile(param_file_name,param_file_name.replace('.par','.par_temp'))
-                torch.save({'params':params,'opt_states':opt_states},param_file_name)
+                torch.save({'params':params,'opt_states':opt_states,'coords_normalization':model.box_coords[scene]},param_file_name)
                 if del_temp:
                     os.remove(param_file_name.replace('.par','.par_temp'))
 
@@ -778,16 +774,18 @@ class PlanesOptimizer(nn.Module):
         for model_name in ['coarse','fine']:
             model = self.models[model_name]
             if model_name=='coarse' or not self.use_coarse_planes:
-                params_dict,optimizer_states = nn.ParameterDict(),[]
+                params_dict,optimizer_states,box_coords = nn.ParameterDict(),[],{}
                 for scene in self.cur_scenes:
                     loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
                     params_dict.update(loaded_params['params'])
+                    box_coords.update({scene:loaded_params['coords_normalization']})
                     if self.optimize:
                         if 'opt_states' in loaded_params:
                             optimizer_states.extend(loaded_params['opt_states'])
                         else:
                             optimizer_states.extend([None for p in loaded_params['params']])
             model.planes_ = params_dict.cuda()
+            self.models[model_name].box_coords = box_coords
             if hasattr(model,'SR_model'):
                 model.SR_model.clear_SR_planes(all_planes=True)
                 for k,v in params_dict.items():

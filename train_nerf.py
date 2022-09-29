@@ -136,7 +136,7 @@ def main():
             i_train,i_val = OrderedDict(),OrderedDict()
             if planes_model and internal_SR:
                 scene_id_plane_resolution = {0:max(plane_resolutions),1:min(plane_resolutions)}
-            for basedir in tqdm(basedirs):
+            for basedir in tqdm(basedirs,desc='Loading scenes'):
                 for ds_num,factor in enumerate(downsampling_factor):
                     # scene_id += 1
                     scene_id = ''+basedir
@@ -184,10 +184,11 @@ def main():
 
             scene_id_plane_resolution = dict(zip([dataset.DTU_sceneID(i) for i in range(total_scenes_num)],[plane_resolutions[0] for i in range(total_scenes_num)]))
             basedirs,coords_normalization = [],{}
-            for id in trange(dataset.num_scenes()):
-                scene_info = dataset.scene_info(id)
-                scene_info.update({'near':dataset.z_near,'far':dataset.z_far})
-                coords_normalization[dataset.DTU_sceneID(id)] = calc_scene_box(scene_info,including_dirs=cfg.nerf.use_viewdirs)
+            for id in trange(dataset.num_scenes(),desc='Computing scene bounding boxes'):
+                if not load_saved_models:
+                    scene_info = dataset.scene_info(id)
+                    scene_info.update({'near':dataset.z_near,'far':dataset.z_far})
+                    coords_normalization[dataset.DTU_sceneID(id)] = calc_scene_box(scene_info,including_dirs=cfg.nerf.use_viewdirs)
                 basedirs.append(dataset.DTU_sceneID(id))
             i_val = dataset.i_val
             # assert all([len(i_val[basedirs[0]])==len(i_val[id]) for id in basedirs]),'Assuming all scenes have the same number of evaluation images'
@@ -261,7 +262,7 @@ def main():
         model_coarse = models.TwoDimPlanesModel(
             use_viewdirs=cfg.nerf.use_viewdirs,
             scene_id_plane_resolution=None if store_planes else scene_id_plane_resolution,
-            coords_normalization = coords_normalization,
+            coords_normalization = None if store_planes else coords_normalization,
             dec_density_layers=getattr(cfg.models.coarse,'dec_density_layers',4),
             dec_rgb_layers=getattr(cfg.models.coarse,'dec_rgb_layers',4),
             dec_channels=getattr(cfg.models.coarse,'dec_channels',128),
@@ -303,7 +304,7 @@ def main():
                 model_fine = models.TwoDimPlanesModel(
                     use_viewdirs=cfg.nerf.use_viewdirs,
                     scene_id_plane_resolution=None if store_planes else scene_id_plane_resolution,
-                    coords_normalization = coords_normalization,
+                    coords_normalization = None if store_planes else coords_normalization,
                     dec_density_layers=getattr(cfg.models.fine,'dec_density_layers',4),
                     dec_rgb_layers=getattr(cfg.models.fine,'dec_rgb_layers',4),
                     dec_channels=getattr(cfg.models.fine,'dec_channels',128),
@@ -481,7 +482,7 @@ def main():
         def load_saved_parameters(model,saved_params):
             mismatch = model.load_state_dict(saved_params,strict=False)
             assert (len(mismatch.missing_keys)==0 or (store_planes and all(['planes_.sc' in k for k in mismatch.missing_keys]))) and all(['planes_.sc' in k for k in mismatch.unexpected_keys])
-            if planes_model:
+            if planes_model and not store_planes:
                 model.box_coords = checkpoint["coords_normalization"]
 
 
@@ -503,13 +504,11 @@ def main():
                 checkpoint = torch.load(checkpoint)
                 model_coarse.load_state_dict(checkpoint["model_coarse_state_dict"])
                 model_fine.load_state_dict(checkpoint["model_fine_state_dict"])
-
         del checkpoint # Importent: Releases GPU memory occupied by loaded data.
     # # TODO: Prepare raybatch tensor if batching random rays
     spatial_padding_size = SR_model.receptive_field//2 if isinstance(SR_model,models.Conv3D) else 0
     spatial_sampling = spatial_padding_size>0 or cfg.nerf.train.get("spatial_sampling",False)
     assert isinstance(spatial_sampling,bool) or spatial_sampling>=1
-
     if planes_model and SR_model is not None:
         save_RAM_memory = not store_planes and len(model_coarse.planes_)>=10
         if getattr(cfg.super_resolution,'apply_2_coarse',False):
@@ -521,31 +520,36 @@ def main():
     if store_planes:
         planes_folder = os.path.join(LR_model_folder if SR_experiment else logdir,'planes')
         if os.path.isdir(planes_folder):
-            if any(['DTU' in f for f in os.listdir(planes_folder)]):
-                print('!!! Converting saved planes to new name convention !!!')
-                from scripts import convert_DTU_scene_names
-                name_mapping = convert_DTU_scene_names.name_mapping()
-                checkpoint = find_latest_checkpoint(cfg.models.path if SR_experiment else configargs.load_checkpoint)
-                checkpoint = torch.load(checkpoint)
-                resave_checkpoint = False
-                for f in tqdm([f for f in os.listdir(planes_folder) if 'DTU' in f and f[-4:]=='.par']):
-                    cur_scene_name = f[len('coarse_'):-4]
-                    if cur_scene_name in checkpoint['coords_normalization']:
+            resave_checkpoint = False
+            param_files_list = [f for f in glob.glob(planes_folder+'/*') if '.par' in f]
+            if any(['DTU' in f.split('/')[-1] for f in param_files_list]) or 'coords_normalization' not in torch.load(param_files_list[0]).keys():
+                if any(['DTU' in f.split('/')[-1] for f in param_files_list]):
+                    from scripts import convert_DTU_scene_names
+                    name_mapping = convert_DTU_scene_names.name_mapping()
+                checkpoint_name = find_latest_checkpoint(cfg.models.path if SR_experiment else configargs.load_checkpoint)
+                checkpoint = torch.load(checkpoint_name)
+                for f in tqdm(param_files_list,desc='!!! Converting saved planes to new name convention !!!',):
+                    cur_scene_name = f.split('/')[-1][len('coarse_'):-4]
+                    params = torch.load(f)
+                    if 'DTU' in cur_scene_name:
+                        params['params'] = torch.nn.ParameterDict([(k.replace(cur_scene_name,name_mapping[cur_scene_name]),v) for k,v in params['params'].items()])
+                    if 'coords_normalization' in checkpoint:
                         resave_checkpoint = True
-                        checkpoint['coords_normalization'][name_mapping[cur_scene_name]] = checkpoint['coords_normalization'].pop(cur_scene_name)
-                    params = torch.load(os.path.join(planes_folder,f))
-                    params['params'] = torch.nn.ParameterDict([(k.replace(cur_scene_name,name_mapping[cur_scene_name]),v) for k,v in params['params'].items()])
-                    torch.save(params,os.path.join(planes_folder,f.replace(cur_scene_name,name_mapping[cur_scene_name])))
-                    # copyfile(os.path.join(planes_folder,f),os.path.join(planes_folder,f.replace(cur_scene_name,name_mapping[cur_scene_name])))
-                    os.remove(os.path.join(planes_folder,f))
-                if resave_checkpoint:
-                    torch.save(checkpoint,find_latest_checkpoint(cfg.models.path if SR_experiment else configargs.load_checkpoint))
+                        params['coords_normalization'] = checkpoint['coords_normalization'].pop(cur_scene_name)
+                    torch.save(params,f.replace(cur_scene_name,name_mapping[cur_scene_name]) if 'DTU' in cur_scene_name else f)
+                    if 'DTU' in cur_scene_name:
+                        os.remove(f)
+            
+            if resave_checkpoint:
+                assert len(checkpoint['coords_normalization'].keys())==0
+                checkpoint.pop('coords_normalization',None)
+                torch.save(checkpoint,checkpoint_name)
         else:
             os.mkdir(planes_folder)
         planes_opt = models.PlanesOptimizer(optimizer_type=cfg.optimizer.type,
             scene_id_plane_resolution=scene_id_plane_resolution,options=cfg.nerf.train.store_planes,save_location=planes_folder,lr=cfg.optimizer.lr,
             model_coarse=model_coarse,model_fine=model_fine,use_coarse_planes=getattr(cfg.models.fine,'use_coarse_planes',False),
-            init_params=not load_saved_models,optimize=not SR_experiment,training_scenes=training_scenes)
+            init_params=not load_saved_models,optimize=not SR_experiment,training_scenes=training_scenes,coords_normalization=None if load_saved_models else coords_normalization)
         # available_train_inds = [i for i in i_train if scene_ids[i] in planes_opt.cur_scenes]
 
     downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor)
@@ -582,7 +586,7 @@ def main():
             record_fine = True
             coarse_loss,fine_loss,loss,psnr,rgb_coarse,rgb_fine,rgb_SR,target_ray_values = defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list)
             ims2save = defaultdict(list)
-            for scene_num,img_idx in enumerate(tqdm(img_indecis)):
+            for scene_num,img_idx in enumerate(tqdm(img_indecis,desc='Evaluating scenes')):
                 if any([s in evaluation_sequences[scene_num] for s in scenes4which2save_ims]):  ims2save[val_strings[scene_num]].append(len(rgb_fine[val_strings[scene_num]]))
                 if dataset_type=='synt':
                     img_target = images[img_idx].to(device)
@@ -891,7 +895,6 @@ def main():
                 checkpoint_dict.update({"model_coarse_state_dict": model_coarse.state_dict()})
                 if model_fine:  checkpoint_dict.update({"model_fine_state_dict": model_fine.state_dict()})
                 if planes_model:
-                    checkpoint_dict.update({"coords_normalization": model_fine.box_coords})
                     if store_planes or getattr(cfg.models.fine,'use_coarse_planes',False):
                         checkpoint_dict["model_fine_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_fine_state_dict"].items() if 'planes_.' not in k])
                     if store_planes:
@@ -901,6 +904,8 @@ def main():
                             checkpoint_dict.update({"plane_parameters":params,"plane_optimizer_states":opt_states})
                         else:
                             planes_opt.save_params(to_checkpoint=False)
+                    else:
+                        checkpoint_dict.update({"coords_normalization": model_fine.box_coords})
 
             ckpt_name = os.path.join(logdir, "checkpoint" + str(iter).zfill(5) + ".ckpt")
             torch.save(checkpoint_dict,ckpt_name,)

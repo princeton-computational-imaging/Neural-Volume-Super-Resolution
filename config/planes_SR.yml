@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR1vs1Scenes_32B256C_SFpos_LR4 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  id: SR6vs2Scenes_32B64C_SFpos_LR4 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -20,13 +20,13 @@ dataset:
   # Base directory of dataset.
   root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   dir:
-    # train: ['chair','drums','ficus','hotdog','lego','materials',]
+    train: ['chair','drums','ficus','hotdog','lego','materials',]
     # train: ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
     # train: ['chair','drums'] #,'ficus','hotdog','lego','materials',]
     # train: ['ficus','hotdog'] #,'lego','materials',]
-    train: lego
-    # val: ['mic','ship']
-    val: mic
+    # train: lego
+    val: ['mic','ship']
+    # val: mic
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -48,50 +48,50 @@ models:
   path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res200_32Lrgb4Lden4_LR4corrected_allScenes_0/checkpoint245000.ckpt
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res400_32_Lrgb4Lden4_LR4floatOffset_allScenes_FullSize_0
   # Coarse model.
-  coarse:
-    # Name of the torch.nn.Module class that implements the model.
-    type: TwoDimPlanesModel
-    # Plane side size:
-    plane_resolutions: 200
-    # Plane side size for view-direction plane. Can be a list like plane_resolutions.
-    viewdir_plane_resolution: 32
-    # Planes interpolation method (default to bilinear):
-    plane_interp: bilinear # bicubic # bilinear
-    # Number of layers in the density decoder.
-    dec_density_layers: 4
-    # Number of layers in the rgb decoder.
-    dec_rgb_layers: 4
-    # dec_channels: 256
-    # num_plane_channels: 256
-    # What is the input to the rgb decoder, apart from view directions (if used)
-    rgb_dec_input:  projections # projections, features
-    # proj_combination: concat
-    # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
-    align_corners: False
-    # Number of hidden units in each layer of the MLP (multi-layer
-    # perceptron).
-    # hidden_size: 256
-    # Add a skip connection once in a while. Note: This parameter
-    # won't take affect unless num_layers > skip_connect_every.
-    # skip_connect_every: 3
-    # Additionally use viewing directions as input.
-    # use_viewdirs: True
-    # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
-    # interp_viewdirs: bicubic #'bilinear','bicubic',None
-  fine:
-    # Name of the torch.nn.Module class that implements the model.
-    # type: use_same
-    type: TwoDimPlanesModel
-    # Plane side size:
-    # plane_resolutions: 128
-    # # Number of layers in the density decoder.
-    # dec_density_layers: 2
-    # # Number of layers in the rgb decoder.
-    # dec_rgb_layers: 2
-    # Share the planes with the coarse model:
-    use_coarse_planes: True
-    # # Additionally use viewing directions as input.
-    # use_viewdirs: False
+  # coarse:
+  #   # Name of the torch.nn.Module class that implements the model.
+  #   type: TwoDimPlanesModel
+  #   # Plane side size:
+  #   plane_resolutions: 200
+  #   # Plane side size for view-direction plane. Can be a list like plane_resolutions.
+  #   viewdir_plane_resolution: 32
+  #   # Planes interpolation method (default to bilinear):
+  #   plane_interp: bilinear # bicubic # bilinear
+  #   # Number of layers in the density decoder.
+  #   dec_density_layers: 4
+  #   # Number of layers in the rgb decoder.
+  #   dec_rgb_layers: 4
+  #   # dec_channels: 256
+  #   # num_plane_channels: 256
+  #   # What is the input to the rgb decoder, apart from view directions (if used)
+  #   rgb_dec_input:  projections # projections, features
+  #   # proj_combination: concat
+  #   # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
+  #   align_corners: False
+  #   # Number of hidden units in each layer of the MLP (multi-layer
+  #   # perceptron).
+  #   # hidden_size: 256
+  #   # Add a skip connection once in a while. Note: This parameter
+  #   # won't take affect unless num_layers > skip_connect_every.
+  #   # skip_connect_every: 3
+  #   # Additionally use viewing directions as input.
+  #   # use_viewdirs: True
+  #   # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
+  #   # interp_viewdirs: bicubic #'bilinear','bicubic',None
+  # fine:
+  #   # Name of the torch.nn.Module class that implements the model.
+  #   # type: use_same
+  #   type: TwoDimPlanesModel
+  #   # Plane side size:
+  #   # plane_resolutions: 128
+  #   # # Number of layers in the density decoder.
+  #   # dec_density_layers: 2
+  #   # # Number of layers in the rgb decoder.
+  #   # dec_rgb_layers: 2
+  #   # Share the planes with the coarse model:
+  #   use_coarse_planes: True
+  #   # # Additionally use viewing directions as input.
+  #   # use_viewdirs: False
 # Optimizer params.
 optimizer:
   # Name of the torch.optim class used for optimization.
@@ -166,7 +166,7 @@ super_resolution:
     # Number of layers in the model.
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
-    hidden_size: 256 #128 #256
+    hidden_size: 64 #128 #256
     # Number of residual blocks (originally 32):
     n_blocks: 32 # 32
     # scale_factor: one #one #sqrt #linear
