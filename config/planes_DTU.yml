@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: DTU_Res800_32_DSpos12_CplnCat_allScenes # debug-lego200 # DTU
+  id: DTU_Res200_32_DSpos12_Cdec256CplnCat_LR100_allScenes # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -55,9 +55,9 @@ models:
     # Planes interpolation method (default to bilinear):
     plane_interp: bilinear # bicubic # bilinear
     # Number of layers in the density decoder.
-    dec_density_layers: 14 #4
+    dec_density_layers: 8 #4
     # Number of layers in the rgb decoder.
-    dec_rgb_layers: 14 #4
+    dec_rgb_layers: 8 #4
     # dec_channels: 256
     # num_plane_channels: 256
     # What is the input to the rgb decoder, apart from view directions (if used)
