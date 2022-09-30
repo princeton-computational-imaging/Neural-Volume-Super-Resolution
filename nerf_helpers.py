@@ -20,14 +20,22 @@ class null_with:
 class Counter:
     def __init__(self) -> None:
         self.counter = 0
+        self.flag = False
 
     def count(self):
         return self.counter
 
     def step(self,print_str:str=None):
         self.counter += 1
+        self.flag = True
         if print_str is not None:
             print(print_str+str(self.count()))
+
+    def check_and_reset(self):
+        if self.flag:
+            self.flag = False
+            return True
+        return False
 
 def set_config_defaults(source,target):
     for k in source.keys():

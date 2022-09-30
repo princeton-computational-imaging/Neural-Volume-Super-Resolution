@@ -23,7 +23,7 @@ dataset:
   root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   # excluded_scenes:  ['scan4']
   # Load only some of the scenes in the dataset:
-  max_scenes: 9
+  # max_scenes: 6
   # Save images corresponding to up to 
   # max_scene_savings:  9
   # Evaluate up to so many scenes:
@@ -32,7 +32,7 @@ dataset:
   # at half the original resolution of 800 x 800, to save space.
   # half_res: True
   # Stride (include one per "testskip" images in the dataset).
-  # downsampling_factor: 4 # downsampling factor for the downsampling experiment
+  downsampling_factor: 4 # downsampling factor for the downsampling experiment
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
@@ -49,7 +49,7 @@ models:
     # Name of the torch.nn.Module class that implements the model.
     type: TwoDimPlanesModel
     # Plane side size. Integer or a list of integers to match different scenes.
-    plane_resolutions: 800 #64 #32
+    plane_resolutions: 200 #64 #32
     # Plane side size for view-direction plane. Can be a list like plane_resolutions.
     viewdir_plane_resolution: 32
     # Planes interpolation method (default to bilinear):
@@ -58,7 +58,7 @@ models:
     dec_density_layers: 4
     # Number of layers in the rgb decoder.
     dec_rgb_layers: 4
-    # dec_channels: 256
+    dec_channels: 256
     # num_plane_channels: 256
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features

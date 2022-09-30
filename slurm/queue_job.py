@@ -95,7 +95,7 @@ with open(os.path.join("slurm/scripts/%s.sh"%(job_identifier)),"w") as f:
     f.write("#SBATCH --ntasks=1\n")
     f.write("#SBATCH --job-name=%s\n"%(job_name))
     f.write("#SBATCH --cpus-per-task=12\n")
-    f.write("#SBATCH --mem=64G\n")
+    # f.write("#SBATCH --mem=64G\n")
     f.write("#SBATCH --gres=gpu:1\n")
     f.write("#SBATCH --time=%d:00:00\n"%(RUN_TIME))
     f.write("#SBATCH --mail-user=yb6751@princeton.edu\n")

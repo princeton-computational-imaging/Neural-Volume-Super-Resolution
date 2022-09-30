@@ -553,8 +553,9 @@ def main():
             scene_id_plane_resolution=scene_id_plane_resolution,options=cfg.nerf.train.store_planes,save_location=planes_folder,lr=cfg.optimizer.lr,
             model_coarse=model_coarse,model_fine=model_fine,use_coarse_planes=getattr(cfg.models.fine,'use_coarse_planes',False),
             init_params=not load_saved_models,optimize=not SR_experiment,training_scenes=training_scenes,
-            coords_normalization=None if load_saved_models else coords_normalization,do_when_reshuffling=lambda:scenes_cycle_counter.step(print_str='Number of scene cycles performed: '))
-        # available_train_inds = [i for i in i_train if scene_ids[i] in planes_opt.cur_scenes]
+            coords_normalization=None if load_saved_models else coords_normalization,
+            do_when_reshuffling=lambda:scenes_cycle_counter.step(print_str='Number of scene cycles performed: '),
+        )
 
     downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor)
     saved_target_ims = dict(zip(val_strings,[set() for i in val_strings]))#set()
@@ -874,17 +875,18 @@ def main():
                 + str(np.mean(print_cycle_psnr))
             )
             print_cycle_loss,print_cycle_psnr = [],[]
-        save_now = iter % cfg.experiment.save_every == 0 if isinstance(cfg.experiment.save_every,int) else (time.time()-recently_saved)/60>cfg.experiment.save_every
+        save_now = scenes_cycle_counter.check_and_reset()
+        save_now |= iter % cfg.experiment.save_every == 0 if isinstance(cfg.experiment.save_every,int) else (time.time()-recently_saved)/60>cfg.experiment.save_every
         save_now |= iter == cfg.experiment.train_iters - 1
-        save_now &= (iter>0 and len(eval_loss_since_save)>0)
+        save_now &= iter>0
         # if iter>0 and iter % cfg.experiment.save_every == 0 or iter == cfg.experiment.train_iters - 1:
         if save_now:
-            recent_loss_avg = np.mean(eval_loss_since_save)
-            eval_loss_since_save = []
             save_as_best = False
-            if recent_loss_avg<best_saved[1]:
-                best_saved = (iter,recent_loss_avg)
-                save_as_best = True
+            if len(eval_loss_since_save)>0:
+                recent_loss_avg = np.mean(eval_loss_since_save)
+                if recent_loss_avg<best_saved[1]:
+                    best_saved = (iter,recent_loss_avg)
+                    save_as_best = True
             checkpoint_dict = {
                 "iter": iter,
                 "eval_counter": eval_counter,
@@ -913,7 +915,7 @@ def main():
 
             ckpt_name = os.path.join(logdir, "checkpoint" + str(iter).zfill(5) + ".ckpt")
             torch.save(checkpoint_dict,ckpt_name,)
-            tqdm.write("================== Saved Checkpoint =================")
+            # tqdm.write("================== Saved Checkpoint =================")
             if len(last_saved)>0:
                 os.remove(last_saved.pop(0))
             last_saved.append(ckpt_name)
@@ -929,6 +931,7 @@ def main():
                 print("================Best checkpoint is still %d, with average evaluation loss %.3e (recent average is %.3e)====================="%(best_saved[0],best_saved[1],recent_loss_avg))
             del checkpoint_dict
             recently_saved = time.time()
+            eval_loss_since_save = []
 
     print("Done!")
 
