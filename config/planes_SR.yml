@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR6vs2Scenes_32B64C_SFpos_LR4 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  id: SR6vs2Scenes_0B64C_SFpos_LR4 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -168,5 +168,5 @@ super_resolution:
     # perceptron).
     hidden_size: 64 #128 #256
     # Number of residual blocks (originally 32):
-    n_blocks: 32 # 32
+    n_blocks: 0 # 32
     # scale_factor: one #one #sqrt #linear

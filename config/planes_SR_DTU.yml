@@ -23,7 +23,7 @@ dataset:
   root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   excluded_scenes:  ['scan4']
   # Load only some of the scenes in the dataset:
-  max_scenes: 5
+  max_scenes: 30
   # Save images corresponding to up to 
   # max_scene_savings:  9
   # Evaluate up to so many scenes:

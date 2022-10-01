@@ -210,7 +210,7 @@ def main():
         if EVAL_TRAINING_TOO:
             val_ims_per_scene = len(i_val[basedirs[0]])
             for id in basedirs:
-                if id in val_only_scene_ids:    continue
+                if id not in i_train:    continue
                 im_freq = len(i_train[id])//val_ims_per_scene
                 if id in i_val.keys(): #Avoid evaluating training images for scenes which were discarded for evaluation due to max_scenes_eval
                     i_val[id+'_train'] = [x for i,x in enumerate(i_train[id]) if (i+im_freq//2)%im_freq==0]
@@ -875,7 +875,7 @@ def main():
                 + str(np.mean(print_cycle_psnr))
             )
             print_cycle_loss,print_cycle_psnr = [],[]
-        save_now = scenes_cycle_counter.check_and_reset()
+        save_now = scenes_cycle_counter.check_and_reset() if store_planes else False
         save_now |= iter % cfg.experiment.save_every == 0 if isinstance(cfg.experiment.save_every,int) else (time.time()-recently_saved)/60>cfg.experiment.save_every
         save_now |= iter == cfg.experiment.train_iters - 1
         save_now &= iter>0
