@@ -672,7 +672,8 @@ class SceneSampler:
 class PlanesOptimizer(nn.Module):
     def __init__(self,optimizer_type:str,scene_id_plane_resolution:dict,options,save_location:str,
             lr:float,model_coarse:TwoDimPlanesModel,model_fine:TwoDimPlanesModel,use_coarse_planes:bool,
-            init_params:bool,optimize:bool,training_scenes:list=None,coords_normalization:dict=None,do_when_reshuffling=lambda:None) -> None:
+            init_params:bool,optimize:bool,training_scenes:list=None,coords_normalization:dict=None,
+            do_when_reshuffling=lambda:None,STD_factor:float=0.1) -> None:
         super(PlanesOptimizer,self).__init__()
         self.scenes = list(scene_id_plane_resolution.keys())
         if training_scenes is None:
@@ -699,7 +700,8 @@ class PlanesOptimizer(nn.Module):
                     res = scene_id_plane_resolution[scene]
                     params = nn.ParameterDict([
                         (get_plane_name(scene,d),
-                            create_plane(res[0] if d<model.N_PLANES_DENSITY else res[1],num_plane_channels=model.num_plane_channels,init_STD=0.1*model.fc_alpha.weight.data.std().cpu())
+                            create_plane(res[0] if d<model.N_PLANES_DENSITY else res[1],num_plane_channels=model.num_plane_channels,
+                            init_STD=STD_factor*model.fc_alpha.weight.data.std().cpu())
                         )
                         for d in range(self.planes_per_scene)])
                     torch.save({'params':params,'coords_normalization':coords_normalization[scene]},self.param_path(model_name=model_name,scene=scene))

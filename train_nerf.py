@@ -543,7 +543,7 @@ def main():
                         os.remove(f)
             
             if resave_checkpoint:
-                assert len(checkpoint['coords_normalization'].keys())==0
+                assert all([s in getattr(cfg.dataset,'excluded_scenes',[]) for s in checkpoint['coords_normalization'].keys()])
                 checkpoint.pop('coords_normalization',None)
                 torch.save(checkpoint,checkpoint_name)
         else:
@@ -555,6 +555,7 @@ def main():
             init_params=not load_saved_models,optimize=not SR_experiment,training_scenes=training_scenes,
             coords_normalization=None if load_saved_models else coords_normalization,
             do_when_reshuffling=lambda:scenes_cycle_counter.step(print_str='Number of scene cycles performed: '),
+            STD_factor=getattr(cfg.nerf.train,'STD_factor',0.1),
         )
 
     downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor)

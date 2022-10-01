@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: DTU_Res200_32_DSpos12_Cdec256CplnCat_LR100_allScenes # debug-lego200 # DTU
+  id: DTU_Res200_32_DSpos12_Dec8Lskip3C256plnCat_LR100_allScenes_seed0x10STD # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -55,9 +55,9 @@ models:
     # Planes interpolation method (default to bilinear):
     plane_interp: bilinear # bicubic # bilinear
     # Number of layers in the density decoder.
-    dec_density_layers: 4
+    dec_density_layers: 8 #4
     # Number of layers in the rgb decoder.
-    dec_rgb_layers: 4
+    dec_rgb_layers: 8 #4
     dec_channels: 256
     # num_plane_channels: 256
     # What is the input to the rgb decoder, apart from view directions (if used)
@@ -70,7 +70,7 @@ models:
     # hidden_size: 256
     # Add a skip connection once in a while. Note: This parameter
     # won't take affect unless num_layers > skip_connect_every.
-    # skip_connect_every: 3
+    skip_connect_every: 3
     # Additionally use viewing directions as input.
     # use_viewdirs: True
     # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
@@ -133,6 +133,8 @@ nerf:
     # Randomly downsamples plane during training to enforce multi-resolution loss:
     max_plane_downsampling: 12
     viewdir_downsampling: False
+    # Factor multiplying the STD of the fc_alpha layer when initializing model planes (default so far was 0.1):
+    STD_factor: 1.
   # Validation-specific parameters.
   validation:
     # Number of random rays to retain from each image.
