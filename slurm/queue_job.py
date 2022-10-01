@@ -8,6 +8,7 @@ sys.path.append(".")
 from cfgnode import CfgNode
 from subprocess import call
 from deepdiff import DeepDiff
+import socket
 
 # JOB_NAME = "temp"
 # CONFIG_FILE = "config/lego_SR.yml"
@@ -19,15 +20,15 @@ CONFIG_FILE = "config/planes_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
 
-# RESUME_TRAINING = 0
+# RESUME_TRAINING = 1
 RESUME_TRAINING = None
 
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
-CONDA_ENV = "volumetric_enhance"
+CONDA_ENV = "torch-env" if 'della-' in socket.gethostname() else "volumetric_enhance"
 RUN_TIME = 40 # 20 # 10 # Hours
 
-OVERWRITE_RESUMED_CONFIG = False
-# OVERWRITE_RESUMED_CONFIG = True
+# OVERWRITE_RESUMED_CONFIG = False
+OVERWRITE_RESUMED_CONFIG = True
 
 with open(CONFIG_FILE, "r") as f:
     cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
@@ -94,13 +95,14 @@ with open(os.path.join("slurm/scripts/%s.sh"%(job_identifier)),"w") as f:
     f.write("#SBATCH --nodes=1\n")
     f.write("#SBATCH --ntasks=1\n")
     f.write("#SBATCH --job-name=%s\n"%(job_name))
-    f.write("#SBATCH --cpus-per-task=12\n")
+    f.write("#SBATCH --cpus-per-task=10\n")
     # f.write("#SBATCH --mem=64G\n")
     f.write("#SBATCH --gres=gpu:1\n")
     f.write("#SBATCH --time=%d:00:00\n"%(RUN_TIME))
     f.write("#SBATCH --mail-user=yb6751@princeton.edu\n")
     f.write("#SBATCH --output=slurm/out/%s.out\n\n"%(job_identifier+"_J%j"))
-    f.write("module load anaconda3\n")
+    f.write("module load anaconda3/2022.5\n")
+    f.write("source /home/yb6751/miniconda3/etc/profile.d/conda.sh\n")
     f.write("conda activate %s\n\n"%(CONDA_ENV))
     f.write("cd %s\n"%(os.path.join("slurm/code",job_identifier)))
     f.write(python_command)

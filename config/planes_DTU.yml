@@ -133,6 +133,8 @@ nerf:
     # Randomly downsamples plane during training to enforce multi-resolution loss:
     max_plane_downsampling: 12
     viewdir_downsampling: False
+    # Factor multiplying the STD of the fc_alpha layer when initializing model planes (default so far was 0.1):
+    STD_factor: 1.
   # Validation-specific parameters.
   validation:
     # Number of random rays to retain from each image.
