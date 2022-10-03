@@ -550,8 +550,9 @@ def main():
             os.mkdir(planes_folder)
         scenes_cycle_counter = Counter()
         planes_opt = models.PlanesOptimizer(optimizer_type=cfg.optimizer.type,
-            scene_id_plane_resolution=scene_id_plane_resolution,options=cfg.nerf.train.store_planes,save_location=planes_folder,lr=cfg.optimizer.lr,
-            model_coarse=model_coarse,model_fine=model_fine,use_coarse_planes=getattr(cfg.models.fine,'use_coarse_planes',False),
+            scene_id_plane_resolution=scene_id_plane_resolution,options=cfg.nerf.train.store_planes,save_location=planes_folder,
+            lr=getattr(cfg.optimizer,'planes_lr',cfg.optimizer.lr),model_coarse=model_coarse,model_fine=model_fine,
+            use_coarse_planes=getattr(cfg.models.fine,'use_coarse_planes',False),
             init_params=not load_saved_models,optimize=not SR_experiment,training_scenes=training_scenes,
             coords_normalization=None if load_saved_models else coords_normalization,
             do_when_reshuffling=lambda:scenes_cycle_counter.step(print_str='Number of scene cycles performed: '),

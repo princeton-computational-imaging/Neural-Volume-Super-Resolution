@@ -327,8 +327,8 @@ def run_one_iter_of_nerf(
     # chunk_size = getattr(options.nerf, mode).chunksize*64//max([getattr(options.nerf, mode).num_coarse,getattr(options.nerf, mode).num_fine])
     chunk_size = getattr(options.nerf, mode).chunksize
     if 'della-' in socket.gethostname():
-        chunk_size *= 10
-    elif (SR_model is not None or hasattr(model_fine,'SR_model')):
+        chunk_size *= 5
+    if (SR_model is not None or hasattr(model_fine,'SR_model')):
         chunk_size //= 10 #5 #(2*int(np.ceil(np.log2(model_fine.SR_model.n_blocks))))
         # if model_fine.SR_model.training:
         #     chunk_size //= int(2*np.ceil(np.log2(model_fine.SR_model.n_blocks)))

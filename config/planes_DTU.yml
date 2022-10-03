@@ -95,6 +95,7 @@ optimizer:
   type: Adam
   # Learning rate.
   lr: 5.0E-3
+  planes_lr:  1.0E-2
 
 # NeRF parameters.
 nerf:
