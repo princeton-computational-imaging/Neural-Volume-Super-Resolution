@@ -129,7 +129,6 @@ def main():
         if dataset_type=='synt':
             train_dirs = assert_list(cfg.dataset.dir.train)
             val_only_dirs = assert_list(getattr(cfg.dataset.dir,'val',[]))
-            # basedirs = [os.path.join(cfg.dataset.root,d) for d in train_dirs+val_only_dirs]
             basedirs = train_dirs+val_only_dirs
             images, poses, render_poses, hwfDs, i_split,scene_ids = [],torch.zeros([0,4,4]),[],[[],[],[],[]],[np.array([]).astype(np.int64) for i in range(3)],[]
             scene_id,scene_id_plane_resolution,val_only_scene_ids,coords_normalization = -1,{},[],{}
@@ -138,7 +137,6 @@ def main():
                 scene_id_plane_resolution = {0:max(plane_resolutions),1:min(plane_resolutions)}
             for basedir in tqdm(basedirs,desc='Loading scenes'):
                 for ds_num,factor in enumerate(downsampling_factor):
-                    # scene_id += 1
                     scene_id = ''+basedir
                     val_only = basedir not in train_dirs
                     if val_only:    val_only_scene_ids.append(scene_id)
@@ -157,9 +155,7 @@ def main():
                         coords_normalization[basedir] =\
                             calc_scene_box({'camera_poses':cur_poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':cur_hwfDs[0],'W':cur_hwfDs[1],'f':cur_hwfDs[2]},including_dirs=cfg.nerf.use_viewdirs)
                     i_val[scene_id] = [v+len(images) for v in cur_i_split[1]]
-                    i_train[scene_id] = [v+len(images) for v in cur_i_split[0]]
-                    # for i in range(len(i_split)):
-                    #     i_split[i] = np.concatenate((i_split[i],cur_i_split[i]+len(images)))
+                    if not val_only:    i_train[scene_id] = [v+len(images) for v in cur_i_split[0]]
                     images += cur_images
                     poses = torch.cat((poses,cur_poses),0)
                     for i in range(len(hwfDs)):
@@ -181,7 +177,6 @@ def main():
             scene_ids = dataset.scene_IDs()
             total_scenes_num = dataset.num_scenes() #+dataset_eval.num_scenes()
             assert len(plane_resolutions)==1
-
             scene_id_plane_resolution = dict(zip([dataset.DTU_sceneID(i) for i in range(total_scenes_num)],[plane_resolutions[0] for i in range(total_scenes_num)]))
             basedirs,coords_normalization = [],{}
             scene_iterator = range(dataset.num_scenes()) if load_saved_models else trange(dataset.num_scenes(),desc='Computing scene bounding boxes')
@@ -192,16 +187,9 @@ def main():
                     coords_normalization[dataset.DTU_sceneID(id)] = calc_scene_box(scene_info,including_dirs=cfg.nerf.use_viewdirs)
                 basedirs.append(dataset.DTU_sceneID(id))
             i_val = dataset.i_val
-            # assert all([len(i_val[basedirs[0]])==len(i_val[id]) for id in basedirs]),'Assuming all scenes have the same number of evaluation images'
             i_train = dataset.train_ims_per_scene
-        # assert all([len(i_val[basedirs[0]])==len(i_val[id]) for id in basedirs]),'Assuming all scenes have the same number of evaluation images'
         if hasattr(cfg.dataset,'max_scenes_eval'):
-            i_val,val_only_scene_ids = subsample_dataset(scenes_dict=i_val,max_scenes=cfg.dataset.max_scenes_eval,val_only_scenes=val_only_scene_ids)
-            # i_val_val_only = [(k,v) for k,v in i_val.items() if k in val_only_scene_ids]
-            # i_val_others = [(k,v) for k,v in i_val.items() if k not in val_only_scene_ids]
-            # i_val = dict([i_val_others[i] for i in np.unique(np.round(np.linspace(0,len(i_val_others)-1,cfg.dataset.max_scenes_eval)).astype(int))])
-            # if len(i_val_val_only)>0:
-            #     i_val.update(dict([i_val_val_only[i] for i in np.unique(np.round(np.linspace(0,len(i_val_val_only)-1,cfg.dataset.max_scenes_eval)).astype(int))]))
+            i_val,val_only_scene_ids = subsample_dataset(scenes_dict=i_val,max_scenes=cfg.dataset.max_scenes_eval,val_only_scenes=val_only_scene_ids,max_val_only_scenes=cfg.dataset.max_scenes_eval)
         scenes4which2save_ims = 1*list(i_val.keys())
         if hasattr(cfg.dataset,'max_scene_savings'):
             raise Exception('Should be fixed after adding max_scenes_eval')
@@ -256,7 +244,6 @@ def main():
     else:
         encode_position_fn = None
         encode_direction_fn = None
-    # if getattr(cfg.models.coarse,"use_viewdirs",False) or getattr(cfg.models.fine,"use_viewdirs",False):    assert cfg.nerf.use_viewdirs
     if planes_model:
         if hasattr(cfg.nerf.train,'viewdir_downsampling'):  assert hasattr(cfg.nerf.train,'max_plane_downsampling')
         store_planes = hasattr(cfg.nerf.train,'store_planes')
@@ -348,6 +335,8 @@ def main():
                 hidden_size=cfg.super_resolution.model.hidden_size,
                 plane_interp=model_fine.plane_interp,
                 n_blocks=cfg.super_resolution.model.n_blocks,
+                input_normalization=cfg.super_resolution.get("input_normalization",False),
+                consistentcy_loss_w=cfg.super_resolution.get("consistentcy_loss_w",0),
             )
             print("SR model: %d parameters"%(num_parameters(SR_model)))
         else:
@@ -385,12 +374,13 @@ def main():
                 num_layers_dir=cfg.super_resolution.model.get("num_layers_dir",1),
                 hidden_size=cfg.super_resolution.model.hidden_size,
                 dirs_hidden_width_ratio=1,
-                xyz_input_2_dir=cfg.super_resolution.model.get("xyz_input_2_dir",False)
+                xyz_input_2_dir=cfg.super_resolution.model.get("xyz_input_2_dir",False),
             )
             print("SR model: %d parameters, input dimension xyz: %d, dirs: %d"%\
                 (num_parameters(SR_model),SR_input_dim[0],SR_input_dim[1]))
         SR_model.to(device)
-        trainable_parameters = list(SR_model.parameters())
+        # trainable_parameters = list(SR_model.parameters())
+        trainable_parameters = [p for k,p in SR_model.named_parameters() if 'NON_LEARNED' not in k]
     else:
         # Initialize optimizer.
         def collect_params(model,filter='all'):
@@ -464,8 +454,6 @@ def main():
         if not ok:  raise Exception('Inconsistent model config')
         checkpoint = torch.load(checkpoint)
         def update_saved_names(state_dict):
-            # if any(['planes_.sc0' in k for k in state_dict.keys()]):
-            #     assert len([k for k in state_dict if 'planes_.sc' in k])==len([k for k in model_coarse.state_dict() if 'planes_.sc' in k])
             return state_dict
             if any(['planes_.' in k and '.sc' not in k for k in state_dict.keys()]):
                 return OrderedDict([(k.replace('planes_.','planes_.sc0_res32_D'),v) for k,v in state_dict.items()])
@@ -507,9 +495,20 @@ def main():
                 model_coarse.load_state_dict(checkpoint["model_coarse_state_dict"])
                 model_fine.load_state_dict(checkpoint["model_fine_state_dict"])
         del checkpoint # Importent: Releases GPU memory occupied by loaded data.
-    # # TODO: Prepare raybatch tensor if batching random rays
+
     spatial_padding_size = SR_model.receptive_field//2 if isinstance(SR_model,models.Conv3D) else 0
     spatial_sampling = spatial_padding_size>0 or cfg.nerf.train.get("spatial_sampling",False)
+    if spatial_padding_size>0 or spatial_sampling:
+        SAMPLE_PATCH_BY_CONTENT = True
+        patch_size = chunksize_to_2D(cfg.nerf.train.num_random_rays)
+        patch_size = int(np.ceil(spatial_sampling*patch_size))
+        if SAMPLE_PATCH_BY_CONTENT:
+            assert getattr(cfg.nerf.train,'spatial_patch_sampling','background_est') in ['background_est','STD']
+            if getattr(cfg.nerf.train,'spatial_patch_sampling','background_est')=='STD':
+                im_2_sampling_dist = image_STD_2_distribution(patch_size=patch_size)
+            else:
+                im_2_sampling_dist = estimated_background_2_distribution(patch_size=patch_size)
+
     assert isinstance(spatial_sampling,bool) or spatial_sampling>=1
     if planes_model and SR_model is not None:
         save_RAM_memory = not store_planes and len(model_coarse.planes_)>=10
@@ -558,6 +557,9 @@ def main():
             do_when_reshuffling=lambda:scenes_cycle_counter.step(print_str='Number of scene cycles performed: '),
             STD_factor=getattr(cfg.nerf.train,'STD_factor',0.1),
         )
+    if SR_experiment=="model" and getattr(cfg.super_resolution,'input_normalization',False) and not os.path.exists(configargs.load_checkpoint):
+        #Initializing a new SR model that uses input normalization
+        SR_model.normalization_params(planes_opt.get_plane_stats(viewdir=getattr(cfg.super_resolution,'SR_viewdir',False)))
 
     downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor)
     saved_target_ims = dict(zip(val_strings,[set() for i in val_strings]))#set()
@@ -565,6 +567,7 @@ def main():
         spatial_margin = SR_model.receptive_field//2 if spatial_sampling else None
     else:
         spatial_margin = 0
+    virtual_batch_size = getattr(cfg.nerf.train,'virtual_batch_size',1)
 
     def evaluate():
         tqdm.write("[VAL] =======> Iter: " + str(iter))
@@ -702,6 +705,8 @@ def main():
         return loss,psnr
 
     def train():
+        first_v_batch_iter = iter%virtual_batch_size==0
+        last_v_batch_iter = iter%virtual_batch_size==(virtual_batch_size-1)
         if SR_experiment=="model":
             SR_model.train()
         else:
@@ -739,11 +744,8 @@ def main():
             dim=-1,
         )
         if spatial_padding_size>0 or spatial_sampling:
-            SAMPLE_PATCH_BY_CONTENT = True
-            patch_size = chunksize_to_2D(cfg.nerf.train.num_random_rays)
-            patch_size = int(np.ceil(spatial_sampling*patch_size))
             if SAMPLE_PATCH_BY_CONTENT:
-                patches_vacancy_dist = compute_patches_distribution(img_target[...,:3],patch_size)
+                patches_vacancy_dist = im_2_sampling_dist(img_target[...,:3])
                 upper_left_corner = torch.argwhere(torch.rand([])<torch.cumsum(patches_vacancy_dist.reshape([-1]),0))[0].item()
                 upper_left_corner = np.array([upper_left_corner//patches_vacancy_dist.shape[1],upper_left_corner%patches_vacancy_dist.shape[1]])
             else:
@@ -773,8 +775,9 @@ def main():
         ray_directions = ray_directions[select_inds[:, 0], select_inds[:, 1], :]
         batch_rays = torch.stack([ray_origins, ray_directions], dim=0)
 
-        optimizer.zero_grad()
-        if store_planes:    planes_opt.zero_grad()
+        if first_v_batch_iter:
+            optimizer.zero_grad()
+            if store_planes:    planes_opt.zero_grad()
         rgb_coarse, _, _, rgb_fine, _, _,rgb_SR,_,_ = run_one_iter_of_nerf(
             cur_H if not spatial_sampling else patch_size,
             cur_W if not spatial_sampling else patch_size,
@@ -796,6 +799,7 @@ def main():
             loss = torch.nn.functional.mse_loss(
                     rgb_SR[..., :3], target_ray_values[..., :3]
                 )
+
         else:
             coarse_loss = torch.nn.functional.mse_loss(
                 rgb_coarse[..., :3], target_ray_values[..., :3]
@@ -810,16 +814,23 @@ def main():
                 elif getattr(cfg.super_resolution.training,'loss','both')=='coarse': fine_loss = None
             # loss = torch.nn.functional.mse_loss(rgb_pred[..., :3], target_s[..., :3])
             loss = (coarse_loss if coarse_loss is not None else 0.0) + (fine_loss if fine_loss is not None else 0.0)
+
+        writer.add_scalar("train/loss", loss.item(), iter)
+        if SR_experiment=="model" and planes_model:
+            SR_consistency_loss = SR_model.return_consistency_loss()
+            if SR_consistency_loss is not None:
+                writer.add_scalar("train/inconsistency", SR_consistency_loss.item(), iter)
+                loss += cfg.super_resolution.consistentcy_loss_w*SR_consistency_loss
+
         loss.backward()
         psnr = mse2psnr(loss.item())
         new_drawn_scenes = None
         if store_planes:
-            new_drawn_scenes = planes_opt.step()
-
-        optimizer.step()
-        # If training an SR model operating on planes, discarding super-resolved planes after updating the model:
-        if planes_model and SR_experiment=='model': SR_model.clear_SR_planes()
-        writer.add_scalar("train/loss", loss.item(), iter)
+            new_drawn_scenes = planes_opt.step(opt_step=last_v_batch_iter)
+        if last_v_batch_iter:
+            optimizer.step()
+            # If training an SR model operating on planes, discarding super-resolved planes after updating the model:
+            if planes_model and SR_experiment=='model': SR_model.clear_SR_planes()
         if SR_experiment!="model" or planes_model:
             if coarse_loss is not None:
                 writer.add_scalar("train/coarse_loss", coarse_loss.item(), iter)
@@ -842,8 +853,8 @@ def main():
         else:
             evaluate_now = iter % cfg.experiment.validate_every == 0
         evaluate_now |= iter == cfg.experiment.train_iters - 1
-        # print('!!!!!!!!!!WARNING')
-        # evaluate_now = False
+        # print('!!!!!!!!!!WARNING!!!!!!!!!!!')
+        # evaluate_now = True
         if evaluate_now:
             last_evaluated = 1*iter
             start_time = time.time()
@@ -877,7 +888,7 @@ def main():
                 + str(np.mean(print_cycle_psnr))
             )
             print_cycle_loss,print_cycle_psnr = [],[]
-        save_now = scenes_cycle_counter.check_and_reset() if store_planes else False
+        save_now = scenes_cycle_counter.check_and_reset() if (store_planes and not SR_experiment) else False
         save_now |= iter % cfg.experiment.save_every == 0 if isinstance(cfg.experiment.save_every,int) else (time.time()-recently_saved)/60>cfg.experiment.save_every
         save_now |= iter == cfg.experiment.train_iters - 1
         save_now &= iter>0

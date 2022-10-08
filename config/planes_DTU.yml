@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: DTU_Res200_32_DSpos12_Cdec8skip3_LR100_allScenes # debug-lego200 # DTU
+  id: DTUall_Res200_32_DSpos12_Cdec8skip3_LR100_noBuff_Cpln3 # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -59,7 +59,7 @@ models:
     # Number of layers in the rgb decoder.
     dec_rgb_layers: 8 #4
     # dec_channels: 256
-    # num_plane_channels: 256
+    num_plane_channels: 3
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
     proj_combination: concat
@@ -95,7 +95,7 @@ optimizer:
   type: Adam
   # Learning rate.
   lr: 5.0E-3
-  planes_lr:  1.0E-2
+  # planes_lr:  1.0E-2
 
 # NeRF parameters.
 nerf:
@@ -106,6 +106,8 @@ nerf:
   # # Encoding function for ray direction (theta, phi).
   # encode_direction_fn: None
   train:
+    # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
+    spatial_sampling: 1.
     # Number of random rays to retain from each image.
     # These sampled rays are used for training, and the others are discarded.
     num_random_rays: 4096  # 32 * 32 * 4
@@ -116,8 +118,8 @@ nerf:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
-      buffer_size:  5
-      steps_per_buffer: 40
+      buffer_size:  1 #5
+      steps_per_buffer: 1 #40
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
@@ -135,7 +137,7 @@ nerf:
     max_plane_downsampling: 12
     viewdir_downsampling: False
     # Factor multiplying the STD of the fc_alpha layer when initializing model planes (default so far was 0.1):
-    STD_factor: 1.
+    # STD_factor: .1
   # Validation-specific parameters.
   validation:
     # Number of random rays to retain from each image.

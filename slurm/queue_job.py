@@ -24,12 +24,13 @@ CONFIG_FILE = "config/planes_SR_DTU.yml"
 # RESUME_TRAINING = 0
 RESUME_TRAINING = None
 
-PARAM2SWEEP = (['dataset','max_scenes'],[10*i for i in range(1,11)])
-# PARAM2SWEEP = None
+# PARAM2SWEEP = (['optimizer','lr'],[1e-5*(2**i) for i in range(9)])
+# PARAM2SWEEP = (['dataset','max_scenes'],[10*i for i in range(1,11)])
+PARAM2SWEEP = None
 
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 CONDA_ENV = "torch-env" if 'della-' in socket.gethostname() else "volumetric_enhance"
-RUN_TIME = 40 # 20 # 10 # Hours
+RUN_TIME = 20 # 20 # 10 # Hours
 
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True
@@ -58,18 +59,19 @@ existing_ids = [int(search("(?<="+job_name+"_)(\d)+(?=$)",f).group(0)) for f in 
 config_file = ''+CONFIG_FILE
 cfg = get_config(config_file)
 
+job_name += '%s'
 for run_num in range(len(PARAM2SWEEP[1])):
     run_suffix = str(PARAM2SWEEP[1][run_num]).replace('.','_') if sweep_jobs else ''
     if RESUME_TRAINING is None:
-        job_identifier = job_name+run_suffix+"_%d"%(0 if len(existing_ids)==0 else max(existing_ids)+1)
+        job_identifier = job_name%(run_suffix)+"_%d"%(0 if len(existing_ids)==0 else max(existing_ids)+1)
         if run_num==0:
-            code_folder = os.path.join("slurm/code",job_identifier.replace(sweep_suffix+run_suffix,'_SWP'))
+            code_folder = os.path.join("slurm/code",job_identifier.replace(sweep_suffix+run_suffix,'_SWP') if sweep_jobs else job_identifier)
             if not os.path.exists(code_folder):
                 os.mkdir(code_folder)
         os.mkdir(os.path.join(LOGS_FOLDER,job_identifier))
         print("Starting to train a new job: %s"%(job_identifier))
     else:
-        job_identifier = job_name+run_suffix+"_%d"%(RESUME_TRAINING)
+        job_identifier = job_name%(run_suffix)+"_%d"%(RESUME_TRAINING)
         if run_num==0:
             code_folder = os.path.join("slurm/code",job_identifier.replace(sweep_suffix+run_suffix,'_SWP') if sweep_jobs else job_identifier)
         saved_models_folder = os.path.join(LOGS_FOLDER,job_identifier)
@@ -93,29 +95,20 @@ for run_num in range(len(PARAM2SWEEP[1])):
             if OVERWRITE_RESUMED_CONFIG:
                 shutil.copyfile(os.path.join(saved_models_folder,"config.yml"),os.path.join("slurm/code",job_identifier,"config_old.yml"))
             else:
-                config_file = os.path.join(saved_models_folder,"config.yml")
+                cfg = saved_config_dict
+                # config_file = os.path.join(saved_models_folder,"config.yml")
         print("Resuming training on job %s"%(job_identifier))
 
     if run_num==0:
         for f in [f for f in os.listdir() if f[-3:]==".py"]:
             shutil.copyfile(f,os.path.join(code_folder,f))
 
-    # id_string = "  id: %s "%(job_name+'_SWP%s'%(run_suffix) if sweep_jobs else '')
     config_filename = "config%s.yml"%(str(run_num) if sweep_jobs else '')
-    rsetattr(cfg, '.'.join(PARAM2SWEEP[0]), PARAM2SWEEP[1][run_num])
+    if sweep_jobs:
+        rsetattr(cfg, '.'.join(PARAM2SWEEP[0]), PARAM2SWEEP[1][run_num])
     setattr(cfg.experiment, 'id',job_identifier)
-    # setattr(cfg,'.'.join(PARAM2SWEEP[0]))
     with open(os.path.join(code_folder,config_filename), "w") as f:
         f.write(cfg.dump())  # cfg, f, default_flow_style=False)
-
-    # with open(os.path.join(code_folder,config_filename),"w") as f_write:
-    #     with open(config_file,"r") as f_read:
-    #         for line in f_read:
-    #             if line[:len(id_string)]==id_string:
-    #                 f_write.write(line.replace(id_string,id_string.replace(job_name,job_identifier)))
-    #             else:
-    #                 f_write.write(line)
-
 
     python_command = "python train_nerf.py --config %s"%(config_filename)
     if RESUME_TRAINING is not None:
@@ -125,7 +118,7 @@ for run_num in range(len(PARAM2SWEEP[1])):
         f.write("#!/bin/bash\n")
         f.write("#SBATCH --nodes=1\n")
         f.write("#SBATCH --ntasks=1\n")
-        f.write("#SBATCH --job-name=%s\n"%(job_name))
+        f.write("#SBATCH --job-name=%s\n"%(job_name%(run_suffix)))
         f.write("#SBATCH --cpus-per-task=10\n")
         # f.write("#SBATCH --mem=64G\n")
         f.write("#SBATCH --gres=gpu:1\n")

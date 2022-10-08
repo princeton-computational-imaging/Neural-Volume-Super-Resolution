@@ -91,13 +91,6 @@ class DVRDataset(torch.utils.data.Dataset):
             cat = os.path.basename(base_dir)
             with open(file_list, "r") as f:
                 objs = [(cat, os.path.join(base_dir, x.strip())) for x in f.readlines()]
-            # if max_scenes is not None and len(objs)+len(self.all_objs)>max_scenes:
-            #     # For saving time during debug
-            #     print('!!! Keeping only %d scenes!!!'%(max_scenes))
-            #     if len(self.all_objs)>=max_scenes:
-            #         if len(self.val_scenes)==0: self.val_scenes = [max_scenes-1]
-            #         break
-            #     objs = objs[:max_scenes-len(self.all_objs)]
             if l_num in val_lists:  self.val_scenes.extend([i+len(self.all_objs) for i in range(len(objs))])
             self.all_objs.extend(objs)
 
@@ -105,9 +98,8 @@ class DVRDataset(torch.utils.data.Dataset):
 
         if max_scenes is not None and len(self.all_objs)>max_scenes:    # For saving time during debug
             print('!!! Keeping only %d scenes!!!'%(max_scenes))
-            self.all_objs,self.val_scenes = subsample_dataset(scenes_dict=self.all_objs,max_scenes=max_scenes,val_only_scenes=self.val_scenes,scene_id_func=self.DTU_sceneID)
-            # scenes_list = [self.sceneObj_2_name(obj) for obj in self.all_objs]
-            # self.val_scenes = [i for i,s in enumerate(self.val_scene_IDs()) if s in scenes_list]
+            self.all_objs,self.val_scenes = subsample_dataset(scenes_dict=self.all_objs,max_scenes=max_scenes,
+                val_only_scenes=self.val_scenes,scene_id_func=self.DTU_sceneID,max_val_only_scenes=None)
 
         if excluded_scenes is not None:
             scene_names = [self.DTU_sceneID(i) for i in range(len(self.all_objs))]

@@ -678,19 +678,21 @@ class PlanesOptimizer(nn.Module):
         self.scenes = list(scene_id_plane_resolution.keys())
         if training_scenes is None:
             training_scenes = 1*self.scenes
-        assert all([s in self.scenes for s in training_scenes])
         self.training_scenes = training_scenes
-        self.scene_sampler = SceneSampler(self.training_scenes,do_when_reshuffling=do_when_reshuffling)
-        self.models = {}
-        self.buffer_size = options.buffer_size
-        assert use_coarse_planes,'Unsupported yet, probably requires adding a param_group to the optimizer'
-        assert not init_params or optimize,'This would means using (frozen) random planes...' 
-        self.use_coarse_planes = use_coarse_planes
-        self.save_location = save_location
-        assert optimizer_type=='Adam'
-        self.lr = lr
+        self.buffer_size = getattr(options,'buffer_size',len(self.training_scenes))
         self.steps_per_buffer,self.steps_since_drawing = options.steps_per_buffer,0
         if self.buffer_size>=len(self.training_scenes):  self.steps_per_buffer = -1
+        assert all([s in self.scenes for s in self.training_scenes])
+        assert optimizer_type=='Adam','Optimizer %s not supported yet.'%(optimizer_type)
+        assert use_coarse_planes,'Unsupported yet, probably requires adding a param_group to the optimizer'
+        assert not init_params or optimize,'This would means using (frozen) random planes...'
+        assert self.steps_per_buffer==-1 or self.steps_per_buffer>=self.buffer_size,\
+            'Trying to use %d steps for a buffer of size %d: Some scenes would be loaded in vain.'%(options.steps_per_buffer,self.buffer_size)
+        self.scene_sampler = SceneSampler(self.training_scenes,do_when_reshuffling=do_when_reshuffling)
+        self.models = {}
+        self.use_coarse_planes = use_coarse_planes
+        self.save_location = save_location
+        self.lr = lr
         for model_name,model in zip(['coarse','fine'],[model_coarse,model_fine]):
             self.models[model_name] = model
             if model_name=='fine' and use_coarse_planes:    continue
@@ -735,6 +737,17 @@ class PlanesOptimizer(nn.Module):
 
     def param_path(self,model_name,scene):
         return os.path.join(self.save_location,"%s_%s.par"%(model_name,scene))
+
+    def get_plane_stats(self,viewdir=False):
+        model_name='coarse'
+        plane_means,plane_STDs = [],[]
+        for scene in tqdm(self.training_scenes,desc='Collecting plane statistics'):
+            loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
+            for k,p in loaded_params['params'].items():
+                if not viewdir and get_plane_name(None,self.models[model_name].N_PLANES_DENSITY) in k:  continue
+                plane_means.append(torch.mean(p,(2,3)).squeeze(0))
+                plane_STDs.append(torch.std(p.reshape(p.shape[1],-1),1))
+        return {'mean':torch.stack(plane_means,0).mean(0),'std':torch.stack(plane_STDs,0).mean(0)}
 
     def save_params(self,to_checkpoint=False):
         assert self.optimize,'Why would you want to save if not optimizing?'
@@ -807,8 +820,8 @@ class PlanesOptimizer(nn.Module):
                 self.optimizer.state = defaultdict(dict,[(params[i],v) for i,v in enumerate(optimizer_states) if v is not None])
         self.saving_needed = False
 
-    def step(self):
-        if self.optimize:
+    def step(self,opt_step=True):
+        if self.optimize and opt_step:
             self.optimizer.step()
             self.saving_needed = True
         self.steps_since_drawing += 1
@@ -843,7 +856,8 @@ class _Residual_Block(nn.Module):
         return output 
 
 class EDSR(nn.Module):
-    def __init__(self,scale_factor,in_channels,out_channels,hidden_size,plane_interp,n_blocks=32):
+    def __init__(self,scale_factor,in_channels,out_channels,hidden_size,plane_interp,n_blocks=32,
+        input_normalization=False,consistentcy_loss_w:float=None):
         super(EDSR, self).__init__()
 
         # rgb_mean = (0.4488, 0.4371, 0.4040)
@@ -890,7 +904,12 @@ class EDSR(nn.Module):
                     m.bias.data.zero_()
 
         self.clear_SR_planes(all_planes=True)
-        # self.SR_updated = {},
+        if input_normalization:
+            self.normalization_params({'mean':float('nan')*torch.ones([in_channels]),'std':float('nan')*torch.ones([in_channels])})
+        self.consistentcy_loss_w = consistentcy_loss_w
+        if consistentcy_loss_w is not None:
+            self.planes_diff = nn.L1Loss()
+            self.consistentcy_loss = []
 
     def make_layer(self, block,args, num_of_layer):
         layers = []
@@ -900,6 +919,10 @@ class EDSR(nn.Module):
 
     def interpolate_LR(self,id):
         return torch.nn.functional.interpolate(self.LR_planes[id].cuda(),scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=self.align_corners)
+
+    def normalization_params(self,norm_dict):
+        self.planes_mean_NON_LEARNED = nn.Parameter(norm_dict['mean'].reshape([1,-1,1,1]))
+        self.planes_std_NON_LEARNED = nn.Parameter(norm_dict['std'].reshape([1,-1,1,1]))
 
     def residual_plane(self,id):
         if id in self.residual_planes:
@@ -922,6 +945,13 @@ class EDSR(nn.Module):
         for attr in planes_2_clear:
             setattr(self,attr,{})
 
+    def return_consistency_loss(self):
+        loss = None
+        if self.consistentcy_loss_w is not None and len(self.consistentcy_loss)>0:
+            loss = torch.mean(torch.stack(self.consistentcy_loss))
+            self.consistentcy_loss = []
+        return loss
+
     def forward(self, plane_name):
         if isinstance(plane_name,tuple):
             full_plane = False
@@ -935,36 +965,45 @@ class EDSR(nn.Module):
             # assert plane_roi is None,'Unsupported yet'
             out = self.SR_planes[plane_name].cuda()
         else:
-            x = self.LR_planes[plane_name].detach().cuda()
-            plane_roi = (torch.tensor(x.shape[2:])).to(plane_roi.device)*(1+plane_roi)/2
+            LR_plane = self.LR_planes[plane_name].detach().cuda()
+            if hasattr(self,'planes_mean_NON_LEARNED'):
+                LR_plane = LR_plane-self.planes_mean_NON_LEARNED
+                LR_plane = LR_plane/self.planes_std_NON_LEARNED
+            plane_roi = (torch.tensor(LR_plane.shape[2:])).to(plane_roi.device)*(1+plane_roi)/2
             plane_roi = torch.stack([torch.floor(plane_roi[0]),torch.ceil(plane_roi[1])],0).cpu().numpy().astype(np.int32)
             plane_roi[0] = np.maximum(0,plane_roi[0]-1)
-            plane_roi[1] = np.minimum(np.array(x.shape[2:]),plane_roi[1]+1)
+            plane_roi[1] = np.minimum(np.array(LR_plane.shape[2:]),plane_roi[1]+1)
             pre_padding = np.minimum(plane_roi[0],self.required_padding)
-            post_padding = np.minimum(np.array(x.shape[2:])-plane_roi[1],self.required_padding)
+            post_padding = np.minimum(np.array(LR_plane.shape[2:])-plane_roi[1],self.required_padding)
             take_last = lambda ind: -ind if ind>0 else None
             DEBUG = False
             if DEBUG:   print('!! WARNING !!!!')
-            x = torch.nn.functional.pad(x[...,plane_roi[0,0]-pre_padding[0]:plane_roi[1,0]+post_padding[0],
-                plane_roi[0,1]-pre_padding[1]:plane_roi[1,1]+post_padding[1]],
+            x = LR_plane[...,plane_roi[0,0]-pre_padding[0]:plane_roi[1,0]+post_padding[0],plane_roi[0,1]-pre_padding[1]:plane_roi[1,1]+post_padding[1]]
+            x = torch.nn.functional.pad(x,
                 pad=(self.required_padding-pre_padding[1],self.required_padding-post_padding[1],self.required_padding-pre_padding[0],self.required_padding-post_padding[0]),
                 mode='replicate') 
             difference = self.inner_forward(x)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
+            # if '_D0' in plane_name:
+            #     print('!!!!!!WARNING!!!!!!!!')
+            #     import matplotlib.pyplot as plt
+            #     plt.plot(torch.std(difference.reshape([difference.shape[1],-1]),1).cpu().numpy(),'+')
             min_index = plane_roi[0]*self.scale_factor
             max_index = plane_roi[1]*self.scale_factor
-            if DEBUG:
-                residual_plane = self.residual_plane(plane_name)[...,min_index[0]:max_index[0],min_index[1]:max_index[1]]
-            else:
-                residual_plane = self.residual_plane(plane_name)
+            residual_plane = self.residual_plane(plane_name)
+            super_resolved = torch.add(difference,residual_plane[...,min_index[0]:max_index[0],min_index[1]:max_index[1]])
             out = (torch.ones_like(residual_plane)*float('nan'))
-            if DEBUG:
-                out = torch.add(difference,residual_plane)
-            else:
-                out[...,min_index[0]:max_index[0],min_index[1]:max_index[1]] = torch.add(
-                    difference,
-                    residual_plane[...,min_index[0]:max_index[0],min_index[1]:max_index[1]])
-
-                if full_plane:   self.SR_planes[plane_name] = out.cpu()
+            out[...,min_index[0]:max_index[0],min_index[1]:max_index[1]] = super_resolved
+            if full_plane:   self.SR_planes[plane_name] = out.cpu()
+            if self.consistentcy_loss_w is not None and self.training:
+                self.consistentcy_loss.append(
+                    self.planes_diff(
+                        LR_plane[...,plane_roi[0,0]:plane_roi[1,0],plane_roi[0,1]:plane_roi[1,1]],
+                        torch.nn.functional.interpolate(
+                            super_resolved,scale_factor=1/self.scale_factor,mode=self.plane_interp,
+                            align_corners=self.align_corners,antialias=True
+                            )
+                    )
+                )
         return out
 
     def inner_forward(self,x):

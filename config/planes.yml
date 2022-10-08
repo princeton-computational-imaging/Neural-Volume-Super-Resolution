@@ -1,13 +1,13 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: planes_Res800_32_DSpos12_Lrgb4Lden4CplnConcat_ficus_0 # debug-lego200 # DTU
+  id: planes_Res800_32_DSpos12_Cdec8skip3CplnCat_allScenes # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
-  train_iters: 750050
+  train_iters: 750000
   # Number of training iterations after which to validate.
   validate_every: [0.1,1000] #50
   # Number of training iterations after which to checkpoint.
@@ -22,9 +22,9 @@ dataset:
   root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
-    # train: ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+    train: ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
     # train: ['chair','drums','ficus']
-    train: ficus
+    # train: ficus
     # train: lego
   # Save images corresponding to up to 
   # max_scene_savings:  6
@@ -35,7 +35,7 @@ dataset:
   # at half the original resolution of 800 x 800, to save space.
   half_res: True
   # Stride (include one per "testskip" images in the dataset).
-  # downsampling_factor: 16 # downsampling factor for the downsampling experiment
+  # downsampling_factor: 4 # downsampling factor for the downsampling experiment
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
@@ -58,9 +58,9 @@ models:
     # Planes interpolation method (default to bilinear):
     plane_interp: bilinear # bicubic # bilinear
     # Number of layers in the density decoder.
-    dec_density_layers: 4
+    dec_density_layers: 8
     # Number of layers in the rgb decoder.
-    dec_rgb_layers: 4
+    dec_rgb_layers: 8
     # dec_channels: 256
     # num_plane_channels: 256
     # What is the input to the rgb decoder, apart from view directions (if used)
@@ -76,7 +76,7 @@ models:
     # hidden_size: 256
     # Add a skip connection once in a while. Note: This parameter
     # won't take affect unless num_layers > skip_connect_every.
-    # skip_connect_every: 3
+    skip_connect_every: 3
     # Additionally use viewing directions as input.
     # use_viewdirs: True
     # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
@@ -120,9 +120,9 @@ nerf:
     # Save GPU memory by holding plane variables on cpu memory until needed:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
-    # store_planes:
-    #   buffer_size:  5
-    #   steps_per_buffer: 40
+    store_planes:
+      # buffer_size:  1
+      steps_per_buffer: 1
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.

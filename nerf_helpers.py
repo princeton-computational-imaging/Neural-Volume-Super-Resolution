@@ -41,6 +41,14 @@ def set_config_defaults(source,target):
     for k in source.keys():
         if k not in target: setattr(target,k,getattr(source,k))
 
+def image_STD_2_distribution(patch_size):
+    unfold = torch.nn.Unfold(kernel_size=(patch_size,patch_size))
+    def mapper(image):
+        assert image.dim()==3 and image.shape[2]==3
+        im_STD = unfold(image.permute(2,0,1).unsqueeze(0)).reshape(1,3,patch_size**2,-1).std(2).reshape(3,image.shape[0]-patch_size+1,image.shape[1]-patch_size+1).mean(0)
+        return im_STD/im_STD.sum()
+    return mapper
+
 def is_background_white(image):
     perimeter = torch.cat([image[0,...].reshape([-1]),image[-1,...].reshape([-1]),image[:,0,...].reshape([-1]),image[:,-1,...].reshape([-1]),])
     black_portion = (perimeter<=10/256).float().mean()
@@ -58,7 +66,7 @@ def is_background_white(image):
     # else:
     #     return 0
 
-def subsample_dataset(scenes_dict,max_scenes,val_only_scenes=[],scene_id_func=None):
+def subsample_dataset(scenes_dict,max_scenes,val_only_scenes=[],scene_id_func=None,max_val_only_scenes=None):
     convert2list, = False,
     val_scene_as_inds = len(val_only_scenes)>0 and isinstance(val_only_scenes[0],int)
     if val_scene_as_inds:
@@ -74,7 +82,10 @@ def subsample_dataset(scenes_dict,max_scenes,val_only_scenes=[],scene_id_func=No
     sampled_dict = dict([i_val_others[i] for i in np.unique(np.round(np.linspace(0,len(i_val_others)-1,max_scenes)).astype(int))])
     sampled_val_only_scenes = []
     if len(i_val_val_only)>0:
-        sampled_val_only_scenes = [i_val_val_only[i] for i in np.unique(np.round(np.linspace(0,len(i_val_val_only)-1,max_scenes)).astype(int))]
+        if max_val_only_scenes is None:
+            sampled_val_only_scenes = i_val_val_only
+        else:
+            sampled_val_only_scenes = [i_val_val_only[i] for i in np.unique(np.round(np.linspace(0,len(i_val_val_only)-1,max_val_only_scenes)).astype(int))]
         sampled_dict.update(dict(sampled_val_only_scenes))
         sampled_val_only_scenes = [s[0] for s in sampled_val_only_scenes]
         if val_scene_as_inds:
@@ -84,11 +95,13 @@ def subsample_dataset(scenes_dict,max_scenes,val_only_scenes=[],scene_id_func=No
     return sampled_dict,sampled_val_only_scenes
 
 
-def compute_patches_distribution(image,patch_size):
-    white_bg = is_background_white(image)
-    image = integral_image(torch.any(image<246/256 if white_bg else image>10/256,-1))
-    image = image[patch_size:,patch_size:]+image[:-(patch_size),:-(patch_size)]-image[patch_size:,:-(patch_size)]-image[:-(patch_size),patch_size:]
-    return image.float()/image.sum()
+def estimated_background_2_distribution(patch_size):
+    def mapper(image):
+        white_bg = is_background_white(image)
+        image = integral_image(torch.any(image<246/256 if white_bg else image>10/256,-1))
+        image = image[patch_size:,patch_size:]+image[:-(patch_size),:-(patch_size)]-image[patch_size:,:-(patch_size)]-image[:-(patch_size),patch_size:]
+        return image.float()/image.sum()
+    return mapper
 
 def integral_image(image):
     return torch.cat([torch.zeros([1+image.shape[0],1]).type(image.type()),torch.cat([torch.zeros([1,image.shape[1]]).type(image.type()),torch.cumsum(torch.cumsum(image,0),1)],0)],1)
