@@ -124,8 +124,11 @@ def main():
         dataset_type = getattr(cfg.dataset,'type','synt')
         scenes_set = set()
         assert dataset_type in['synt','DTU']
+        assert not getattr(cfg.dataset,'half_res',False),'Depricated. Use downsampling factor instead.'
+        assert not hasattr(cfg.dataset,'downsampling_factor'),'Depricated.'
+        def get_scene_id(basedir,ds_factor,plane_res):
+            return '%s_DS%d_PlRes%d_%d'%(basedir,ds_factor,plane_res[0],plane_res[1])
         if dataset_type=='synt':
-            assert not getattr(cfg.dataset,'half_res',False),'Depricated'
             def get_scene_configs(config_dict):
                 ds_factors,dir,plane_res = [],[],[]
                 for conf,scenes in config_dict.items():
@@ -136,11 +139,11 @@ def main():
                         dir.append(s)
                 return ds_factors,dir,plane_res
             # downsampling_factor,train_dirs,scene_id_plane_resolution = [],[],[]
-            downsampling_factor,train_dirs,plane_resolutions = get_scene_configs(cfg.dataset.dir.train)
+            downsampling_factors,train_dirs,plane_resolutions = get_scene_configs(cfg.dataset.dir.train)
             # train_dirs = assert_list(cfg.dataset.dir.train)
             # val_only_dirs = assert_list(getattr(cfg.dataset.dir,'val',[]))
             val_only_dirs = get_scene_configs(getattr(cfg.dataset.dir,'val',{}))
-            downsampling_factor += val_only_dirs[0]
+            downsampling_factors += val_only_dirs[0]
             plane_resolutions += val_only_dirs[2]
             val_only_dirs = val_only_dirs[1]
             basedirs = train_dirs+val_only_dirs
@@ -151,9 +154,7 @@ def main():
             # if planes_model and internal_SR:
             #     scene_id_plane_resolution = {0:max(plane_resolutions),1:min(plane_resolutions)}
             # for basedir in tqdm(basedirs,desc='Loading scenes'):
-            def get_scene_id(basedir,ds_factor,plane_res):
-                return '%s_DS%d_PlRes%d_%d'%(basedir,ds_factor,plane_res[0],plane_res[1])
-            for basedir,ds_factor,plane_res in zip(tqdm(basedirs,desc='Loading scenes'),downsampling_factor,plane_resolutions):
+            for basedir,ds_factor,plane_res in zip(tqdm(basedirs,desc='Loading scenes'),downsampling_factors,plane_resolutions):
                 # for ds_num,factor in enumerate(downsampling_factor):
                 # scene_id = ''+basedir
                 scene_id = get_scene_id(basedir,ds_factor,plane_res)
@@ -165,7 +166,6 @@ def main():
                     scene_id_plane_resolution[scene_id] = plane_res
                 cur_images, cur_poses, cur_render_poses, cur_hwfDs, cur_i_split = load_blender_data(
                     os.path.join(cfg.dataset.root,basedir),
-                    half_res=getattr(cfg.dataset,'half_res',False),
                     testskip=cfg.dataset.testskip,
                     downsampling_factor=cfg.super_resolution.ds_factor if internal_SR else ds_factor,
                     val_downsampling_factor=1 if internal_SR else None,
@@ -189,24 +189,26 @@ def main():
                 scene_ids = [0 if i in i_split[1] else 1 for i in range(len(scene_ids))]
             H, W, focal,ds_factor = hwfDs
         else:
-            assert not getattr(cfg.dataset,'half_res',False)
-            assert len(downsampling_factor)==1,'Unsupported yet'
-            dataset = load_DTU.DVRDataset(path=cfg.dataset.root,stage='train_val',eval_ratio=0.1,\
-                list_prefix='new_' if SR_experiment else 'all_',max_scenes=getattr(cfg.dataset,'max_scenes',None),
-                z_near=cfg.dataset.near,z_far=cfg.dataset.far,downsampling_factor=downsampling_factor[0],excluded_scenes=getattr(cfg.dataset,'excluded_scenes',None))
+            # assert len(downsampling_factor)==1,'Unsupported yet'
+            # dataset = load_DTU.DVRDataset(path=cfg.dataset.root,stage='train_val',eval_ratio=0.1,\
+            #     list_prefix='new_' if SR_experiment else 'all_',max_scenes=getattr(cfg.dataset,'max_scenes',None),
+            #     z_near=cfg.dataset.near,z_far=cfg.dataset.far,downsampling_factor=downsampling_factor[0],excluded_scenes=getattr(cfg.dataset,'excluded_scenes',None))
+            dataset = load_DTU.DVRDataset(config=cfg.dataset,scene_id_func=get_scene_id,eval_ratio=0.1)
             val_only_scene_ids = dataset.val_scene_IDs()
-            scene_ids = dataset.scene_IDs()
+            scene_ids = dataset.per_im_scene_id
+            scenes_set = set(scene_ids)
             total_scenes_num = dataset.num_scenes() #+dataset_eval.num_scenes()
-            assert len(plane_resolutions)==1
-            scene_id_plane_resolution = dict(zip([dataset.DTU_sceneID(i) for i in range(total_scenes_num)],[plane_resolutions[0] for i in range(total_scenes_num)]))
+            # assert len(plane_resolutions)==1
+            scene_id_plane_resolution = dataset.scene_id_plane_resolution
+            # scene_id_plane_resolution = dict(zip([dataset.DTU_sceneID(i) for i in range(total_scenes_num)],[plane_resolutions[0] for i in range(total_scenes_num)]))
             basedirs,coords_normalization = [],{}
             scene_iterator = range(dataset.num_scenes()) if load_saved_models else trange(dataset.num_scenes(),desc='Computing scene bounding boxes')
             for id in scene_iterator:
                 if not load_saved_models:
                     scene_info = dataset.scene_info(id)
                     scene_info.update({'near':dataset.z_near,'far':dataset.z_far})
-                    coords_normalization[dataset.DTU_sceneID(id)] = calc_scene_box(scene_info,including_dirs=cfg.nerf.use_viewdirs)
-                basedirs.append(dataset.DTU_sceneID(id))
+                    coords_normalization[dataset.scene_IDs[id]] = calc_scene_box(scene_info,including_dirs=cfg.nerf.use_viewdirs)
+                basedirs.append(dataset.scene_IDs[id])
             i_val = dataset.i_val
             i_train = dataset.train_ims_per_scene
         if hasattr(cfg.dataset,'max_scenes_eval'):
@@ -215,7 +217,7 @@ def main():
         if hasattr(cfg.dataset,'max_scene_savings'):
             raise Exception('Should be fixed after adding max_scenes_eval')
             scenes4which2save_ims = [scenes4which2save_ims[i] for i in np.unique(np.round(np.linspace(0,len(scenes4which2save_ims)-1,cfg.dataset.max_scene_savings)).astype(int))]
-        val_ims_per_scene = len(i_val[scene_id])
+        val_ims_per_scene = len(i_val[list(i_val.keys())[0]])
         EVAL_TRAINING_TOO = True
         if EVAL_TRAINING_TOO:
             for id in scenes_set:
@@ -266,6 +268,7 @@ def main():
         encode_position_fn = None
         encode_direction_fn = None
     if planes_model:
+        assert not (hasattr(cfg.models.coarse,'plane_resolutions') or hasattr(cfg.models.coarse,'viewdir_plane_resolution')),'Depricated.'
         if hasattr(cfg.nerf.train,'viewdir_downsampling'):  assert hasattr(cfg.nerf.train,'max_plane_downsampling')
         store_planes = hasattr(cfg.nerf.train,'store_planes')
         if store_planes:    assert not getattr(cfg.nerf.train,'save_GPU_memory',False),'I think this is unnecessary.'
@@ -692,7 +695,7 @@ def main():
                     SR_model.clear_SR_planes(all_planes=store_planes)
             SAVE_COARSE_IMAGES = False
             for val_set in set(val_strings):
-                font_scale = 4/min(downsampling_factor)
+                font_scale = 4/min(downsampling_factors)
                 if SR_experiment:
                     writer.add_scalar("%s/SR_psnr_gain"%(val_set), np.mean([psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in range(len(psnr[val_set]))]), iter)
                     writer.add_image(
