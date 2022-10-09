@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: planes_Res800_32_DSpos12_Cdec8skip3CplnCat_allScenes # debug-lego200 # DTU
+  id: planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400 # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -22,7 +22,11 @@ dataset:
   root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
-    train: ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+    train:
+      # 8,200,32:  ['chair','drums','ficus']
+      # 2,800,32:  ['ficus']
+      8,200,32:  ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      2,800,32:  ['chair','drums','ficus','hotdog','lego','materials']
     # train: ['chair','drums','ficus']
     # train: ficus
     # train: lego
@@ -33,9 +37,9 @@ dataset:
   cachedir: cache/legocache200
   # For the Blender datasets (synthetic), optionally return images
   # at half the original resolution of 800 x 800, to save space.
-  half_res: True
+  # half_res: True
   # Stride (include one per "testskip" images in the dataset).
-  # downsampling_factor: 4 # downsampling factor for the downsampling experiment
+  downsampling_factor: 4 # downsampling factor for the downsampling experiment
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
@@ -52,9 +56,9 @@ models:
     # Name of the torch.nn.Module class that implements the model.
     type: TwoDimPlanesModel
     # Plane side size. Integer or a list of integers to match different scenes.
-    plane_resolutions: 800 #64 #32
+    # plane_resolutions: 200 #64 #32
     # Plane side size for view-direction plane. Can be a list like plane_resolutions.
-    viewdir_plane_resolution: 32
+    # viewdir_plane_resolution: 32
     # Planes interpolation method (default to bilinear):
     plane_interp: bilinear # bicubic # bilinear
     # Number of layers in the density decoder.

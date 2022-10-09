@@ -21,8 +21,8 @@ CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
 
-# RESUME_TRAINING = 0
-RESUME_TRAINING = None
+RESUME_TRAINING = 0
+# RESUME_TRAINING = None
 
 # PARAM2SWEEP = (['optimizer','lr'],[1e-5*(2**i) for i in range(9)])
 # PARAM2SWEEP = (['dataset','max_scenes'],[10*i for i in range(1,11)])
@@ -30,7 +30,7 @@ PARAM2SWEEP = None
 
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 CONDA_ENV = "torch-env" if 'della-' in socket.gethostname() else "volumetric_enhance"
-RUN_TIME = 20 # 20 # 10 # Hours
+RUN_TIME = 40 # 20 # 10 # Hours
 
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True
@@ -99,16 +99,17 @@ for run_num in range(len(PARAM2SWEEP[1])):
                 # config_file = os.path.join(saved_models_folder,"config.yml")
         print("Resuming training on job %s"%(job_identifier))
 
-    if run_num==0:
-        for f in [f for f in os.listdir() if f[-3:]==".py"]:
-            shutil.copyfile(f,os.path.join(code_folder,f))
-
     config_filename = "config%s.yml"%(str(run_num) if sweep_jobs else '')
-    if sweep_jobs:
-        rsetattr(cfg, '.'.join(PARAM2SWEEP[0]), PARAM2SWEEP[1][run_num])
-    setattr(cfg.experiment, 'id',job_identifier)
-    with open(os.path.join(code_folder,config_filename), "w") as f:
-        f.write(cfg.dump())  # cfg, f, default_flow_style=False)
+    if RESUME_TRAINING is None or OVERWRITE_RESUMED_CONFIG:
+        if run_num==0:
+            for f in [f for f in os.listdir() if f[-3:]==".py"]:
+                shutil.copyfile(f,os.path.join(code_folder,f))
+
+        if sweep_jobs:
+            rsetattr(cfg, '.'.join(PARAM2SWEEP[0]), PARAM2SWEEP[1][run_num])
+        setattr(cfg.experiment, 'id',job_identifier)
+        with open(os.path.join(code_folder,config_filename), "w") as f:
+            f.write(cfg.dump())  # cfg, f, default_flow_style=False)
 
     python_command = "python train_nerf.py --config %s"%(config_filename)
     if RESUME_TRAINING is not None:

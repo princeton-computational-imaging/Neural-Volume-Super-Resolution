@@ -21,6 +21,9 @@ dataset:
   type: DTU # DTU,synt
   # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
+  dir:
+    train:
+      4,200,32: []
   # excluded_scenes:  ['scan4']
   # Load only some of the scenes in the dataset:
   # max_scenes: 6

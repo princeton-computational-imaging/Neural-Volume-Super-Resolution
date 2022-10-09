@@ -10,7 +10,7 @@ import numpy as np
 import cv2
 from torchvision import transforms
 from collections import OrderedDict
-from nerf_helpers import subsample_dataset
+from nerf_helpers import subsample_dataset,im_resize
 
 def get_image_to_tensor_balanced(image_size=0):
     ops = []
@@ -256,7 +256,8 @@ class DVRDataset(torch.utils.data.Dataset):
             i = sel_indices[idx]
             img = imageio.imread(rgb_path)[..., :3]
             if self.downsampling_factor!=1:
-                resized_img = cv2.resize(img, dsize=(img.shape[1]//self.downsampling_factor, img.shape[0]//self.downsampling_factor), interpolation=cv2.INTER_AREA)
+                # resized_img = cv2.resize(img, dsize=(img.shape[1]//self.downsampling_factor, img.shape[0]//self.downsampling_factor), interpolation=cv2.INTER_AREA)
+                resized_img = im_resize(img,scale_factor=self.downsampling_factor)
 
                 # raise Exception('Unsupported yet')
             if self.scale_focal:

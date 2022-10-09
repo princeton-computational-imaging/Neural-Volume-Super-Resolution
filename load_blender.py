@@ -1,11 +1,11 @@
 import json
 import os
 
-import cv2
+# import cv2
 import imageio
 import numpy as np
 import torch
-
+from nerf_helpers import im_resize
 
 def translate_by_t_along_z(t):
     tform = np.eye(4).astype(np.float32)
@@ -89,7 +89,8 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
                 per_im_ds_factor *= 2
             H[-1] //= (per_im_ds_factor)
             W[-1] //= (per_im_ds_factor)
-            resized_img = torch.from_numpy(cv2.resize(img, dsize=(img.shape[1]//per_im_ds_factor, img.shape[0]//per_im_ds_factor), interpolation=cv2.INTER_AREA))
+            # resized_img = torch.from_numpy(cv2.resize(img, dsize=(img.shape[1]//per_im_ds_factor, img.shape[0]//per_im_ds_factor), interpolation=cv2.INTER_AREA))
+            resized_img = torch.from_numpy(im_resize(img, scale_factor=per_im_ds_factor))
 
             focal.append(focal_over_W*W[-1])
             ds_factor.append(per_im_ds_factor)

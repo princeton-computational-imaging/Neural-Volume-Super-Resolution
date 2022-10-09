@@ -142,36 +142,45 @@ def get_config(config_path):
         cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
         return CfgNode(cfg_dict)
 
+def im_resize(image,scale_factor):
+    assert all([v%scale_factor==0 for v in image.shape[:2]]),'Currently not supporting downscaling to an ambiguous size.'
+    return cv2.resize(image, dsize=(image.shape[1]//scale_factor, image.shape[0]//scale_factor), interpolation=cv2.INTER_AREA)
+
 def arange_ims(ims_tensor_list,text,psnrs=[],fontScale=1):
-    # num_cols = int(np.ceil(np.sqrt(len(ims_tensor_list))))
     num_rows = lambda n_cols:   int(np.ceil(len(ims_tensor_list)/n_cols))
-    num_cols = 1 #len(ims_tensor_list)
+    num_cols = 1
     while num_cols*ims_tensor_list[0].shape[1]<num_rows(num_cols)*ims_tensor_list[0].shape[0]:
         if num_cols==len(ims_tensor_list): break
         num_cols += 1
-    assert all([t.shape[:2]==ims_tensor_list[0].shape[:2] for t in ims_tensor_list[1:]]),'Currently assuming all images have the same dimensions.'
-    # im_sides = [np.array(t.shape[:2]) for t in ims_tensor_list]
-    # max_side = max(im_sides)
-    ims_size = tuple(ims_tensor_list[0].shape[:2])
+    # assert all([t.shape[:2]==ims_tensor_list[0].shape[:2] for t in ims_tensor_list[1:]]),'Currently assuming all images have the same dimensions.'
+    # ims_size = tuple(ims_tensor_list[0].shape[:2])
+    ims_size = sorted([im.shape[:2] for im in ims_tensor_list],key=lambda x:x[0]*x[1])[-1] #Using the largets image's shape
     rows = []
     psnrs += (len(ims_tensor_list)-len(psnrs))*[None]
     for im_num,im in enumerate(ims_tensor_list):
         if im_num%num_cols==0:
             if im_num>0:    rows.append(np.concatenate(row,1))
             row = []
-        row.append(cv2.resize(
-            cast_to_image(im,img_text=text if im_num==0 else None,psnr=psnrs[im_num],fontScale=fontScale).transpose(1,2,0),
-            dsize=(ims_size[1],ims_size[0]),#(max_side,max_side),
-            interpolation=cv2.INTER_CUBIC))
+        # row.append(cv2.resize(
+        #     cast_to_image(im,img_text=text if im_num==0 else None,psnr=psnrs[im_num],fontScale=fontScale).transpose(1,2,0),
+        #     dsize=(ims_size[1],ims_size[0]),
+        #     interpolation=cv2.INTER_CUBIC))
+        row.append(
+            cast_to_image(
+                cv2.resize(np.array(255*im.cpu()).astype(np.uint8),dsize=(ims_size[1],ims_size[0]),interpolation=cv2.INTER_NEAREST),
+                img_text=text if im_num==0 else None,psnr=psnrs[im_num],fontScale=fontScale
+            ).transpose(1,2,0)
+        )
     row = np.concatenate(row,1)
     rows.append(np.pad(row,((0,0),(0,num_cols*ims_size[1]-row.shape[1]),(0,0)),))
     return np.concatenate(rows,0).transpose(2,0,1)
 
-def cast_to_image(tensor,img_text=None,psnr=None,fontScale=1):
-    # Input tensor is (H, W, 3). Convert to (3, H, W).
-    tensor = tensor.permute(2, 0, 1)
-    # Conver to PIL Image and then np.array (output shape: (H, W, 3))
-    img = np.array(torchvision.transforms.ToPILImage()(tensor.detach().cpu()))
+def cast_to_image(img,img_text=None,psnr=None,fontScale=1):
+    if isinstance(img,torch.Tensor):
+        # Input tensor is (H, W, 3). Convert to (3, H, W).
+        img = img.permute(2, 0, 1)
+        # Conver to PIL Image and then np.array (output shape: (H, W, 3))
+        img = np.array(torchvision.transforms.ToPILImage()(img.detach().cpu()))
     # Map back to shape (3, H, W), as tensorboard needs channels first.
     img = np.moveaxis(img, [-1], [0])
     if img_text is not None:

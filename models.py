@@ -966,19 +966,20 @@ class EDSR(nn.Module):
             out = self.SR_planes[plane_name].cuda()
         else:
             LR_plane = self.LR_planes[plane_name].detach().cuda()
+            x = 1*LR_plane
             if hasattr(self,'planes_mean_NON_LEARNED'):
-                LR_plane = LR_plane-self.planes_mean_NON_LEARNED
-                LR_plane = LR_plane/self.planes_std_NON_LEARNED
-            plane_roi = (torch.tensor(LR_plane.shape[2:])).to(plane_roi.device)*(1+plane_roi)/2
+                x = x-self.planes_mean_NON_LEARNED
+                x = x/self.planes_std_NON_LEARNED
+            plane_roi = (torch.tensor(x.shape[2:])).to(plane_roi.device)*(1+plane_roi)/2
             plane_roi = torch.stack([torch.floor(plane_roi[0]),torch.ceil(plane_roi[1])],0).cpu().numpy().astype(np.int32)
             plane_roi[0] = np.maximum(0,plane_roi[0]-1)
-            plane_roi[1] = np.minimum(np.array(LR_plane.shape[2:]),plane_roi[1]+1)
+            plane_roi[1] = np.minimum(np.array(x.shape[2:]),plane_roi[1]+1)
             pre_padding = np.minimum(plane_roi[0],self.required_padding)
-            post_padding = np.minimum(np.array(LR_plane.shape[2:])-plane_roi[1],self.required_padding)
+            post_padding = np.minimum(np.array(x.shape[2:])-plane_roi[1],self.required_padding)
             take_last = lambda ind: -ind if ind>0 else None
             DEBUG = False
             if DEBUG:   print('!! WARNING !!!!')
-            x = LR_plane[...,plane_roi[0,0]-pre_padding[0]:plane_roi[1,0]+post_padding[0],plane_roi[0,1]-pre_padding[1]:plane_roi[1,1]+post_padding[1]]
+            x = x[...,plane_roi[0,0]-pre_padding[0]:plane_roi[1,0]+post_padding[0],plane_roi[0,1]-pre_padding[1]:plane_roi[1,1]+post_padding[1]]
             x = torch.nn.functional.pad(x,
                 pad=(self.required_padding-pre_padding[1],self.required_padding-post_padding[1],self.required_padding-pre_padding[0],self.required_padding-post_padding[0]),
                 mode='replicate') 
@@ -996,13 +997,16 @@ class EDSR(nn.Module):
             if full_plane:   self.SR_planes[plane_name] = out.cpu()
             if self.consistentcy_loss_w is not None and self.training:
                 self.consistentcy_loss.append(
-                    self.planes_diff(
-                        LR_plane[...,plane_roi[0,0]:plane_roi[1,0],plane_roi[0,1]:plane_roi[1,1]],
+                    # self.planes_diff(
+                        # LR_plane[...,plane_roi[0,0]:plane_roi[1,0],plane_roi[0,1]:plane_roi[1,1]],
                         torch.nn.functional.interpolate(
-                            super_resolved,scale_factor=1/self.scale_factor,mode=self.plane_interp,
-                            align_corners=self.align_corners,antialias=True
-                            )
-                    )
+                            # super_resolved,
+                            difference,
+                            scale_factor=1/self.scale_factor,mode=self.plane_interp,
+                            align_corners=self.align_corners,
+                            antialias=True
+                        ).abs().mean()
+                    # )
                 )
         return out
 
