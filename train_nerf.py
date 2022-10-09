@@ -154,6 +154,7 @@ def main():
             # if planes_model and internal_SR:
             #     scene_id_plane_resolution = {0:max(plane_resolutions),1:min(plane_resolutions)}
             # for basedir in tqdm(basedirs,desc='Loading scenes'):
+            font_scale = 4/min(downsampling_factors)
             for basedir,ds_factor,plane_res in zip(tqdm(basedirs,desc='Loading scenes'),downsampling_factors,plane_resolutions):
                 # for ds_num,factor in enumerate(downsampling_factor):
                 # scene_id = ''+basedir
@@ -198,6 +199,7 @@ def main():
             scene_ids = dataset.per_im_scene_id
             scenes_set = set(scene_ids)
             total_scenes_num = dataset.num_scenes() #+dataset_eval.num_scenes()
+            font_scale = 4/min(dataset.downsampling_factors)
             # assert len(plane_resolutions)==1
             scene_id_plane_resolution = dataset.scene_id_plane_resolution
             # scene_id_plane_resolution = dict(zip([dataset.DTU_sceneID(i) for i in range(total_scenes_num)],[plane_resolutions[0] for i in range(total_scenes_num)]))
@@ -695,7 +697,7 @@ def main():
                     SR_model.clear_SR_planes(all_planes=store_planes)
             SAVE_COARSE_IMAGES = False
             for val_set in set(val_strings):
-                font_scale = 4/min(downsampling_factors)
+                # font_scale = 4/min(downsampling_factors)
                 if SR_experiment:
                     writer.add_scalar("%s/SR_psnr_gain"%(val_set), np.mean([psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in range(len(psnr[val_set]))]), iter)
                     writer.add_image(

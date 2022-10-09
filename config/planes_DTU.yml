@@ -29,7 +29,7 @@ dataset:
     #   1,800,32: ['new_val.lst']
   # excluded_scenes:  ['scan4']
   # Load only some of the scenes in the dataset:
-  max_scenes: 6
+  # max_scenes: 6
   # Save images corresponding to up to 
   # max_scene_savings:  9
   # Evaluate up to so many scenes:
