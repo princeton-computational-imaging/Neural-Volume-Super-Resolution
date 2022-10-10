@@ -60,10 +60,7 @@ def main():
         LR_model_folder = cfg.models.path
         if os.path.isfile(LR_model_folder):   LR_model_folder = "/".join(LR_model_folder.split("/")[:-1])
         LR_model_config = get_config(os.path.join(LR_model_folder,"config.yml"))
-        set_config_defaults(source=LR_model_config.models,target=cfg.models)
-
-    planes_model = cfg.models.coarse.type=="TwoDimPlanesModel"
-    # downsampling_factor = assert_list(cfg.dataset.get("downsampling_factor",[1]))
+        # set_config_defaults(source=LR_model_config.models,target=cfg.models)
 
     # Setup logging.
     logdir = os.path.join(cfg.experiment.logdir, cfg.experiment.id)
@@ -82,33 +79,14 @@ def main():
     writer = SummaryWriter(logdir)
     load_saved_models = SR_experiment or os.path.exists(configargs.load_checkpoint)
 
-    # if planes_model:
-        # plane_resolutions = assert_list(getattr(cfg.models.coarse,'plane_resolutions',[512]))
-        # viewdir_plane_resolution = assert_list(getattr(cfg.models.coarse,'viewdir_plane_resolution',plane_resolutions))
-        # plane_resolutions = [(plane_resolutions[i],viewdir_plane_resolution[i]) for i in range(len(plane_resolutions))]
-        # assert len(downsampling_factor)==1 or len(downsampling_factor)==len(plane_resolutions)
     internal_SR, = False,
     if SR_experiment:
+        set_config_defaults(source=LR_model_config.models,target=cfg.models)
         existing_LR_scenes = [f.split('.')[0][len('coarse_'):] for f in os.listdir(os.path.join(cfg.models.path,'planes')) if '.par' in f]
-        # LR_model_ds_factor = LR_model_config.dataset.downsampling_factor
         internal_SR = False #isinstance(LR_model_ds_factor,list) and len(LR_model_ds_factor)>1
-        # internal_SR = isinstance(cfg.super_resolution.ds_factor,list) and len(cfg.super_resolution.ds_factor)>1
-        # if internal_SR:
-        #     assert not isinstance(cfg.dataset.dir,list) or len(cfg.dataset.dir)==1
-        #     cfg.super_resolution.ds_factor = max(LR_model_ds_factor)//min(LR_model_ds_factor)
-        #     downsampling_factor = [cfg.super_resolution.ds_factor] # In this case the SR model should train to reconstruct images downsampled using the same factor as the SR factor. 
-        # else:
-        #     sf_config = getattr(cfg.super_resolution.model,'scale_factor','linear')
-        #     assert sf_config in ['linear','sqrt','one']
-        #     if sf_config=='one':
-        #         cfg.super_resolution.ds_factor = 1
-        #     elif sf_config=='linear':
-        #         cfg.super_resolution.ds_factor = LR_model_ds_factor
-        #     else:
-        #         cfg.super_resolution.ds_factor = int(np.sqrt(LR_model_ds_factor))
-        # if SR_experiment=="model":  consistent_SR_density = cfg.super_resolution.model.get("consistent_density",False)
     else:
         existing_LR_scenes = None
+    planes_model = cfg.models.coarse.type=="TwoDimPlanesModel"
     # # (Optional:) enable this to track autograd issues when debugging
     # torch.autograd.set_detect_anomaly(True)
 
@@ -136,10 +114,7 @@ def main():
                     plane_res.append((conf[1],conf[2] if len(conf)>2 else conf[1]))
                     dir.append(s)
             return ds_factors,dir,plane_res
-        # downsampling_factor,train_dirs,scene_id_plane_resolution = [],[],[]
         downsampling_factors,train_dirs,plane_resolutions = get_scene_configs(cfg.dataset.dir.train)
-        # train_dirs = assert_list(cfg.dataset.dir.train)
-        # val_only_dirs = assert_list(getattr(cfg.dataset.dir,'val',[]))
         val_only_dirs = get_scene_configs(getattr(cfg.dataset.dir,'val',{}))
         downsampling_factors += val_only_dirs[0]
         plane_resolutions += val_only_dirs[2]
@@ -148,20 +123,19 @@ def main():
         images, poses, render_poses, hwfDs, i_split,scene_ids = [],torch.zeros([0,4,4]),[],[[],[],[],[]],[np.array([]).astype(np.int64) for i in range(3)],[]
         scene_id,val_only_scene_ids,coords_normalization = -1,[],{}
         scene_id_plane_resolution = {}
+        ds_factor_ratio = []
         i_train,i_val = OrderedDict(),OrderedDict()
-        # if planes_model and internal_SR:
-        #     scene_id_plane_resolution = {0:max(plane_resolutions),1:min(plane_resolutions)}
-        # for basedir in tqdm(basedirs,desc='Loading scenes'):
         font_scale = 4/min(downsampling_factors)
         for basedir,ds_factor,plane_res in zip(tqdm(basedirs,desc='Loading scenes'),downsampling_factors,plane_resolutions):
-            # for ds_num,factor in enumerate(downsampling_factor):
-            # scene_id = ''+basedir
             scene_id = get_scene_id(basedir,ds_factor,plane_res)
+            if SR_experiment:
+                new_scene_id,original_ds = find_scene_match(existing_scenes=existing_LR_scenes,pattern=ds_factor_extraction_pattern(scene_id))
+                ds_factor_ratio.append(int(original_ds)/int(find_scene_match([scene_id],ds_factor_extraction_pattern(scene_id))[1]))
+                scene_id = new_scene_id
             scenes_set.add(scene_id)
             val_only = basedir not in train_dirs
             if val_only:    val_only_scene_ids.append(scene_id)
             if planes_model and not internal_SR:
-                # scene_id_plane_resolution[scene_id] = plane_resolutions[min(len(plane_resolutions)-1,ds_num)]
                 scene_id_plane_resolution[scene_id] = plane_res
             cur_images, cur_poses, cur_render_poses, cur_hwfDs, cur_i_split = load_blender_data(
                 os.path.join(cfg.dataset.root,basedir),
@@ -171,6 +145,7 @@ def main():
                 cfg=cfg,
                 val_only=val_only,
             )
+
             if planes_model and not load_saved_models: # No need to calculate the per-scene normalization coefficients as those will be loaded with the saved model.
                 coords_normalization[scene_id] =\
                     calc_scene_box({'camera_poses':cur_poses.numpy()[:,:3,:4],'near':cfg.dataset.near,'far':cfg.dataset.far,'H':cur_hwfDs[0],'W':cur_hwfDs[1],'f':cur_hwfDs[2]},including_dirs=cfg.nerf.use_viewdirs)
@@ -188,20 +163,13 @@ def main():
             scene_ids = [0 if i in i_split[1] else 1 for i in range(len(scene_ids))]
         H, W, focal,ds_factor = hwfDs
     else:
-        # assert len(downsampling_factor)==1,'Unsupported yet'
-        # dataset = load_DTU.DVRDataset(path=cfg.dataset.root,stage='train_val',eval_ratio=0.1,\
-        #     list_prefix='new_' if SR_experiment else 'all_',max_scenes=getattr(cfg.dataset,'max_scenes',None),
-        #     z_near=cfg.dataset.near,z_far=cfg.dataset.far,downsampling_factor=downsampling_factor[0],excluded_scenes=getattr(cfg.dataset,'excluded_scenes',None))
         dataset = load_DTU.DVRDataset(config=cfg.dataset,scene_id_func=get_scene_id,eval_ratio=0.1,
             existing_scenes2match=existing_LR_scenes,ds_factor_extraction_pattern=ds_factor_extraction_pattern)
         val_only_scene_ids = dataset.val_scene_IDs()
         scene_ids = dataset.per_im_scene_id
         scenes_set = set(scene_ids)
-        total_scenes_num = dataset.num_scenes() #+dataset_eval.num_scenes()
         font_scale = 4/min(dataset.downsampling_factors)
-        # assert len(plane_resolutions)==1
         scene_id_plane_resolution = dataset.scene_id_plane_resolution
-        # scene_id_plane_resolution = dict(zip([dataset.DTU_sceneID(i) for i in range(total_scenes_num)],[plane_resolutions[0] for i in range(total_scenes_num)]))
         basedirs,coords_normalization = [],{}
         scene_iterator = range(dataset.num_scenes()) if load_saved_models else trange(dataset.num_scenes(),desc='Computing scene bounding boxes')
         for id in scene_iterator:
@@ -228,9 +196,15 @@ def main():
             im_freq = len(i_train[id])//val_ims_per_scene
             if id in i_val.keys(): #Avoid evaluating training images for scenes which were discarded for evaluation due to max_scenes_eval
                 i_val[id+'_train'] = [x for i,x in enumerate(i_train[id]) if (i+im_freq//2)%im_freq==0]
-    evaluation_sequences = list(i_val.keys())
     training_scenes = list(i_train.keys())
+    evaluation_sequences = list(i_val.keys())
     val_strings = ['blind_validation' if id in val_only_scene_ids else 'train_imgs' if '_train' in id else 'validation' for id in evaluation_sequences]
+    def print_scenes_list(title,scenes):
+        print('%d %s scenes:\n'%(len(scenes),title))
+        print(scenes)
+    print_scenes_list('training',training_scenes)
+    for cat in set(val_strings):
+        print_scenes_list('"%s" evaluation'%(cat),[s for i,s in enumerate(evaluation_sequences) if val_strings[i]==cat])
     assert all([val_ims_per_scene==len(i_val[id]) for id in evaluation_sequences]),'Assuming all scenes have the same number of evaluation images'
     i_train = [i for s in i_train.values() for i in s]
 

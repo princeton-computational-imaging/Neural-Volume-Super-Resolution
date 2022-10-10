@@ -15,14 +15,14 @@ import functools
 # CONFIG_FILE = "config/lego_SR.yml"
 # CONFIG_FILE = "config/lego_ds.yml"
 # CONFIG_FILE = "config/planes.yml"
-# CONFIG_FILE = "config/planes_SR.yml"
-CONFIG_FILE = "config/planes_DTU.yml"
+CONFIG_FILE = "config/planes_SR.yml"
+# CONFIG_FILE = "config/planes_DTU.yml"
 # CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
 
-# RESUME_TRAINING = 0
-RESUME_TRAINING = None
+RESUME_TRAINING = 0
+# RESUME_TRAINING = None
 
 # PARAM2SWEEP = (['optimizer','lr'],[1e-5*(2**i) for i in range(9)])
 # PARAM2SWEEP = (['dataset','max_scenes'],[10*i for i in range(1,11)])
@@ -30,7 +30,7 @@ PARAM2SWEEP = None
 
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 CONDA_ENV = "torch-env" if 'della-' in socket.gethostname() else "volumetric_enhance"
-RUN_TIME = 33 # 20 # 10 # Hours
+RUN_TIME = 17 # 20 # 10 # Hours
 
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True

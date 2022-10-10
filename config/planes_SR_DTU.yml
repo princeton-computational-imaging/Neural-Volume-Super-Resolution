@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR88DTUScenes_32B256C_LR4_Vbatch100LR1e_4NoSpatSamp_planeNorm #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  id: SR88DTUScenes_32B256C_LR4_Vbatch100LR1e_4NoSpatSamp_planeNorm_consLoss001 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # id: temp
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
@@ -123,7 +123,7 @@ super_resolution:
   # Super-resolve view-directions plane as well, or only positional planes:
   SR_viewdir: False
   input_normalization:  True
-  consistentcy_loss_w: 0.
+  consistentcy_loss_w: 0.01
   # plane_resize_mode:  bicubic
   model:
     # Name of the torch.nn.Module class that implements the model.
