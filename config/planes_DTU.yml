@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: DTUall_Res200_32_DSpos12_Cdec8skip3_LR100_noBuff_Cpln3 # debug-lego200 # DTU
+  id: DTU_ResallSc200LR4_trainSc800_32_DSpos12_Cdec8skip3 # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -65,7 +65,7 @@ models:
     # Number of layers in the rgb decoder.
     dec_rgb_layers: 8 #4
     # dec_channels: 256
-    num_plane_channels: 3
+    # num_plane_channels: 3
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
     proj_combination: concat
