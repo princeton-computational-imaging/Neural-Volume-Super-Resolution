@@ -73,29 +73,15 @@ class DVRDataset(torch.utils.data.Dataset):
         self.base_path = config.root
         z_near,z_far,max_scenes,excluded_scenes = config.near,config.far,getattr(config,'max_scenes',None),getattr(config,'excluded_scenes',None)
         self.single_images = single_images
-        # self.downsampling_factor = downsampling_factor
         assert eval_ratio is None or single_images,'eval_ratio can only be used when loader returns images, not full scenes.'
         assert os.path.exists(self.base_path)
         self.scene_id_func = scene_id_func
 
-
-        # cats = [x for x in glob.glob(os.path.join(path, "*")) if os.path.isdir(x)]
-
-        # file_lists,val_lists = [],[]
-        # if "train" in stage:
-        #     file_lists += sorted([os.path.join(x, list_prefix + "train.lst") for x in cats])
-        # if "val" in stage:
-        #     val_lists.append(len(file_lists))
-        #     file_lists += sorted([os.path.join(x, list_prefix + "val.lst") for x in cats])
-        # if "test" in stage:
-        #     file_lists += sorted([os.path.join(x, list_prefix + "test.lst") for x in cats])
         self.all_objs,self.val_scenes,self.downsampling_factors,self.plane_resolutions = [],[],[],[]
         for phase in ['train','val']:
             if phase not in config.dir: continue
             for conf,file in getattr(config.dir,phase).items():
                 conf = eval(conf)
-                # if isinstance(conf,int): #Happens in SR_experiment
-                #     conf = (conf,None,None)
                 with open(os.path.join(self.base_path,file), "r") as f:
                     objs = sorted([('', os.path.join(self.base_path, x.strip())) for x in f.readlines()])
                 if max_scenes is not None and len(objs)>max_scenes:    # For saving time during debug
@@ -103,24 +89,9 @@ class DVRDataset(torch.utils.data.Dataset):
                     objs,_ = subsample_dataset(scenes_dict=objs,max_scenes=max_scenes,scene_id_func=lambda id:self.sceneObj_2_name(objs[id]))
                 self.downsampling_factors.extend([conf[0] for i in objs])
                 self.plane_resolutions.extend([(conf[1],conf[2] if len(conf)>2 else conf[1]) for i in objs])
-                # for l_num,file_list in enumerate(file_lists):
-                #     if not os.path.exists(file_list):
-                #         continue
-                #     base_dir = os.path.dirname(file_list)
-                #     cat = os.path.basename(base_dir)
-                #     with open(file_list, "r") as f:
-                #         objs = [(cat, os.path.join(base_dir, x.strip())) for x in f.readlines()]
-                # if l_num in val_lists:  self.val_scenes.extend([i+len(self.all_objs) for i in range(len(objs))])
                 if phase=='val':
                     self.val_scenes.extend([i+len(self.all_objs) for i in range(len(objs))])
                 self.all_objs.extend(objs)
-
-        # self.all_objs = sorted(self.all_objs)
-
-        # if max_scenes is not None and len(self.all_objs)>max_scenes:    # For saving time during debug
-        #     print('!!! Keeping only %d scenes!!!'%(max_scenes))
-        #     self.all_objs,self.val_scenes = subsample_dataset(scenes_dict=self.all_objs,max_scenes=max_scenes,
-        #         val_only_scenes=self.val_scenes,scene_id_func=self.DTU_sceneID,max_val_only_scenes=None)
 
         if excluded_scenes is not None:
             scene_names = [self.DTU_sceneID(i) for i in range(len(self.all_objs))]
@@ -159,15 +130,11 @@ class DVRDataset(torch.utils.data.Dataset):
                 self.eval_inds += eval_inds
                 counter += n
 
-        # self.stage = stage
-
         self.image_to_tensor = get_image_to_tensor_balanced()
         self.mask_to_tensor = get_mask_to_tensor()
         print(
             "Loading DVR dataset",
             self.base_path,
-            # "stage",
-            # stage,
             len(self.all_objs),
             "objs",
             "type:",

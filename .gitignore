@@ -141,3 +141,4 @@ archived_logs
 .vscode/settings.json
 src/ResizeRight4delete/*
 src/ResizeRight/__init__.py
+logs_archive/*

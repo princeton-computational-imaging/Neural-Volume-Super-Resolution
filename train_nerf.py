@@ -82,7 +82,7 @@ def main():
     internal_SR, = False,
     if SR_experiment:
         set_config_defaults(source=LR_model_config.models,target=cfg.models)
-        existing_LR_scenes = [f.split('.')[0][len('coarse_'):] for f in os.listdir(os.path.join(cfg.models.path,'planes')) if '.par' in f]
+        existing_LR_scenes = [f.split('.')[0][len('coarse_'):] for f in os.listdir(os.path.join(LR_model_folder,'planes')) if '.par' in f]
         internal_SR = False #isinstance(LR_model_ds_factor,list) and len(LR_model_ds_factor)>1
     else:
         existing_LR_scenes = None
@@ -200,7 +200,7 @@ def main():
     evaluation_sequences = list(i_val.keys())
     val_strings = ['blind_validation' if id in val_only_scene_ids else 'train_imgs' if '_train' in id else 'validation' for id in evaluation_sequences]
     def print_scenes_list(title,scenes):
-        print('%d %s scenes:\n'%(len(scenes),title))
+        print('\n%d %s scenes:'%(len(scenes),title))
         print(scenes)
     print_scenes_list('training',training_scenes)
     for cat in set(val_strings):
