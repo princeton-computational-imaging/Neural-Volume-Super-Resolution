@@ -8,7 +8,7 @@ from cfgnode import CfgNode
 import yaml
 import cv2
 import torchvision
-
+from re import search
 # import torchsearchsorted
 
 class null_with:
@@ -40,6 +40,11 @@ class Counter:
 def set_config_defaults(source,target):
     for k in source.keys():
         if k not in target: setattr(target,k,getattr(source,k))
+
+def find_scene_match(existing_scenes,pattern):
+    matching_scene = [es for es in existing_scenes if search(pattern,es) is not None]
+    assert len(matching_scene)==1
+    return matching_scene[0],search(pattern,matching_scene[0]).group(0)
 
 def image_STD_2_distribution(patch_size):
     unfold = torch.nn.Unfold(kernel_size=(patch_size,patch_size))

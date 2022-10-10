@@ -10,7 +10,7 @@ import numpy as np
 import cv2
 from torchvision import transforms
 from collections import OrderedDict
-from nerf_helpers import subsample_dataset,im_resize
+from nerf_helpers import subsample_dataset,im_resize,find_scene_match
 
 def get_image_to_tensor_balanced(image_size=0):
     ops = []
@@ -51,6 +51,8 @@ class DVRDataset(torch.utils.data.Dataset):
         # z_far=5.0, #4.0,
         single_images:bool=True,
         eval_ratio:float=None,
+        existing_scenes2match=None,
+        ds_factor_extraction_pattern=None,
         # max_scenes:int=None,
         # downsampling_factor:int=1,
         # excluded_scenes:list=None,
@@ -92,6 +94,8 @@ class DVRDataset(torch.utils.data.Dataset):
             if phase not in config.dir: continue
             for conf,file in getattr(config.dir,phase).items():
                 conf = eval(conf)
+                # if isinstance(conf,int): #Happens in SR_experiment
+                #     conf = (conf,None,None)
                 with open(os.path.join(self.base_path,file), "r") as f:
                     objs = sorted([('', os.path.join(self.base_path, x.strip())) for x in f.readlines()])
                 if max_scenes is not None and len(objs)>max_scenes:    # For saving time during debug
@@ -132,7 +136,7 @@ class DVRDataset(torch.utils.data.Dataset):
             self.all_objs = [s for i,s in enumerate(self.all_objs) if i not in scenes_2_remove]
 
         if self.single_images:
-            self.per_im_scene_id,self.scene_IDs,self.scene_id_plane_resolution = [],[],{}
+            self.per_im_scene_id,self.scene_IDs,self.scene_id_plane_resolution,self.ds_factor_ratios = [],[],{},[]
             self.im_IDs = []
             self.eval_inds,self.train_ims_per_scene = [],OrderedDict()
             self.i_val = {}
@@ -141,8 +145,12 @@ class DVRDataset(torch.utils.data.Dataset):
                 n = min(max_imgs,len([x for x in glob.glob(os.path.join(obj[1], "image", "*")) if (x.endswith(".jpg") or x.endswith(".png"))]))
                 self.im_IDs += [(i,id) for i in range(n)]
                 eval_freq = n//(1 if eval_ratio is None else int(np.floor(eval_ratio*n)))
-                self.per_im_scene_id.extend([self.DTU_sceneID(id,ds_factor=ds_factor,plane_res=res) for i in range(n)])
                 self.scene_IDs.append(self.DTU_sceneID(id,ds_factor=ds_factor,plane_res=res))
+                if existing_scenes2match is not None:
+                    new_scene_name,original_ds = find_scene_match(existing_scenes=existing_scenes2match,pattern=ds_factor_extraction_pattern(self.scene_IDs[-1]))
+                    self.ds_factor_ratios.append(int(original_ds)/int(find_scene_match([self.scene_IDs[-1]],ds_factor_extraction_pattern(self.scene_IDs[-1]))[1]))
+                    self.scene_IDs[-1] = new_scene_name
+                self.per_im_scene_id.extend([self.scene_IDs[-1] for i in range(n)])
                 self.scene_id_plane_resolution[self.scene_IDs[-1]] = res
                 if id not in self.val_scenes:
                     self.train_ims_per_scene[self.scene_IDs[-1]] = [i+counter for i in range(n) if (i+1)%eval_freq!=0]
@@ -200,7 +208,8 @@ class DVRDataset(torch.utils.data.Dataset):
         return obj[1].split('/')[-1]
 
     def val_scene_IDs(self):
-        return [self.DTU_sceneID(id,self.downsampling_factors[id],self.plane_resolutions[id]) for id in self.val_scenes]
+        # return [self.DTU_sceneID(id,self.downsampling_factors[id],self.plane_resolutions[id]) for id in self.val_scenes]
+        return [self.scene_IDs[id] for id in self.val_scenes]
 
     # def scene_IDs(self):
     #     return [self.DTU_sceneID(v[1]) for v in self.im_IDs]
