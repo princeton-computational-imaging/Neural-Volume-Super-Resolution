@@ -110,7 +110,7 @@ class DVRDataset(torch.utils.data.Dataset):
             self.per_im_scene_id,self.scene_IDs,self.scene_id_plane_resolution,self.ds_factor_ratios = [],[],{},[]
             self.im_IDs = []
             self.eval_inds,self.train_ims_per_scene = [],OrderedDict()
-            self.i_val = {}
+            self.i_val = OrderedDict()
             counter = 0
             for id,(obj,ds_factor,res) in enumerate(zip(self.all_objs,self.downsampling_factors,self.plane_resolutions)):
                 n = min(max_imgs,len([x for x in glob.glob(os.path.join(obj[1], "image", "*")) if (x.endswith(".jpg") or x.endswith(".png"))]))

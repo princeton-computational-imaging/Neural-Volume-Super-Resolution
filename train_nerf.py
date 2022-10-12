@@ -60,7 +60,27 @@ def main():
         LR_model_folder = cfg.models.path
         if os.path.isfile(LR_model_folder):   LR_model_folder = "/".join(LR_model_folder.split("/")[:-1])
         LR_model_config = get_config(os.path.join(LR_model_folder,"config.yml"))
-        # set_config_defaults(source=LR_model_config.models,target=cfg.models)
+        if hasattr(LR_model_config.models.coarse,'plane_resolutions'):
+            planes_folder = os.path.join(LR_model_folder if SR_experiment else logdir,'planes')
+            param_files_list = [f for f in glob.glob(planes_folder+'/*') if '.par' in f]
+            for f in tqdm(param_files_list,desc='!!! Converting saved planes to new name convention !!!',):
+                cur_scene_name = f.split('/')[-1][len('coarse_'):-4]
+                params = torch.load(f)
+                if '_PlRes' not in cur_scene_name:
+                    ds_factor = getattr(LR_model_config.dataset,'downsampling_factor',1)*(2 if hasattr(LR_model_config.dataset,'half_res') else 1)
+                    new_scene_id = get_scene_id(cur_scene_name,ds_factor=ds_factor,
+                        plane_res=(LR_model_config.models.coarse.plane_resolutions,LR_model_config.models.coarse.viewdir_plane_resolution))
+                    params['params'] = torch.nn.ParameterDict([(k.replace(cur_scene_name,new_scene_id),v) for k,v in params['params'].items()])
+                torch.save(params,f.replace(cur_scene_name,new_scene_id) if '_PlRes' not in cur_scene_name else f)
+                if '_PlRes' not in cur_scene_name:
+                    os.remove(f)
+            LR_model_config.models.coarse.pop('plane_resolutions',None)
+            LR_model_config.models.coarse.pop('viewdir_plane_resolution',None)
+            LR_model_config.dataset.pop('downsampling_factor',None)
+            LR_model_config.dataset.pop('half_res',None)
+            checkpoint_name = os.path.join(cfg.models.path,'config.yml')
+            with open(checkpoint_name, "w") as f:
+                f.write(LR_model_config.dump())  # cfg, f, default_flow_style=False)
 
     # Setup logging.
     logdir = os.path.join(cfg.experiment.logdir, cfg.experiment.id)
@@ -191,7 +211,7 @@ def main():
     val_ims_per_scene = len(i_val[list(i_val.keys())[0]])
     EVAL_TRAINING_TOO = True
     if EVAL_TRAINING_TOO:
-        for id in scenes_set:
+        for id in sorted(scenes_set):
             if id not in i_train:    continue
             im_freq = len(i_train[id])//val_ims_per_scene
             if id in i_val.keys(): #Avoid evaluating training images for scenes which were discarded for evaluation due to max_scenes_eval
@@ -551,7 +571,6 @@ def main():
                     if 'DTU' in cur_scene_name:
                         os.remove(f)
             elif hasattr(checkpoint_config.models.coarse,'plane_resolutions'):
-                # checkpoint = torch.load(checkpoint_name)
                 for f in tqdm(param_files_list,desc='!!! Converting saved planes to new name convention !!!',):
                     cur_scene_name = f.split('/')[-1][len('coarse_'):-4]
                     params = torch.load(f)
@@ -568,11 +587,17 @@ def main():
                 checkpoint_name = os.path.join(cfg.models.path if SR_experiment else configargs.load_checkpoint,'config.yml')
                 with open(checkpoint_name, "w") as f:
                     f.write(checkpoint_config.dump())  # cfg, f, default_flow_style=False)
-            
             if resave_checkpoint:
                 assert all([s in getattr(cfg.dataset,'excluded_scenes',[]) for s in checkpoint['coords_normalization'].keys()])
                 checkpoint.pop('coords_normalization',None)
                 torch.save(checkpoint,checkpoint_name)
+            broken_files = [f for f in param_files_list if '.par_temp' in f]
+            if any(broken_files):
+                # Salvaging a planes file whose saving was interrupted in the middle:
+                assert len(broken_files)==1,'Not expecting to have more than 1 broken file'
+                print('!!! Salvaging a broken planes file: %s !!!'%(broken_files[0].split('/')[-1]))
+                copyfile(broken_files[0],broken_files[0].replace('.par_temp','.par'))
+                os.remove(broken_files[0])
         else:
             os.mkdir(planes_folder)
         scenes_cycle_counter = Counter()
@@ -591,7 +616,7 @@ def main():
         SR_model.normalization_params(planes_opt.get_plane_stats(viewdir=getattr(cfg.super_resolution,'SR_viewdir',False)))
 
     downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor)
-    saved_target_ims = dict(zip(val_strings,[set() for i in val_strings]))#set()
+    saved_target_ims = dict(zip(set(val_strings),[set() for i in set(val_strings)]))#set()
     if isinstance(spatial_sampling,bool):
         spatial_margin = SR_model.receptive_field//2 if spatial_sampling else None
     else:
@@ -806,7 +831,7 @@ def main():
 
         if first_v_batch_iter:
             optimizer.zero_grad()
-            if store_planes:    planes_opt.zero_grad()
+        if store_planes:    planes_opt.zero_grad()
         rgb_coarse, _, _, rgb_fine, _, _,rgb_SR,_,_ = run_one_iter_of_nerf(
             cur_H if not spatial_sampling else patch_size,
             cur_W if not spatial_sampling else patch_size,
@@ -855,7 +880,8 @@ def main():
         psnr = mse2psnr(loss.item())
         new_drawn_scenes = None
         if store_planes:
-            new_drawn_scenes = planes_opt.step(opt_step=last_v_batch_iter)
+            # new_drawn_scenes = planes_opt.step(opt_step=last_v_batch_iter)
+            new_drawn_scenes = planes_opt.step()
         if last_v_batch_iter:
             optimizer.step()
             # If training an SR model operating on planes, discarding super-resolved planes after updating the model:

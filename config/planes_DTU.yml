@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: DTU_ResallSc200LR4_trainSc800_32_DSpos12_Cdec8skip3 # debug-lego200 # DTU
+  id: DTU_ResallSc200LR4_trainSc800_32_Cdec8skip3_Vbatch100lr2e_2_plnLr1e_2 # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -100,8 +100,8 @@ optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 5.0E-3
-  # planes_lr:  1.0E-2
+  lr: 2.E-2 #5.0E-3
+  planes_lr:  1.0E-2
 
 # NeRF parameters.
 nerf:
@@ -119,6 +119,8 @@ nerf:
     num_random_rays: 4096  # 32 * 32 * 4
     # Size of each chunk (rays are batched into "chunks" and passed through
     # the network)
+    # Simulating a batch by accumulating gradients over consecutive steps. When training the representation model, applies only to the decoder:
+    virtual_batch_size: 100
     chunksize: 131072  # 131072  # 1024 * 32
     # Save GPU memory by holding plane variables on cpu memory until needed:
     # save_GPU_memory: True
@@ -140,8 +142,8 @@ nerf:
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
     # Randomly downsamples plane during training to enforce multi-resolution loss:
-    max_plane_downsampling: 12
-    viewdir_downsampling: False
+    # max_plane_downsampling: 12
+    # viewdir_downsampling: False
     # Factor multiplying the STD of the fc_alpha layer when initializing model planes (default so far was 0.1):
     # STD_factor: .1
   # Validation-specific parameters.
