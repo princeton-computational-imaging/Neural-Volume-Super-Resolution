@@ -2,7 +2,7 @@
 experiment:
   # Unique experiment identifier
   # id: SR88DTUScenes_32B256C_LR4_Vbatch100LR1e_4NoSpatSamp #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
-  id: SR88DTUScenes_32B256C_LR4_Vbatch100LR1e_4NoSpatSamp_planeNorm_consLoss0001
+  id: SR88DTUScenes_32B256C_LR4_Vbatch100LR1e_4NoSpatSamp_planeNorm
   # id: temp
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs

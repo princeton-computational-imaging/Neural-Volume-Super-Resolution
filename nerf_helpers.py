@@ -157,8 +157,6 @@ def arange_ims(ims_tensor_list,text,psnrs=[],fontScale=1):
     while num_cols*ims_tensor_list[0].shape[1]<num_rows(num_cols)*ims_tensor_list[0].shape[0]:
         if num_cols==len(ims_tensor_list): break
         num_cols += 1
-    # assert all([t.shape[:2]==ims_tensor_list[0].shape[:2] for t in ims_tensor_list[1:]]),'Currently assuming all images have the same dimensions.'
-    # ims_size = tuple(ims_tensor_list[0].shape[:2])
     ims_size = sorted([im.shape[:2] for im in ims_tensor_list],key=lambda x:x[0]*x[1])[-1] #Using the largets image's shape
     rows = []
     psnrs += (len(ims_tensor_list)-len(psnrs))*[None]
@@ -166,10 +164,6 @@ def arange_ims(ims_tensor_list,text,psnrs=[],fontScale=1):
         if im_num%num_cols==0:
             if im_num>0:    rows.append(np.concatenate(row,1))
             row = []
-        # row.append(cv2.resize(
-        #     cast_to_image(im,img_text=text if im_num==0 else None,psnr=psnrs[im_num],fontScale=fontScale).transpose(1,2,0),
-        #     dsize=(ims_size[1],ims_size[0]),
-        #     interpolation=cv2.INTER_CUBIC))
         row.append(
             cast_to_image(
                 cv2.resize(np.array(255*im.cpu()).astype(np.uint8),dsize=(ims_size[1],ims_size[0]),interpolation=cv2.INTER_NEAREST),
@@ -512,68 +506,6 @@ def sample_pdf_2(bins, weights, num_samples, det=False):
 
 if __name__ == "__main__":
 
-    # # meshgrid_xy
-    # i, j = np.meshgrid(np.arange(3), np.arange(4, 7), indexing='xy')
-    # print(i)
-    # print(j)
-    # ii, jj = torch.meshgrid(torch.arange(3), torch.arange(4, 7))
-    # print(ii.transpose(-1, -2))
-    # print(jj.transpose(-1, -2))
-    # ii, jj = meshgrid_xy(torch.arange(3), torch.arange(4, 7))
-    # print(ii)
-    # print(jj)
-
-    # # dirs (get_rays_np)
-    # H, W = 3, 3
-    # focal = 10
-    # i, j = np.meshgrid(np.arange(3), np.arange(4, 7), indexing='xy')
-    # dirs = np.stack([(i - W) * .5 / focal, -(j - H) * .5 / focal, -np.ones_like(i)], -1)
-    # print(dirs)
-    # ii, jj = meshgrid_xy(torch.arange(3).float(), torch.arange(4, 7).float())
-    # dirs_torch = torch.stack([(ii - W) * .5 / focal, -(jj - H) * .5 / focal, -torch.ones_like(ii)], -1)
-    # print(dirs_torch)
-    # print(np.allclose(dirs, dirs_torch.cpu().numpy()))
-
-    # # rays_o, rays_d (get_rays_np)
-    # H, W = 3, 3
-    # focal = 10
-    # c2w = np.eye(4)
-    # c2w[:3, :3] = 2 * c2w[:3, :3]
-    # i, j = np.meshgrid(np.arange(3), np.arange(4, 7), indexing='xy')
-    # dirs = np.stack([(i - W) * .5 / focal, -(j - H) * .5 / focal, -np.ones_like(i)], -1)
-    # rays_d = np.sum(dirs[..., np.newaxis, :] * c2w[:3, :3], -1)
-    # rays_o = np.broadcast_to(c2w[:3, -1], np.shape(rays_d))
-    # print(rays_d)
-    # print(rays_o)
-    # ii, jj = meshgrid_xy(torch.arange(3).float(), torch.arange(4, 7).float())
-    # dirs_torch = torch.stack([(ii - W) * .5 / focal, -(jj - H) * .5 / focal, -torch.ones_like(ii)], -1)
-    # c2w_torch = torch.eye(4)
-    # c2w_torch[:3, :3] = 2 * c2w_torch[:3, :3]
-    # rays_d_torch = torch.sum(dirs_torch[..., None, :] * c2w_torch[:3, :3], -1)
-    # rays_o_torch = c2w_torch[:3, -1].expand(rays_d_torch.shape)
-    # print(rays_d_torch)
-    # print(rays_o_torch)
-    # print(np.allclose(rays_d, rays_d_torch.cpu().numpy()))
-    # print(np.allclose(rays_o, rays_o_torch.cpu().numpy()))
-
-    # # get_rays(_torch) vs get_rays_np
-    # H, W = 3, 3
-    # focal = 10
-    # c2w = np.eye(4)
-    # c2w[:3, :3] = 2 * c2w[:3, :3]
-    # # c2w_torch = torch.eye(4)
-    # # c2w_torch[:3, :3] = 2 * c2w_torch[:3, :3]
-    # rays_o, rays_d = get_rays_np(H, W, focal, c2w)
-    # c2w_torch = torch.from_numpy(c2w)
-    # rays_o_torch, rays_d_torch = get_rays(H, W, focal, c2w_torch)
-    # print(np.allclose(rays_o, rays_o_torch.cpu().numpy()))
-    # print(np.allclose(rays_d, rays_d_torch.cpu().numpy()))  # Assert fails, values look different.
-    # print("Numpy version:")
-    # print(rays_d)
-    # print("PyTorch version:")
-    # print(rays_d_torch.cpu().numpy())
-
-    # Test backprop for sample_pdf()
     bins = torch.rand(2, 4)
     weights = torch.rand(2, 4)
     weights.requires_grad = True

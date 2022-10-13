@@ -669,6 +669,19 @@ class SceneSampler:
                 cursor += 1
         return sampled
 
+class Rotator(nn.Module):
+    def __init__(self,theta_phi:list) -> None:
+        super(Rotator,self).__init__()
+        self.rot_mats = []
+        for (theta,phi) in theta_phi:
+            yaw = np.array([[np.cos(theta),-np.sin(theta),0],[np.sin(theta),np.cos(theta),0],[0,0,1]])
+            pitch = np.array([[np.cos(phi),0,np.sin(phi)],[0,1,0],[-np.sin(phi),0,np.cos(phi)]])
+            self.rot_mats.append(torch.from_numpy(np.matmul(yaw,pitch)))
+        self.rot_mats = torch.stack(self.rot_mats,0)
+
+    def forward(self,points_dim):
+        return torch.matmul(self.rot_mat[points_dim[1]],points_dim[0])
+
 class PlanesOptimizer(nn.Module):
     def __init__(self,optimizer_type:str,scene_id_plane_resolution:dict,options,save_location:str,
             lr:float,model_coarse:TwoDimPlanesModel,model_fine:TwoDimPlanesModel,use_coarse_planes:bool,
@@ -715,6 +728,7 @@ class PlanesOptimizer(nn.Module):
     def load_scene(self,scene):
         if self.saving_needed:
             self.save_params()
+        if hasattr(self,'cur_scenes') and self.cur_scenes==[scene]:   return
         for model_name in ['coarse','fine']:
             if model_name=='coarse' or not self.use_coarse_planes:
                 loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))

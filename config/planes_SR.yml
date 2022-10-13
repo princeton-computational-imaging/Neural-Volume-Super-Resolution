@@ -1,7 +1,8 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR6vs2Scenes_32B256C_LR4_planeNorm_consLoss0001_HRtrainedDec_lr1e_5_Vbatch6 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  # id: SR6vs2Scenes_32B256C_LR4_planeNorm_consLoss0001_HRtrainedDec_lr1e_5_Vbatch6 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  id: SR6vs2Scenes_32B256C_LR4_NoSpatSamp_planeNorm_consLoss0001_HRtrainedDec_lr5e_6_0
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).

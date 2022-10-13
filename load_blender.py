@@ -38,7 +38,7 @@ def pose_spherical(theta, phi, radius):
 
 
 def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
-        downsampling_factor=1,val_downsampling_factor=None,cfg=None,val_only=False):
+        downsampling_factor=1,val_downsampling_factor=None,cfg=None,splits2use=['train','val']):
     assert cfg is not None,"As of now, expecting to get the entire configuration"
     train_im_inds = None
     if cfg.get("super_resolution",None) is not None:
@@ -48,6 +48,7 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
     if val_downsampling_factor is None:
         val_downsampling_factor = downsampling_factor
     splits = ["train", "val", "test"]
+    assert all([s in splits for s in splits2use])
     metas = {}
     for s in splits:
         with open(os.path.join(basedir, f"transforms_{s}.json"), "r") as fp:
@@ -60,19 +61,26 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
     counts = [0]
     for s in splits:
         meta = metas[s]
-        if val_only and s=='train':
+        # if val_only and s=='train':
+        if s not in splits2use:
             meta["frames"] = []
         imgs = []
         poses = []
-        if s == "train" or testskip == 0:
-            skip = 1
-        else:
+        if s=='val':
             skip = testskip
+        else:
+        # if s == "train" or testskip == 0:
+            skip = 1
+        # else:
+        #     skip = testskip
 
         camera_angle_x = float(meta["camera_angle_x"])
         focal_over_W = 0.5 / np.tan(0.5 * camera_angle_x)
         total_split_frames = len(meta["frames"])
         for f_num,frame in enumerate(meta["frames"][::skip]):
+            # if f_num>=2:
+            #     print("!!!!!WARNING!!!!!!!")
+            #     break
             fname = os.path.join(basedir, frame["file_path"] + ".png")
             img = (imageio.imread(fname)/ 255.0).astype(np.float32)
             if s=='val':
