@@ -329,8 +329,8 @@ def run_one_iter_of_nerf(
     # print('!!!!!!WARNING!!!!!!!!')
     if 'della-' in socket.gethostname():
         chunk_size *= 4
-    if not rays.requires_grad:
-        chunk_size *=2
+    # if not rays.requires_grad:
+    #     chunk_size *=2
     if (SR_model is not None or hasattr(model_fine,'SR_model')):
         chunk_size //= 10 #5 #(2*int(np.ceil(np.log2(model_fine.SR_model.n_blocks))))
         # if model_fine.SR_model.training:

@@ -254,9 +254,11 @@ def main():
             print_scenes_list('"%s" evaluation'%(cat),[s for i,s in enumerate(evaluation_sequences) if val_strings[i]==cat])
     assert all([val_ims_per_scene==len(i_val[id]) for id in evaluation_sequences]),'Assuming all scenes have the same number of evaluation images'
     i_train = [i for s in i_train.values() for i in s]
+
     def write_scalar(name,value,iter):
         if not eval_mode:
             writer.add_scalar(name,value,iter)
+
     def write_image(name,images,text,iter,psnrs=[]):
         if eval_mode:
             SAVE_IMS_ANYWAY = True
@@ -270,7 +272,7 @@ def main():
                     im_name = '%d%s.png'%(im_num,('_PSNR%.2f'%(psnrs[im_num])).replace('.','_') if len(psnrs)>0 else '')
                     imageio.imwrite(os.path.join(ims_folder_name,eval_name,im_name),np.array(255*torch.clamp(im,0,1).cpu()).astype(np.uint8))
             if eval_mode=='video':
-                vid_path = os.path.join(ims_folder_name,eval_name+'.mp4')
+                vid_path = os.path.join(ims_folder_name,'%s_%s_%s.mp4'%(eval_name,scene_name,results_dir.split('/')[-1]))
                 imageio.mimwrite(vid_path, [np.array(255*torch.clamp(im,0,1).cpu()).astype(np.uint8) for im in images], fps = 30, macro_block_size = 8)  # pip install imageio-ffmpeg
         else:
             writer.add_image(name,arange_ims(images,text,psnrs=psnrs,fontScale=font_scale),iter)
@@ -409,13 +411,14 @@ def main():
                 # scale_factor=cfg.super_resolution.model.scale_factor,
                 scale_factor=SR_factor,
                 # scale_factor=cfg.super_resolution.ds_factor,
-                in_channels=plane_channels,
-                out_channels=plane_channels,
-                hidden_size=cfg.super_resolution.model.hidden_size,
+                in_channels=plane_channels*(1 if getattr(cfg.super_resolution.model,'single_plane',True) else model_fine.N_PLANES_DENSITY),
+                out_channels=plane_channels*(1 if getattr(cfg.super_resolution.model,'single_plane',True) else model_fine.N_PLANES_DENSITY),
+                sr_config=cfg.super_resolution,
+                # hidden_size=cfg.super_resolution.model.hidden_size,
                 plane_interp=getattr(cfg.super_resolution,'plane_resize_mode',model_fine.plane_interp),
-                n_blocks=cfg.super_resolution.model.n_blocks,
-                input_normalization=cfg.super_resolution.get("input_normalization",False),
-                consistentcy_loss_w=cfg.super_resolution.get("consistentcy_loss_w",None),
+                # n_blocks=cfg.super_resolution.model.n_blocks,
+                # input_normalization=cfg.super_resolution.get("input_normalization",False),
+                # consistentcy_loss_w=cfg.super_resolution.get("consistentcy_loss_w",None),
             )
             print("SR model: %d parameters"%(num_parameters(SR_model)))
         else:
@@ -576,13 +579,18 @@ def main():
                 
     assert isinstance(spatial_sampling,bool) or spatial_sampling>=1
     if planes_model and SR_model is not None:
+        if not getattr(cfg.super_resolution.model,'single_plane',True): assert getattr(cfg.super_resolution,'plane_dropout',0)==0,'Cannot drop separate planes in this case.'
         save_RAM_memory = not store_planes and len(model_coarse.planes_)>=10
         if getattr(cfg.super_resolution,'apply_2_coarse',False):
-            model_coarse.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,save_interpolated=not save_RAM_memory,set_planes=not store_planes)
+            model_coarse.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,save_interpolated=not save_RAM_memory,
+                set_planes=not store_planes,plane_dropout=getattr(cfg.super_resolution,'plane_dropout',0),
+                single_plane=getattr(cfg.super_resolution.model,'single_plane',True))
         else:
             assert getattr(cfg.super_resolution.training,'loss','both')=='fine'
             model_coarse.optional_no_grad = torch.no_grad
-        model_fine.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,save_interpolated=not save_RAM_memory,set_planes=not store_planes)
+        model_fine.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,save_interpolated=not save_RAM_memory,
+            set_planes=not store_planes,plane_dropout=getattr(cfg.super_resolution,'plane_dropout',0),
+            single_plane=getattr(cfg.super_resolution.model,'single_plane',True))
     if store_planes:
         planes_folder = os.path.join(LR_model_folder if SR_experiment else logdir,'planes')
         if eval_mode: assert os.path.isdir(planes_folder)
@@ -650,7 +658,7 @@ def main():
     if planes_model:    assert not (hasattr(cfg.models.coarse,'plane_resolutions') or hasattr(cfg.models.coarse,'viewdir_plane_resolution')),'Depricated.'
     if SR_experiment=="model" and getattr(cfg.super_resolution,'input_normalization',False) and not os.path.exists(configargs.load_checkpoint):
         #Initializing a new SR model that uses input normalization
-        SR_model.normalization_params(planes_opt.get_plane_stats(viewdir=getattr(cfg.super_resolution,'SR_viewdir',False)))
+        SR_model.normalization_params(planes_opt.get_plane_stats(viewdir=getattr(cfg.super_resolution,'SR_viewdir',False),single_plane=SR_model.single_plane))
 
     downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor)
     saved_target_ims = dict(zip(set(val_strings),[set() for i in set(val_strings)]))#set()
@@ -887,6 +895,9 @@ def main():
         if first_v_batch_iter:
             optimizer.zero_grad()
         if store_planes:    planes_opt.zero_grad()
+        if hasattr(model_fine,'SR_model'):
+            model_fine.SR_planes2drop = [] if np.random.uniform()>=model_fine.SR_plane_dropout\
+                 else sorted(list(np.random.choice(range(model_fine.N_PLANES_DENSITY),size=np.random.randint(1,model_fine.N_PLANES_DENSITY),replace=False)))
         rgb_coarse, _, _, rgb_fine, _, _,rgb_SR,_,_ = run_one_iter_of_nerf(
             cur_H if not spatial_sampling else patch_size,
             cur_W if not spatial_sampling else patch_size,
@@ -971,7 +982,7 @@ def main():
             loss,psnr = evaluate()
             eval_loss_since_save.extend([v for v in loss['blind_validation' if 'blind_validation' in loss else 'validation']])
             evaluation_time = time.time()-start_time
-            if store_planes:    
+            if store_planes and not eval_mode:    
                 planes_opt.draw_scenes()
                 available_train_inds = [i for i in i_train if scene_ids[i] in planes_opt.cur_scenes]
             training_time = 0

@@ -15,14 +15,14 @@ import functools
 # CONFIG_FILE = "config/lego_SR.yml"
 # CONFIG_FILE = "config/lego_ds.yml"
 # CONFIG_FILE = "config/planes.yml"
-# CONFIG_FILE = "config/planes_SR.yml"
+CONFIG_FILE = "config/planes_SR.yml"
 # CONFIG_FILE = "config/planes_DTU.yml"
-CONFIG_FILE = "config/planes_SR_DTU.yml"
+# CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
 
-RESUME_TRAINING = 1
-# RESUME_TRAINING = None
+# RESUME_TRAINING = 0
+RESUME_TRAINING = None
 
 # PARAM2SWEEP = (['optimizer','lr'],[1e-5*(2**i) for i in range(9)])
 # PARAM2SWEEP = (['dataset','max_scenes'],[10*i for i in range(1,11)])

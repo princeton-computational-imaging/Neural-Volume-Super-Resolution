@@ -453,6 +453,7 @@ class TwoDimPlanesModel(nn.Module):
     def eval(self):
         super(TwoDimPlanesModel, self).eval()
         self.use_downsampled_planes(1)
+        self.SR_planes2drop = []
         if self.interp_from_learned and hasattr(self,'planes_copy'):
             self.learned = OrderedDict([(k,np.all((self.planes_[k].detach().cpu().numpy()-self.planes_copy[k]!=0),1).squeeze()) for k in self.planes_copy.keys()])
             for k in self.learned.keys():
@@ -505,17 +506,17 @@ class TwoDimPlanesModel(nn.Module):
 
         self.planes_copy[k][...,np.logical_not(self.learned[k])] = self.planes_[k].detach().cpu().numpy()[...,np.logical_not(self.learned[k])]
         
-    def assign_SR_model(self,SR_model,SR_viewdir,save_interpolated=True,set_planes=True):
+    def assign_SR_model(self,SR_model,SR_viewdir,save_interpolated=True,set_planes=True,plane_dropout=0,single_plane=True):
         self.SR_model = SR_model
         self.SR_model.align_corners = self.align_corners
         self.SR_model.SR_viewdir = SR_viewdir
+        self.SR_plane_dropout = plane_dropout
+        self.single_plane_SR = single_plane
         self.skip_SR_ = False
         if set_planes:
             for k,v in self.planes_.items():
                 if not SR_viewdir and get_plane_name(None,self.N_PLANES_DENSITY) in k:  continue
                 self.SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=save_interpolated)
-        # else:
-        #     self.SR_model.LR_planes = None
 
     def set_cur_scene_id(self,scene_id):
         self.cur_id = scene_id
@@ -534,8 +535,8 @@ class TwoDimPlanesModel(nn.Module):
 
     def planes(self,dim_num:int,grid:torch.tensor=None)->torch.tensor:
         plane_name = get_plane_name(self.cur_id,dim_num)
-        if hasattr(self,'SR_model') and not self.skip_SR_ and plane_name in self.SR_model.LR_planes:
-            if grid is not None and self.SR_model.training:
+        if hasattr(self,'SR_model') and not self.skip_SR_ and plane_name in self.SR_model.LR_planes and dim_num not in self.SR_planes2drop:
+            if grid is not None and self.SR_model.training and self.single_plane_SR:
                 roi = torch.stack([grid.min(1)[0].squeeze(),grid.max(1)[0].squeeze()],0)
                 roi = torch.stack([roi[:,1],roi[:,0]],1) # Converting from (x,y) to (y,x) on the columns dimension
                 plane_name = (plane_name,roi)
@@ -553,10 +554,18 @@ class TwoDimPlanesModel(nn.Module):
 
     def project_xyz(self,coords):
         projections = []
+        joint_planes = None
         for d in range(self.N_PLANES_DENSITY): # (Currently not supporting viewdir input)
             grid = coords[:,[c for c in range(3) if c!=d]].reshape([1,coords.shape[0],1,2])
+            if joint_planes is None:
+                input_plane = self.planes(d,grid)
+                if not getattr(self,'single_plane_SR',True) and input_plane.shape[1]==self.num_plane_channels*self.N_PLANES_DENSITY:
+                    joint_planes = 1*input_plane
+                    input_plane = input_plane[:,:self.num_plane_channels,...]
+            else:
+                input_plane = joint_planes[:,d*self.num_plane_channels:(d+1)*self.num_plane_channels,...]
             projections.append(nn.functional.grid_sample(
-                    input=self.planes(d,grid),
+                    input=input_plane,
                     grid=grid,
                     mode=self.plane_interp,
                     align_corners=self.align_corners,
@@ -728,7 +737,7 @@ class PlanesOptimizer(nn.Module):
     def load_scene(self,scene):
         if self.saving_needed:
             self.save_params()
-        if hasattr(self,'cur_scenes') and self.cur_scenes==[scene]:   return
+        # if hasattr(self,'cur_scenes') and self.cur_scenes==[scene]:   return
         for model_name in ['coarse','fine']:
             if model_name=='coarse' or not self.use_coarse_planes:
                 loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
@@ -752,7 +761,7 @@ class PlanesOptimizer(nn.Module):
     def param_path(self,model_name,scene):
         return os.path.join(self.save_location,"%s_%s.par"%(model_name,scene))
 
-    def get_plane_stats(self,viewdir=False):
+    def get_plane_stats(self,viewdir=False,single_plane=True):
         model_name='coarse'
         plane_means,plane_STDs = [],[]
         for scene in tqdm(self.training_scenes,desc='Collecting plane statistics'):
@@ -761,7 +770,10 @@ class PlanesOptimizer(nn.Module):
                 if not viewdir and get_plane_name(None,self.models[model_name].N_PLANES_DENSITY) in k:  continue
                 plane_means.append(torch.mean(p,(2,3)).squeeze(0))
                 plane_STDs.append(torch.std(p.reshape(p.shape[1],-1),1))
-        return {'mean':torch.stack(plane_means,0).mean(0),'std':torch.stack(plane_STDs,0).mean(0)}
+        if single_plane:
+            return {'mean':torch.stack(plane_means,0).mean(0),'std':torch.stack(plane_STDs,0).mean(0)}
+        else:
+            return {'mean':torch.cat(plane_means,0).reshape([len(self.training_scenes),-1]).mean(0),'std':torch.cat(plane_STDs,0).reshape([len(self.training_scenes),-1]).mean(0)}
 
     def save_params(self,to_checkpoint=False):
         assert self.optimize,'Why would you want to save if not optimizing?'
@@ -821,7 +833,6 @@ class PlanesOptimizer(nn.Module):
             if hasattr(model,'SR_model'):
                 model.SR_model.clear_SR_planes(all_planes=True)
                 for k,v in params_dict.items():
-                    # model.SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=True)
                     if not model.SR_model.SR_viewdir and get_plane_name(None,model.N_PLANES_DENSITY) in k:  continue
                     model.SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=False)
             if not self.optimize:   continue
@@ -870,15 +881,21 @@ class _Residual_Block(nn.Module):
         return output 
 
 class EDSR(nn.Module):
-    def __init__(self,scale_factor,in_channels,out_channels,hidden_size,plane_interp,n_blocks=32,
-        input_normalization=False,consistentcy_loss_w:float=None):
+    def __init__(self,scale_factor,in_channels,out_channels,sr_config,plane_interp,
+            # hidden_size,n_blocks=32,input_normalization=False,consistentcy_loss_w:float=None
+        ):
         super(EDSR, self).__init__()
+
+        hidden_size = sr_config.model.hidden_size
+        n_blocks = sr_config.model.n_blocks
+        input_normalization = sr_config.get("input_normalization",False)
 
         # rgb_mean = (0.4488, 0.4371, 0.4040)
         # self.sub_mean = MeanShift(rgb_mean, -1)
         self.scale_factor = scale_factor
         self.plane_interp = plane_interp
         self.n_blocks = n_blocks
+        self.single_plane = getattr(sr_config.model,'single_plane',True)
         PADDING,KERNEL_SIZE = 0,3
         self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False)
         self.required_padding,rf_factor = KERNEL_SIZE//2,1
@@ -920,8 +937,8 @@ class EDSR(nn.Module):
         self.clear_SR_planes(all_planes=True)
         if input_normalization:
             self.normalization_params({'mean':float('nan')*torch.ones([in_channels]),'std':float('nan')*torch.ones([in_channels])})
-        self.consistentcy_loss_w = consistentcy_loss_w
-        if consistentcy_loss_w is not None:
+        self.consistentcy_loss_w = sr_config.get("consistentcy_loss_w",None)
+        if self.consistentcy_loss_w is not None:
             self.planes_diff = nn.L1Loss()
             self.consistentcy_loss = []
 
@@ -946,7 +963,14 @@ class EDSR(nn.Module):
 
     def set_LR_planes(self,plane,id:str,save_interpolated:bool):
         assert id not in self.LR_planes,"Plane ID already exists."
-        self.LR_planes[id] = plane
+        if self.single_plane or get_plane_name(None,0) in id:
+            self.LR_planes[id] = plane
+        else:
+            assert not save_interpolated,'Unsupported'
+            self.LR_planes[id] = None
+            dim_num = int(search('(?<=_D)(\d)+(?=$)',id.split('PlRes')[-1]).group(0))
+            id = id.replace(get_plane_name(None,dim_num),get_plane_name(None,0))
+            self.LR_planes[id] = torch.cat((self.LR_planes[id],plane),1)
         if save_interpolated:
             # self.residual_planes[id] = torch.nn.functional.interpolate(plane.cuda(),scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=align_corners).cpu()
             self.residual_planes[id] = self.interpolate_LR(id).cpu()

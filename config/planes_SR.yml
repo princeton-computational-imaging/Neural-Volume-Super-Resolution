@@ -1,8 +1,8 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  # id: SR6vs2Scenes_32B256C_LR4_planeNorm_consLoss0001_HRtrainedDec_lr1e_5_Vbatch6 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
-  id: SR6vs2Scenes_32B256C_LR4_NoSpatSamp_planeNorm_consLoss0001_HRtrainedDec_lr5e_6_0
+  id: SR6vs2Scenes_32B256C_LR4_planeNorm_consLoss0001_HRtrainedDec_lr5e_6_CatPlnSR #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  # id: SR6vs2Scenes_32B256C_LR4_NoSpatSamp_planeNorm_consLoss0001_HRtrainedDec_lr5e_6_0
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -23,12 +23,14 @@ dataset:
   dir:
     train:
       2,200,32: ['chair','drums','ficus','hotdog','lego','materials',]
+      # 2,200,32: ['chair']
     # train: ['chair'] #,'drums','ficus','hotdog','lego','materials','mic','ship']
     # train: ['chair','drums'] #,'ficus','hotdog','lego','materials',]
     # train: ['ficus','hotdog'] #,'lego','materials',]
     # train: lego
     val:
       2,200,32: ['mic','ship']
+      # 2,200,32: ['mic']
     # val: mic
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
@@ -56,7 +58,7 @@ optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 1.0E-5 #5.0E-5 # 5.0E-3
+  lr: 5.0E-6 #5.0E-5 # 5.0E-3
 
 # NeRF parameters.
 nerf:
@@ -71,7 +73,7 @@ nerf:
     # When using spacial patch sampling, how to calculate the sampling distribution: By estimating non-background areas (default) or based on patch-STD
     # spatial_patch_sampling: STD # STD, background_est
     # Simulating a batch by accumulating gradients over consecutive steps:
-    virtual_batch_size: 6
+    # virtual_batch_size: 6
     # Size of each chunk (rays are batched into "chunks" and passed through
     # the network)
     chunksize: 131072  # 131072  # 1024 * 32
@@ -124,6 +126,7 @@ super_resolution:
   SR_viewdir: False
   input_normalization:  True
   consistentcy_loss_w: 0.001
+  # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
   model:
     # Name of the torch.nn.Module class that implements the model.
@@ -135,3 +138,5 @@ super_resolution:
     # Number of residual blocks (originally 32):
     n_blocks: 32
     # scale_factor: one #one #sqrt #linear
+    # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
+    single_plane: False
