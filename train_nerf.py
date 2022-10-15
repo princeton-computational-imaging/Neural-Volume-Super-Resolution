@@ -138,6 +138,7 @@ def main():
     assert dataset_type in['synt','DTU']
     assert not getattr(cfg.dataset,'half_res',False),'Depricated. Use downsampling factor instead.'
     assert not hasattr(cfg.dataset,'downsampling_factor'),'Depricated.'
+    if getattr(cfg.nerf.train,'plane_dropout',0)>0: assert cfg.models.coarse.proj_combination=='avg' and cfg.models.coarse.num_planes>3
     def get_scene_id(basedir,ds_factor,plane_res):
         return '%s_DS%d_PlRes%s'%(basedir,ds_factor,'' if plane_res[0] is None else '%d_%d'%(plane_res))
     ds_factor_extraction_pattern = lambda name: '(?<='+name.split('_DS')[0]+'_DS'+')(\d)+(?=_PlRes'+name.split('_PlRes')[1]+')'
@@ -334,6 +335,7 @@ def main():
             interp_viewdirs=getattr(cfg.models.coarse,'interp_viewdirs',None),
             viewdir_downsampling=getattr(cfg.nerf.train,'viewdir_downsampling',True),
             viewdir_proj_combination=getattr(cfg.models.coarse,'viewdir_proj_combination',None),
+            num_planes_or_rot_mats=getattr(cfg.models.coarse,'num_planes',3)
         )
         
     else:
@@ -377,6 +379,7 @@ def main():
                     interp_viewdirs=getattr(cfg.models.fine,'interp_viewdirs',None),
                     viewdir_downsampling=getattr(cfg.nerf.train,'viewdir_downsampling',True),
                     viewdir_proj_combination=getattr(cfg.models.fine,'viewdir_proj_combination',None),
+                    num_planes_or_rot_mats=model_coarse.rot_mats() if getattr(cfg.models.fine,'use_coarse_planes',False) else getattr(cfg.models.fine,'num_planes',3),
                 )
             else:
                 model_fine = getattr(models, cfg.models.fine.type)(
@@ -411,8 +414,8 @@ def main():
                 # scale_factor=cfg.super_resolution.model.scale_factor,
                 scale_factor=SR_factor,
                 # scale_factor=cfg.super_resolution.ds_factor,
-                in_channels=plane_channels*(1 if getattr(cfg.super_resolution.model,'single_plane',True) else model_fine.N_PLANES_DENSITY),
-                out_channels=plane_channels*(1 if getattr(cfg.super_resolution.model,'single_plane',True) else model_fine.N_PLANES_DENSITY),
+                in_channels=plane_channels*(1 if getattr(cfg.super_resolution.model,'single_plane',True) else model_fine.num_density_planes),
+                out_channels=plane_channels*(1 if getattr(cfg.super_resolution.model,'single_plane',True) else model_fine.num_density_planes),
                 sr_config=cfg.super_resolution,
                 # hidden_size=cfg.super_resolution.model.hidden_size,
                 plane_interp=getattr(cfg.super_resolution,'plane_resize_mode',model_fine.plane_interp),
@@ -470,10 +473,10 @@ def main():
                 assert filter in ['all','planes','non_planes']
                 params = []
                 if filter!='non_planes':
-                    plane_params = dict(sorted([p for p in model.named_parameters() if 'planes_.sc' in p[0]],key=lambda p:p[0]))
+                    plane_params = dict(sorted([p for p in model.named_parameters() if 'planes_.sc' in p[0] and 'NON_LEARNED' not in p[0]],key=lambda p:p[0]))
                     params.extend(plane_params.values())
                 if filter!='planes':
-                    params.extend([p[1] for p in model.named_parameters() if 'planes_.sc' not in p[0]])
+                    params.extend([p[1] for p in model.named_parameters() if all([token not in p[0] for token in ['NON_LEARNED','planes_.sc']])])
                 if filter=='planes':
                     return plane_params
                 else:
@@ -538,15 +541,21 @@ def main():
         if not ok:  raise Exception('Inconsistent model config')
         checkpoint = torch.load(checkpoint)
 
-        def load_saved_parameters(model,saved_params):
+        def load_saved_parameters(model,saved_params,reduced_set=False):
             mismatch = model.load_state_dict(saved_params,strict=False)
-            assert (len(mismatch.missing_keys)==0 or (store_planes and all(['planes_.sc' in k for k in mismatch.missing_keys]))) and all(['planes_.sc' in k for k in mismatch.unexpected_keys])
+            # assert (len(mismatch.missing_keys)==0 or (store_planes and all(['planes_.sc' in k for k in mismatch.missing_keys])))\
+            allowed_missing = []
+            if store_planes:    allowed_missing.append('planes_.sc')
+            if reduced_set: allowed_missing.append('rot_mats')
+            assert (len(mismatch.missing_keys)==0 or all([any([tok in k for tok in allowed_missing]) for k in mismatch.missing_keys]))\
+                and all(['planes_.sc' in k for k in mismatch.unexpected_keys])
             if planes_model and not store_planes:
                 model.box_coords = checkpoint["coords_normalization"]
 
+        checkpoint["model_coarse_state_dict"] = model_coarse.rot_mat_backward_support(checkpoint["model_coarse_state_dict"])
         load_saved_parameters(model_coarse,checkpoint["model_coarse_state_dict"])
         if checkpoint["model_fine_state_dict"]:
-            load_saved_parameters(model_fine,checkpoint["model_fine_state_dict"])
+            load_saved_parameters(model_fine,checkpoint["model_fine_state_dict"],reduced_set=True)
         if store_planes and getattr(cfg.nerf.train.store_planes,'save2checkpoint',False):
             raise Exception('No longer supported.')
             if SR_experiment:   raise Exception('See what needs to be done in this case (SR+saving planes to checkpoint) if and when happens')
@@ -579,7 +588,7 @@ def main():
                 
     assert isinstance(spatial_sampling,bool) or spatial_sampling>=1
     if planes_model and SR_model is not None:
-        if not getattr(cfg.super_resolution.model,'single_plane',True): assert getattr(cfg.super_resolution,'plane_dropout',0)==0,'Cannot drop separate planes in this case.'
+        # if not getattr(cfg.super_resolution.model,'single_plane',True): assert getattr(cfg.super_resolution,'plane_dropout',0)==0,'Cannot drop separate planes in this case.'
         save_RAM_memory = not store_planes and len(model_coarse.planes_)>=10
         if getattr(cfg.super_resolution,'apply_2_coarse',False):
             model_coarse.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,save_interpolated=not save_RAM_memory,
@@ -614,7 +623,7 @@ def main():
                     torch.save(params,f.replace(cur_scene_name,name_mapping[cur_scene_name]) if 'DTU' in cur_scene_name else f)
                     if 'DTU' in cur_scene_name:
                         os.remove(f)
-            elif hasattr(checkpoint_config.models.coarse,'plane_resolutions'):
+            elif load_saved_models and hasattr(checkpoint_config.models.coarse,'plane_resolutions'):
                 for f in tqdm(param_files_list,desc='!!! Converting saved planes to new name convention !!!',):
                     cur_scene_name = f.split('/')[-1][len('coarse_'):-4]
                     params = torch.load(f)
@@ -895,9 +904,14 @@ def main():
         if first_v_batch_iter:
             optimizer.zero_grad()
         if store_planes:    planes_opt.zero_grad()
-        if hasattr(model_fine,'SR_model'):
+        if hasattr(model_fine,'SR_model'): # Handling SR planes dropout
             model_fine.SR_planes2drop = [] if np.random.uniform()>=model_fine.SR_plane_dropout\
-                 else sorted(list(np.random.choice(range(model_fine.N_PLANES_DENSITY),size=np.random.randint(1,model_fine.N_PLANES_DENSITY),replace=False)))
+                 else sorted(list(np.random.choice(range(model_fine.num_density_planes),size=np.random.randint(1,model_fine.num_density_planes),replace=False)))
+        else: # Handling representation model planes dropout:
+            planes2drop = [] if np.random.uniform()>=getattr(cfg.nerf.train,'plane_dropout',0)\
+                 else sorted(list(np.random.choice(range(model_fine.num_density_planes),size=np.random.randint(1,model_fine.num_density_planes-3),replace=False)))
+            model_fine.planes2drop = planes2drop
+            model_coarse.planes2drop = planes2drop
         rgb_coarse, _, _, rgb_fine, _, _,rgb_SR,_,_ = run_one_iter_of_nerf(
             cur_H if not spatial_sampling else patch_size,
             cur_W if not spatial_sampling else patch_size,
@@ -1037,7 +1051,7 @@ def main():
                 if model_fine:  checkpoint_dict.update({"model_fine_state_dict": model_fine.state_dict()})
                 if planes_model:
                     if store_planes or getattr(cfg.models.fine,'use_coarse_planes',False):
-                        checkpoint_dict["model_fine_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_fine_state_dict"].items() if 'planes_.' not in k])
+                        checkpoint_dict["model_fine_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_fine_state_dict"].items() if all([token not in k for token in ['planes_.','rot_mats']])])
                     if store_planes:
                         checkpoint_dict["model_coarse_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_coarse_state_dict"].items() if 'planes_.' not in k])
                         if getattr(cfg.nerf.train.store_planes,'save2checkpoint',False):

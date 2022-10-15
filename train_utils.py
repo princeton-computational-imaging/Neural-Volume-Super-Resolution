@@ -327,6 +327,7 @@ def run_one_iter_of_nerf(
     # chunk_size = getattr(options.nerf, mode).chunksize*64//max([getattr(options.nerf, mode).num_coarse,getattr(options.nerf, mode).num_fine])
     chunk_size = getattr(options.nerf, mode).chunksize
     # print('!!!!!!WARNING!!!!!!!!')
+    chunk_size = int(chunk_size/(model_coarse.num_density_planes/3))
     if 'della-' in socket.gethostname():
         chunk_size *= 4
     # if not rays.requires_grad:

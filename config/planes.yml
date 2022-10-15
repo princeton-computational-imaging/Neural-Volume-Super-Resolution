@@ -1,7 +1,8 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400_0 # debug-lego200 # DTU
+  # id: planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400 # debug-lego200 # DTU
+  id: planes_Res8Sc100_400_32_LR50_200_4internalSRx2
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -23,10 +24,11 @@ dataset:
   # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
     train:
-      # 8,200,32:  ['chair','drums','ficus']
-      # 2,800,32:  ['ficus']
       8,200,32:  ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      2,800,32:  ['chair','drums','ficus','hotdog','lego','materials']
+      4,400,32:  ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      # 8,200,32:  ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      # 2,800,32:  ['chair','drums','ficus','hotdog','lego','materials']
+      # 8,200,32:  ['chair','drums']
     # train: ['chair','drums','ficus']
     # train: ficus
     # train: lego
@@ -55,6 +57,8 @@ models:
   coarse:
     # Name of the torch.nn.Module class that implements the model.
     type: TwoDimPlanesModel
+    # Number of planes to project to (3 and up):
+    # num_planes: 9
     # Plane side size. Integer or a list of integers to match different scenes.
     # plane_resolutions: 200 #64 #32
     # Plane side size for view-direction plane. Can be a list like plane_resolutions.
@@ -70,9 +74,9 @@ models:
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
     # How to combine projections from different planes:
-    proj_combination: concat
+    proj_combination: concat #avg #concat
     # How to combine projection from viewdir plane with the ones from position planes. Defaults to proj_combination:
-    # viewdir_proj_combination: mult
+    # viewdir_proj_combination: concat
     # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
     align_corners: False
     # Number of hidden units in each layer of the MLP (multi-layer
@@ -81,8 +85,6 @@ models:
     # Add a skip connection once in a while. Note: This parameter
     # won't take affect unless num_layers > skip_connect_every.
     skip_connect_every: 3
-    # Additionally use viewing directions as input.
-    # use_viewdirs: True
     # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
     # interp_viewdirs: bilinear #'bilinear','bicubic',None
   fine:
@@ -97,8 +99,6 @@ models:
     # dec_rgb_layers: 2
     # Share the planes with the coarse model:
     use_coarse_planes: True
-    # # Additionally use viewing directions as input.
-    # use_viewdirs: False
 # Optimizer params.
 optimizer:
   # Name of the torch.optim class used for optimization.
@@ -141,8 +141,10 @@ nerf:
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
     # Randomly downsamples plane during training to enforce multi-resolution loss:
-    max_plane_downsampling: 12 #12
-    viewdir_downsampling: False
+    # max_plane_downsampling: 12 #12
+    # viewdir_downsampling: False
+    # Dropout some planes during training (only when using more than 3 planes and proj_combination is set to 'avg'):
+    # plane_dropout: 0.5
   # Validation-specific parameters.
   validation:
     # Number of random rays to retain from each image.

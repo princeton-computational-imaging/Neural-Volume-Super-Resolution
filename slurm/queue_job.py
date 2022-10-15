@@ -14,8 +14,8 @@ import functools
 
 # CONFIG_FILE = "config/lego_SR.yml"
 # CONFIG_FILE = "config/lego_ds.yml"
-# CONFIG_FILE = "config/planes.yml"
-CONFIG_FILE = "config/planes_SR.yml"
+CONFIG_FILE = "config/planes.yml"
+# CONFIG_FILE = "config/planes_SR.yml"
 # CONFIG_FILE = "config/planes_DTU.yml"
 # CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
@@ -23,18 +23,25 @@ CONFIG_FILE = "config/planes_SR.yml"
 
 # RESUME_TRAINING = 0
 RESUME_TRAINING = None
+# EVAL = 0
+EVAL = None
 
 # PARAM2SWEEP = (['optimizer','lr'],[1e-5*(2**i) for i in range(9)])
 # PARAM2SWEEP = (['dataset','max_scenes'],[10*i for i in range(1,11)])
+# PARAM2SWEEP = (['models','coarse','num_planes'],[6,9])
 PARAM2SWEEP = None
 
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
+EVAL_FOLDER = "/tigress/yb6751/projects/NeuralMFSR/results"
 CONDA_ENV = "torch-env" if 'della-' in socket.gethostname() else "volumetric_enhance"
 RUN_TIME = 40 # 20 # 10 # Hours
 
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True
 
+
+assert EVAL is None or RESUME_TRAINING is None
+if EVAL is not None:    RESUME_TRAINING = EVAL
 def rsetattr(obj, attr, val):
     pre, _, post = attr.rpartition('.')
     return setattr(rgetattr(obj, pre) if pre else obj, post, val)
@@ -65,7 +72,7 @@ for run_num in range(len(PARAM2SWEEP[1])):
     if RESUME_TRAINING is None:
         job_identifier = job_name%(run_suffix)+"_%d"%(0 if len(existing_ids)==0 else max(existing_ids)+1)
         if run_num==0:
-            code_folder = os.path.join("slurm/code",job_identifier.replace(sweep_suffix+run_suffix,'_SWP') if sweep_jobs else job_identifier)
+            code_folder = os.path.join("slurm/code",job_identifier.replace(sweep_suffix+run_suffix,sweep_suffix+'_SWP') if sweep_jobs else job_identifier)
             if not os.path.exists(code_folder):
                 os.mkdir(code_folder)
         os.mkdir(os.path.join(LOGS_FOLDER,job_identifier))
@@ -97,7 +104,10 @@ for run_num in range(len(PARAM2SWEEP[1])):
             else:
                 cfg = saved_config_dict
                 # config_file = os.path.join(saved_models_folder,"config.yml")
-        print("Resuming training on job %s"%(job_identifier))
+        if EVAL is None:
+            print("Resuming training on job %s"%(job_identifier))
+        else:
+            print("Evaluating model in %s"%(job_identifier))
 
     config_filename = "config%s.yml"%(str(run_num) if sweep_jobs else '')
     if RESUME_TRAINING is None or OVERWRITE_RESUMED_CONFIG:
@@ -114,22 +124,24 @@ for run_num in range(len(PARAM2SWEEP[1])):
     python_command = "python train_nerf.py --config %s"%(config_filename)
     if RESUME_TRAINING is not None:
         python_command += " --load-checkpoint %s"%(saved_models_folder)
-
-    with open(os.path.join("slurm/scripts/%s.sh"%(job_identifier)),"w") as f:
+        if EVAL is not None:
+            python_command += " --eval video --results_path %s"%(EVAL_FOLDER)
+    eval_prefix = 'EVAL_' if EVAL is not None else ''
+    with open(os.path.join("slurm/scripts/%s.sh"%(eval_prefix+job_identifier)),"w") as f:
         f.write("#!/bin/bash\n")
         f.write("#SBATCH --nodes=1\n")
         f.write("#SBATCH --ntasks=1\n")
-        f.write("#SBATCH --job-name=%s\n"%(job_name%(run_suffix)))
+        f.write("#SBATCH --job-name=%s\n"%(eval_prefix+job_name%(run_suffix)))
         f.write("#SBATCH --cpus-per-task=10\n")
         # f.write("#SBATCH --mem=64G\n")
         f.write("#SBATCH --gres=gpu:1\n")
         f.write("#SBATCH --time=%d:00:00\n"%(RUN_TIME))
         f.write("#SBATCH --mail-user=yb6751@princeton.edu\n")
-        f.write("#SBATCH --output=slurm/out/%s.out\n\n"%(job_identifier+"_J%j"))
+        f.write("#SBATCH --output=slurm/out/%s.out\n\n"%(eval_prefix+job_identifier+"_J%j"))
         f.write("module load anaconda3/2022.5\n")
         f.write("source /home/yb6751/miniconda3/etc/profile.d/conda.sh\n")
         f.write("conda activate %s\n\n"%(CONDA_ENV))
         f.write("cd %s\n"%(os.path.join(code_folder)))
         f.write(python_command)
 
-    call("sbatch %s"%(os.path.join("slurm/scripts/%s.sh"%(job_identifier))),shell=True)
+    call("sbatch %s"%(os.path.join("slurm/scripts/%s.sh"%(eval_prefix+job_identifier))),shell=True)

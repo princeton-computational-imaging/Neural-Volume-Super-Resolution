@@ -1,8 +1,9 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR6vs2Scenes_32B256C_LR4_planeNorm_consLoss0001_HRtrainedDec_lr5e_6_CatPlnSR #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
-  # id: SR6vs2Scenes_32B256C_LR4_NoSpatSamp_planeNorm_consLoss0001_HRtrainedDec_lr5e_6_0
+  id: SR6vs2Scenes_32B256C_LR4_planeNorm_consLoss0001_HRtrainedDec_lr5e_6_CatPlnSRDO05 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  # id: SR6vs2Scenes_32B256C_LR4_planeNorm_consLoss0001_HRtrainedDec_lr5e_6_DO05
+  # id: SR6vs2Scenes_32B256C_LR4_LR1e_4_NoSpatSamp_planeNorm
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -126,7 +127,7 @@ super_resolution:
   SR_viewdir: False
   input_normalization:  True
   consistentcy_loss_w: 0.001
-  # plane_dropout:  0.5
+  plane_dropout:  0.5
   # plane_resize_mode:  bicubic
   model:
     # Name of the torch.nn.Module class that implements the model.
