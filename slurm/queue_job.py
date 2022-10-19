@@ -9,20 +9,19 @@ from cfgnode import CfgNode
 from subprocess import call
 from deepdiff import DeepDiff
 import socket
-from nerf_helpers import get_config
-import functools
+from nerf_helpers import get_config,rsetattr
 
 # CONFIG_FILE = "config/lego_SR.yml"
 # CONFIG_FILE = "config/lego_ds.yml"
-CONFIG_FILE = "config/planes.yml"
+# CONFIG_FILE = "config/planes.yml"
 # CONFIG_FILE = "config/planes_SR.yml"
-# CONFIG_FILE = "config/planes_DTU.yml"
+CONFIG_FILE = "config/planes_DTU.yml"
 # CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
 
-# RESUME_TRAINING = 0
-RESUME_TRAINING = None
+RESUME_TRAINING = 0
+# RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
 
@@ -42,14 +41,6 @@ OVERWRITE_RESUMED_CONFIG = False
 
 assert EVAL is None or RESUME_TRAINING is None
 if EVAL is not None:    RESUME_TRAINING = EVAL
-def rsetattr(obj, attr, val):
-    pre, _, post = attr.rpartition('.')
-    return setattr(rgetattr(obj, pre) if pre else obj, post, val)
-
-def rgetattr(obj, attr, *args):
-    def _getattr(obj, attr):
-        return getattr(obj, attr, *args)
-    return functools.reduce(_getattr, [obj] + attr.split('.'))
 
 with open(CONFIG_FILE, "r") as f:
     cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
@@ -131,7 +122,8 @@ for run_num in range(len(PARAM2SWEEP[1])):
         f.write("#!/bin/bash\n")
         f.write("#SBATCH --nodes=1\n")
         f.write("#SBATCH --ntasks=1\n")
-        f.write("#SBATCH --job-name=%s\n"%(eval_prefix+job_name%(run_suffix)))
+        # f.write("#SBATCH --job-name=%s\n"%(eval_prefix+job_name%(run_suffix)))
+        f.write("#SBATCH --job-name=%s\n"%(eval_prefix+job_identifier))
         f.write("#SBATCH --cpus-per-task=10\n")
         # f.write("#SBATCH --mem=64G\n")
         f.write("#SBATCH --gres=gpu:1\n")

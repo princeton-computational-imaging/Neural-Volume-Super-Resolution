@@ -1,14 +1,14 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  # id: DTU_ResallSc200LR4_trainSc800_32_Cdec8skip3_Vbatch100lr2e_2_plnLr1e_2 # debug-lego200 # DTU
-  id: DTU_ResallSc200LR4_trainSc800_32_Cdec8skip3_Vbatch100lr2e_2_plnLr1e_2
+  id: DTU_ResallSc200LR4_trainSc800_32_Cdec8skip3_Vbatch100lr1e2_JS # debug-lego200 # DTU
+  # id: DTU_ResallSc200LR4_trainSc800_32_Cdec8skip3_Vbatch100lr5e_3
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
-  randomseed: 1 # 34  # 8239
+  randomseed: 1 # 0 # 34  # 8239
   # Number of training iterations.
-  train_iters: 750050
+  train_iters: 750000
   # Number of training iterations after which to validate.
   validate_every: [0.1,1000] #50
   # Number of training iterations after which to checkpoint.
@@ -69,7 +69,10 @@ models:
     # num_plane_channels: 3
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
-    proj_combination: concat
+    # How to combine projections from different planes:
+    proj_combination: concat #avg #concat
+    # How to combine projection from viewdir plane with the ones from position planes. Defaults to proj_combination:
+    # viewdir_proj_combination: concat
     # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
     align_corners: False
     # Number of hidden units in each layer of the MLP (multi-layer
@@ -78,8 +81,6 @@ models:
     # Add a skip connection once in a while. Note: This parameter
     # won't take affect unless num_layers > skip_connect_every.
     skip_connect_every: 3
-    # Additionally use viewing directions as input.
-    # use_viewdirs: True
     # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
     # interp_viewdirs: bilinear #'bilinear','bicubic',None
   fine:
@@ -94,15 +95,13 @@ models:
     # dec_rgb_layers: 2
     # Share the planes with the coarse model:
     use_coarse_planes: True
-    # # Additionally use viewing directions as input.
-    # use_viewdirs: False
 # Optimizer params.
 optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 2.E-2 #5.0E-3
-  planes_lr:  1.0E-2
+  lr: 1.0E-2 #5.0E-3
+  # planes_lr:  1.0E-2
 
 # NeRF parameters.
 nerf:
@@ -114,7 +113,7 @@ nerf:
   # encode_direction_fn: None
   train:
     # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
-    spatial_sampling: 1.
+    # spatial_sampling: 1.
     # Number of random rays to retain from each image.
     # These sampled rays are used for training, and the others are discarded.
     num_random_rays: 4096  # 32 * 32 * 4
@@ -143,10 +142,12 @@ nerf:
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
     # Randomly downsamples plane during training to enforce multi-resolution loss:
-    # max_plane_downsampling: 12
+    # max_plane_downsampling: 12 #12
     # viewdir_downsampling: False
-    # Factor multiplying the STD of the fc_alpha layer when initializing model planes (default so far was 0.1):
-    # STD_factor: .1
+    # Dropout some planes during training (only when using more than 3 planes and proj_combination is set to 'avg'):
+    # plane_dropout: 0.5
+    # Train on only one scene until loss 
+    jump_start: [0.1,0.04] #[# scene (or portion of) training scenes to use in this phase, average loss threshold]
   # Validation-specific parameters.
   validation:
     # Number of random rays to retain from each image.

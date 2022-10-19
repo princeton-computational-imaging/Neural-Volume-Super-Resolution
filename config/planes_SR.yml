@@ -1,13 +1,13 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR6vs2Scenes_32B256C_LR4_planeNorm_consLoss0001_HRtrainedDec_lr5e_6_CatPlnSRDO05 #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
+  id: SR6vs2Scenes_32B256C_LR4_planeNorm_ConsistentHRLRDec_lr5e_5_PlnSR005_fishyConsistent #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
   # id: SR6vs2Scenes_32B256C_LR4_planeNorm_consLoss0001_HRtrainedDec_lr5e_6_DO05
   # id: SR6vs2Scenes_32B256C_LR4_LR1e_4_NoSpatSamp_planeNorm
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
-  randomseed: 0 # 34  # 8239
+  randomseed: 10 # 0 # 34  # 8239
   # Number of training iterations.
   train_iters: 750000
   # Number of training iterations after which to validate.
@@ -38,7 +38,6 @@ dataset:
   cachedir: cache/legocache200
   # For the Blender datasets (synthetic), optionally return images
   # at half the original resolution of 800 x 800, to save space.
-  # half_res: True
   # Stride (include one per "testskip" images in the dataset).
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
@@ -51,15 +50,21 @@ dataset:
 
 # Model parameters.
 models:
+  # Only LR planes:
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res200_32_DSpos12_Cdec8skip3CplnCat_LR100_allScenes_0
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400_0
+  # HR and LR planes:
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400_0
+  # HR and LR planes trained with 6 planes:
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400_ModelsCoarseNumplanes6_1
+  # HR and LR planes trained consistently:
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400_JumpStart_ConstForcing_3_temp
 
 # Optimizer params.
 optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 5.0E-6 #5.0E-5 # 5.0E-3
+  lr: 5.0E-5 #5.0E-6 # 5.0E-3
 
 # NeRF parameters.
 nerf:
@@ -126,8 +131,10 @@ super_resolution:
   # Super-resolve view-directions plane as well, or only positional planes:
   SR_viewdir: False
   input_normalization:  True
-  consistentcy_loss_w: 0.001
-  plane_dropout:  0.5
+  consistency_loss_w: 0 #0.001
+  plane_loss_w:  0.05 #1
+  # rendering_loss: 0
+  # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
   model:
     # Name of the torch.nn.Module class that implements the model.
@@ -140,4 +147,4 @@ super_resolution:
     n_blocks: 32
     # scale_factor: one #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
-    single_plane: False
+    # single_plane: False

@@ -124,7 +124,7 @@ super_resolution:
   # Super-resolve view-directions plane as well, or only positional planes:
   SR_viewdir: False
   # input_normalization:  True
-  consistentcy_loss_w: 0.
+  consistency_loss_w: 0.
   # plane_resize_mode:  bicubic
   model:
     # Name of the torch.nn.Module class that implements the model.

@@ -115,7 +115,7 @@ def predict_and_render_radiance(
         # SR_CHUNK_REDUCE = 2
         chunksize = getattr(options.nerf, mode).chunksize
         if 'della-' in socket.gethostname():
-            chunksize *= 10
+            chunksize *= 5 #10
         radiance_field = run_network(
             model_coarse,
             pts,
@@ -179,7 +179,7 @@ def predict_and_render_radiance(
             model_fine,
             pts,
             ray_batch,
-            None if hasattr(model_fine,'SR_model') else getattr(options.nerf, mode).chunksize,
+            None if (hasattr(model_fine,'SR_model') and model_fine.SR_model.training) else getattr(options.nerf, mode).chunksize,
             # getattr(options.nerf, mode).chunksize//(SR_CHUNK_REDUCE if hasattr(model_fine,'SR_model') else 1),
             encode_position_fn,
             encode_direction_fn,
@@ -329,7 +329,7 @@ def run_one_iter_of_nerf(
     # print('!!!!!!WARNING!!!!!!!!')
     chunk_size = int(chunk_size/(model_coarse.num_density_planes/3))
     if 'della-' in socket.gethostname():
-        chunk_size *= 4
+        chunk_size *= 2
     # if not rays.requires_grad:
     #     chunk_size *=2
     if (SR_model is not None or hasattr(model_fine,'SR_model')):

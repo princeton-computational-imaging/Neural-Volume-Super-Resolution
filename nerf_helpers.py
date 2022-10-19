@@ -9,8 +9,17 @@ import yaml
 import cv2
 import torchvision
 from re import search
+import functools
 # import torchsearchsorted
 
+def rsetattr(obj, attr, val):
+    pre, _, post = attr.rpartition('.')
+    return setattr(rgetattr(obj, pre) if pre else obj, post, val)
+
+def rgetattr(obj, attr, *args):
+    def _getattr(obj, attr):
+        return getattr(obj, attr, *args)
+    return functools.reduce(_getattr, [obj] + attr.split('.'))
 class null_with:
     def __enter__(self):
         pass
@@ -270,9 +279,9 @@ def get_focal(data,dim):
         return data
 
 
-def calc_scene_box(scene_geometry,including_dirs):
-    FULL_AZ_RANGE = True # Manually set azimuth range to be [-pi,pi]
-    FULL_EL_RANGE = [-np.pi/2,np.pi/2] #None
+def calc_scene_box(scene_geometry,including_dirs,full_az_range=True,adjust_elevation_range=False):
+    # FULL_AZ_RANGE = True # Manually set azimuth range to be [-pi,pi]
+    # if full_elev_range: full_elev_range = [-np.pi/2,np.pi/2]
     num_frames = len(scene_geometry['camera_poses'])
     box = [[np.finfo(np.float).max,np.finfo(np.float).min] for i in range(3+2*including_dirs)]
     for f_num in range(num_frames):
@@ -291,14 +300,17 @@ def calc_scene_box(scene_geometry,including_dirs):
                     for d in range(3):
                         box[d][0] = min(box[d][0],point[d])
                         box[d][1] = max(box[d][1],point[d])
-                if including_dirs and not (FULL_AZ_RANGE and FULL_EL_RANGE):
+                if including_dirs and not (full_az_range and adjust_elevation_range==0):
                     az_el = cart2az_el(torch.tensor(dir)).numpy()
-                    for d in range(int(FULL_AZ_RANGE),2):
+                    for d in range(int(full_az_range),2):
                         box[3+d][0] = min(box[3+d][0],az_el[d])
                         box[3+d][1] = max(box[3+d][1],az_el[d])
     if including_dirs:
-        if FULL_AZ_RANGE:   box[3] = [-np.pi,np.pi]
-        if FULL_EL_RANGE:   box[4] = [-np.pi/2,np.pi/2]
+        if full_az_range:   box[3] = [-np.pi,np.pi]
+        if not adjust_elevation_range:
+            box[4] = [-np.pi/2,np.pi/2]
+        else:
+            box[4] = list(adjust_elevation_range*(np.array(box[4])-np.mean(box[4]))+np.mean(box[4]))
     return torch.from_numpy(np.array(box).transpose(1,0))
 
 def cart2az_el(dirs):
