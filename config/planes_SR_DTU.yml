@@ -31,8 +31,6 @@ dataset:
   # excluded_scenes:  ['scan4']
   # Load only some of the scenes in the dataset:
   # max_scenes: 10
-  # Save images corresponding to up to 
-  # max_scene_savings:  9
   # Evaluate up to so many scenes:
   max_scenes_eval:  9
   # Optionally, provide a path to the pre-cached dataset dir. This

@@ -1,12 +1,12 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400_JumpStart_ConsistForce_bugFixed # debug-lego200 # DTU
-  # id: planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400_ModelsCoarseNumplanes3_0
+  # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_Consist1_PerChSR16L32C_detachLR # debug-lego200 # DTU
+  id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_Consist1
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
-  randomseed: 1 # 34  # 8239
+  randomseed: 20 # 34  # 8239
   # Number of training iterations.
   train_iters: 750000
   # Number of training iterations after which to validate.
@@ -24,14 +24,13 @@ dataset:
   # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
     train:
-      8,200,32:  ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      2,800,32:  ['chair','drums','ficus','hotdog','lego','materials']
-      # 2,800,32:  ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 8,200,32:  ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 4,400,32:  ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 8,200,32:  ['chair','drums','ficus','hotdog']
-      # 8,200,32:  ['chair',]
-      # 2,800,32:  ['chair',]
+      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
+      # 8,200,32:   ['chair','mic']
+      # 2,800,32:   ['chair']
+    val:
+      2,800,32:   ['mic','ship']
+      # 2,800,32:   ['mic']
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -85,7 +84,7 @@ models:
     # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
     # interp_viewdirs: bilinear #'bilinear','bicubic',None
     # When training a decoder with both low-res and corresponding high-res scenes, force high-res planes to be consistent with their low-res counterparts:
-    force_planes_consistency: True
+    # force_planes_consistency: True
   fine:
     # Name of the torch.nn.Module class that implements the model.
     # type: use_same
@@ -118,6 +117,11 @@ nerf:
   # # Encoding function for ray direction (theta, phi).
   # encode_direction_fn: None
   train:
+    # End-to-end training of representation and SR models
+    train_end2end:  True
+    # detach_LR_planes: False
+    # # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
+    # spatial_sampling: 1.
     # Number of random rays to retain from each image.
     # These sampled rays are used for training, and the others are discarded.
     num_random_rays: 4096  # 32 * 32 * 4
@@ -144,12 +148,12 @@ nerf:
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
     # Randomly downsamples plane during training to enforce multi-resolution loss:
-    max_plane_downsampling: 12 #12
-    viewdir_downsampling: False
+    # max_plane_downsampling: 12 #12
+    # viewdir_downsampling: False
     # Dropout some planes during training (only when using more than 3 planes and proj_combination is set to 'avg'):
     # plane_dropout: 0.5
     # Train on only one scene until loss 
-    jump_start: [0.1,0.03] #[# scene (or portion of) training scenes to use in this phase, average loss threshold]
+    # jump_start: [0.1,0.03] #[# scene (or portion of) training scenes to use in this phase, average loss threshold]
   # Validation-specific parameters.
   validation:
     # Number of random rays to retain from each image.
@@ -168,3 +172,27 @@ nerf:
     radiance_field_noise_std: 0.
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
+super_resolution:
+  lr: 5.E-5
+  training:
+    loss: fine # fine,coarse,both
+  apply_2_coarse: False #True # False
+  # Super-resolve view-directions plane as well, or only positional planes:
+  SR_viewdir: False
+  # input_normalization:  True
+  consistency_loss_w: 1 #0.001
+  # rendering_loss: 0
+  plane_dropout:  0.5
+  # plane_resize_mode:  bicubic
+  model:
+    # Name of the torch.nn.Module class that implements the model.
+    type: EDSR
+    # Number of hidden units in each layer of the MLP (multi-layer
+    # perceptron).
+    hidden_size:  32 #256 #128 #256
+    # Number of residual blocks (originally 32):
+    n_blocks: 16 #32
+    # scale_factor: sqrt #one #sqrt #linear
+    # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
+    # single_plane: False
+    per_channel_sr: True

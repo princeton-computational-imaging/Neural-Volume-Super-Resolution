@@ -15,12 +15,15 @@ from nerf_helpers import get_config,rsetattr
 # CONFIG_FILE = "config/lego_ds.yml"
 # CONFIG_FILE = "config/planes.yml"
 # CONFIG_FILE = "config/planes_SR.yml"
-CONFIG_FILE = "config/planes_DTU.yml"
+# CONFIG_FILE = "config/planes_DTU.yml"
 # CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
+CONFIG_FILE = "config/planes_E2E.yml"
+# CONFIG_FILE = "config/DTU_E2E.yml"
 
-RESUME_TRAINING = 0
+
+RESUME_TRAINING = 1
 # RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
@@ -33,7 +36,7 @@ PARAM2SWEEP = None
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 EVAL_FOLDER = "/tigress/yb6751/projects/NeuralMFSR/results"
 CONDA_ENV = "torch-env" if 'della-' in socket.gethostname() else "volumetric_enhance"
-RUN_TIME = 40 # 20 # 10 # Hours
+RUN_TIME = 48 # 20 # 10 # Hours
 
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True

@@ -246,7 +246,8 @@ class TwoDimPlanesModel(nn.Module):
         num_planes_or_rot_mats=3,
         viewdir_mapping=False,
         plane_loss_w=None,
-        force_planes_consistency=False,
+        # force_planes_consistency=False,
+        scene_coupler=None,
     ):
         self.num_density_planes = num_planes_or_rot_mats if isinstance(num_planes_or_rot_mats,int) else len(num_planes_or_rot_mats)
         # self.PLANES_2_INFER = [self.num_density_planes]
@@ -274,17 +275,18 @@ class TwoDimPlanesModel(nn.Module):
         self.coord_projector = CoordProjector(self.num_density_planes,rot_mats=None if isinstance(num_planes_or_rot_mats,int) else num_planes_or_rot_mats)
         self.viewdir_mapping = viewdir_mapping
         self.plane_loss_w = plane_loss_w
-        self.force_planes_consistency = force_planes_consistency
-        if self.plane_loss_w is not None or force_planes_consistency:
-            def matching_scene_name(scene):
-                sr_factor = 1/force_planes_consistency if force_planes_consistency else self.SR_model.scale_factor
-                ds_factor = search('(?<=_DS)(\d)+(?=_PlRes)',scene).group(0)
-                scene_res = search('(?<=PlRes)(\d)+(?=_)',scene).group(0)
-                return scene.replace('_DS%s_'%(ds_factor),'_DS%d_'%(int(ds_factor)//sr_factor)).replace('_PlRes%s_'%(scene_res),'_PlRes%d_'%(sr_factor*int(scene_res)))
-            self.scene_matcher = matching_scene_name
-            if self.plane_loss_w is not None:
-                self.planes_diff = nn.L1Loss()
-                self.plane_loss = []
+        self.scene_coupler = scene_coupler
+        # if self.plane_loss_w is not None or scene_coupler:
+            # def matching_scene_name(scene):
+            #     sr_factor = 1/force_planes_consistency if force_planes_consistency else self.SR_model.scale_factor
+            #     ds_factor = search('(?<=_DS)(\d)+(?=_PlRes)',scene).group(0)
+            #     scene_res = search('(?<=PlRes)(\d)+(?=_)',scene).group(0)
+            #     return scene.replace('_DS%s_'%(ds_factor),'_DS%d_'%(int(ds_factor)//sr_factor)).replace('_PlRes%s_'%(scene_res),'_PlRes%d_'%(sr_factor*int(scene_res)))
+            # self.scene_matcher = matching_scene_name
+        if self.plane_loss_w is not None:
+            raise Exception('No longer supported. Should revisit the mechanism for loading the corresponding HR planes.')
+            self.planes_diff = nn.L1Loss()
+            self.plane_loss = []
 
         # Density (alpha) decoder:
         self.density_dec = nn.ModuleList()
@@ -346,8 +348,6 @@ class TwoDimPlanesModel(nn.Module):
         else:
             return layer_num % self.skip_connect_every == 0 and layer_num > 0 # and layer_num != dec_rgb_layers-1:
 
-    # def copy_planes(self):
-    #     self.planes_copy = OrderedDict([(k,1*v.detach().cpu().numpy()) for k,v in self.planes_.items() if any([get_plane_name(None,d) in k for d in self.PLANES_2_INFER])])
     def rot_mats(self):
         return self.coord_projector.rot_mats_NON_LEARNED
 
@@ -363,16 +363,17 @@ class TwoDimPlanesModel(nn.Module):
             )
 
     def raw_plane(self,plane_name,as_is=False):
-        # if self.training and hasattr(self,'scene_matcher') and plane_name in self.residual_planes_:
-        if not as_is and self.training and self.cur_id in self.coupled_scenes and get_plane_name(None,self.num_density_planes) not in plane_name:
+        if False and not as_is and self.training and self.cur_id in self.coupled_scenes and get_plane_name(None,self.num_density_planes) not in plane_name:
             if plane_name not in self.residual_planes_:
                 self.residual_planes_[plane_name] = torch.nn.functional.interpolate(
                     self.planes_[self.scene_matcher(plane_name)],
-                    scale_factor=self.force_planes_consistency,mode=self.plane_interp,
+                    scale_factor=self.scene_coupler.ds_factor,mode=self.plane_interp,
                     align_corners=self.align_corners,
                 ).cuda()
-            return self.residual_planes_[plane_name]+self.remove_low_freqs(self.planes_[plane_name],self.force_planes_consistency) #-torch.nn.functional.interpolate(\
+            return self.residual_planes_[plane_name]+self.remove_low_freqs(self.planes_[plane_name],self.scene_coupler.ds_factor) #-torch.nn.functional.interpolate(\
         else:
+            if plane_name not in self.planes_ and not hasattr(self,'SR_model'): # Should only happen with the coarse model:
+                plane_name = self.scene_coupler.downsample_planes[plane_name]
             return self.planes_[plane_name]
 
     def rot_mat_backward_support(self,loaded_dict):
@@ -404,11 +405,15 @@ class TwoDimPlanesModel(nn.Module):
 
     def normalize_coords(self,coords):
         EPSILON = 1e-5
-        normalized_coords = 2*(coords-self.box_coords[self.cur_id].type(coords.type())[:1])/\
-            (self.box_coords[self.cur_id][1:]-self.box_coords[self.cur_id][:1]).type(coords.type())-1
+        scene_name = self.cur_id+''
+        if scene_name in self.scene_coupler.downsample_couples:
+            scene_name = self.scene_coupler.downsample_couples[scene_name]
+
+        normalized_coords = 2*(coords-self.box_coords[scene_name].type(coords.type())[:1])/\
+            (self.box_coords[scene_name][1:]-self.box_coords[scene_name][:1]).type(coords.type())-1
         # assert normalized_coords.min()>=-1-EPSILON and normalized_coords.max()<=1+EPSILON,"Sanity check"
-        self.debug['max_norm'][self.cur_id] = np.maximum(self.debug['max_norm'][self.cur_id],normalized_coords.max(0)[0].cpu().numpy())
-        self.debug['min_norm'][self.cur_id] = np.minimum(self.debug['min_norm'][self.cur_id],normalized_coords.min(0)[0].cpu().numpy())
+        self.debug['max_norm'][scene_name] = np.maximum(self.debug['max_norm'][scene_name],normalized_coords.max(0)[0].cpu().numpy())
+        self.debug['min_norm'][scene_name] = np.minimum(self.debug['min_norm'][scene_name],normalized_coords.min(0)[0].cpu().numpy())
         return normalized_coords
 
     def use_downsampled_planes(self,ds_factor:int): # USed for debug
@@ -416,6 +421,9 @@ class TwoDimPlanesModel(nn.Module):
 
     def planes(self,dim_num:int,super_resolve:bool,grid:torch.tensor=None)->torch.tensor:
         plane_name = get_plane_name(self.cur_id,dim_num)
+        high_res_plane = hasattr(self,'scene_coupler') and plane_name in self.scene_coupler.downsample_planes
+        if high_res_plane:  
+            plane_name = self.scene_coupler.downsample_planes[plane_name]
         if super_resolve:
             if grid is not None and self.SR_model.training and self.single_plane_SR:
                 roi = torch.stack([grid.min(1)[0].squeeze(),grid.max(1)[0].squeeze()],0)
@@ -440,11 +448,13 @@ class TwoDimPlanesModel(nn.Module):
         projections = []
         joint_planes = None
         for d in range(self.num_density_planes):
-            # grid = coords[:,[c for c in range(3) if c!=d]].reshape([1,coords.shape[0],1,2])
-            # grid = self.rotator((coords,d)).reshape([1,coords.shape[0],1,2])
             grid = self.coord_projector((coords,d)).reshape([1,coords.shape[0],1,2])
             plane_name = get_plane_name(self.cur_id,d)
-            super_resolve = hasattr(self,'SR_model') and not self.skip_SR_ and plane_name in self.SR_model.LR_planes
+            # Check whether the planes SHOULD be super-resolved:
+            super_resolve = not hasattr(self,'scene_coupler') or plane_name in self.scene_coupler.downsample_planes
+            # Check whether the planes CAN be super-resolved:
+            super_resolve &= hasattr(self,'SR_model') and (plane_name in self.SR_model.LR_planes or (hasattr(self,'scene_coupler') and plane_name in self.scene_coupler.downsample_planes and self.scene_coupler.downsample_planes[plane_name] in self.SR_model.LR_planes))
+            super_resolve = super_resolve and not self.skip_SR_
             if super_resolve and d in self.SR_planes2drop and self.single_plane_SR: super_resolve = False
             if joint_planes is None:
                 input_plane = self.planes(d,super_resolve=super_resolve,grid=grid)
@@ -641,19 +651,16 @@ class PlanesOptimizer(nn.Module):
             init_params:bool,optimize:bool,training_scenes:list=None,coords_normalization:dict=None,
             do_when_reshuffling=lambda:None,STD_factor:float=0.1,
             available_scenes:list=[],
-            # couple_with_HR_planes:bool=False,
             ) -> None:
         super(PlanesOptimizer,self).__init__()
-        self.scenes = list(scene_id_plane_resolution.keys())
+        # self.scenes = list(scene_id_plane_resolution.keys())
+        self.scenes = available_scenes
         if training_scenes is None:
             training_scenes = 1*self.scenes
         self.training_scenes = training_scenes
-        if len(available_scenes)==0:
-            available_scenes = self.training_scenes
-        # if hasattr(model_fine,'scene_matcher'):
-        #     self.coupled_scenes = dict([(sc,model_fine.scene_matcher(sc)) for sc in self.training_scenes if model_fine.scene_matcher(sc) in self.training_scenes])
-        # else:
-        #     self.coupled_scenes = {}
+        self.scenes_with_planes = scene_id_plane_resolution.keys()
+        assert len(available_scenes)>0
+        # if len(available_scenes)==0:    available_scenes = self.training_scenes
         self.buffer_size = getattr(options,'buffer_size',len(self.training_scenes))
         self.steps_per_buffer,self.steps_since_drawing = options.steps_per_buffer,0
         if self.buffer_size>=len(self.training_scenes):  self.steps_per_buffer = -1
@@ -669,21 +676,22 @@ class PlanesOptimizer(nn.Module):
         self.save_location = save_location
         self.lr = lr
         residual_planes = {}
-        if hasattr(model_fine,'scene_matcher'):  model_coarse.scene_matcher = model_fine.scene_matcher
         for model_name,model in zip(['coarse','fine'],[model_coarse,model_fine]):
             self.models[model_name] = model
             model.residual_planes_ = residual_planes
-            if hasattr(model,'scene_matcher'):
-                model.coupled_scenes = dict([(sc,model.scene_matcher(sc)) for sc in self.training_scenes if model.scene_matcher(sc) in available_scenes])
-            else:
-                model.coupled_scenes = {}
+            # if hasattr(model,'scene_matcher'):
+            #     model.coupled_scenes = dict([(sc,model.scene_matcher(sc)) for sc in self.training_scenes if model.scene_matcher(sc) in available_scenes])
+            # else:
+            #     model.coupled_scenes = {}
             if model_name=='fine' and use_coarse_planes:    continue
             self.planes_per_scene = model.num_density_planes+model.use_viewdirs
+            if hasattr(model,'scene_coupler'):
+                model.scene_coupler.downsample_planes = dict([(get_plane_name(hr_scene,d),get_plane_name(lr_scene,d)) for hr_scene,lr_scene in model.scene_coupler.downsample_couples.items() for d in range(self.planes_per_scene)])
             if init_params:
                 if model.viewdir_mapping:
                     model.viewdir_plane_coverage = {}
-                for scene in tqdm(self.scenes,desc='Initializing scene planes',):
-                    res = scene_id_plane_resolution[scene]
+                for scene,res in tqdm(scene_id_plane_resolution.items(),desc='Initializing scene planes',):
+                    # res = scene_id_plane_resolution[scene]
                     params = nn.ParameterDict([
                         (get_plane_name(scene,d),
                             create_plane(res[0] if d<model.num_density_planes else res[1],num_plane_channels=model.num_plane_channels,
@@ -705,36 +713,28 @@ class PlanesOptimizer(nn.Module):
         # if hasattr(self,'cur_scenes') and self.cur_scenes==[scene]:   return
         for model_name in ['coarse','fine']:
             model = self.models[model_name]
+            LR_scene = scene if scene in self.scenes_with_planes else model.scene_coupler.downsample_couples[scene]
             if model_name=='coarse' or not self.use_coarse_planes:
-                loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
-                if scene in model.coupled_scenes and model.force_planes_consistency: #Not needed for SR:
-                    assert not model.training,'Assuming this is called during evaluation, or otherwise consistency is not forced.'
-                    matching_scene_params = torch.load(self.param_path(model_name=model_name,scene=model.coupled_scenes[scene]))['params']
-                    # if model.force_planes_consistency: # Model training
-                    loaded_params['params'].update(dict([(k,
-                        torch.nn.functional.interpolate(
-                            matching_scene_params[model.scene_matcher(k)],
-                            scale_factor=model.force_planes_consistency,mode=model.plane_interp,
-                            align_corners=model.align_corners,
-                            )+model.remove_low_freqs(v,model.force_planes_consistency)
-                        ) for k,v in loaded_params['params'].items() if get_plane_name(None,model.num_density_planes) not in k]))
-                    # else: #SR
-                    #     loaded_params['params'].update(dict([(model.scene_matcher(k),
-                    #         torch.nn.functional.interpolate(
-                    #             v,
-                    #             scale_factor=self.models['fine'].SR_model.scale_factor,mode=model.plane_interp,
-                    #             align_corners=model.align_corners,
-                    #             )+model.remove_low_freqs(matching_scene_params[model.scene_matcher(k)],self.models['fine'].SR_model.scale_factor)
-                    #         ) for k,v in loaded_params['params'].items() if get_plane_name(None,model.num_density_planes) not in k]))
-
+                loaded_params = torch.load(self.param_path(model_name=model_name,scene=LR_scene))
+                # if scene in model.coupled_scenes and model.scene_coupler: #Not needed for SR:
+                #     assert not model.training,'Assuming this is called during evaluation, or otherwise consistency is not forced.'
+                #     matching_scene_params = torch.load(self.param_path(model_name=model_name,scene=model.coupled_scenes[scene]))['params']
+                #     loaded_params['params'].update(dict([(k,
+                #         torch.nn.functional.interpolate(
+                #             matching_scene_params[model.scene_matcher(k)],
+                #             scale_factor=model.scene_coupler.ds_factor,mode=model.plane_interp,
+                #             align_corners=model.align_corners,
+                #             )+model.remove_low_freqs(v,model.scene_coupler.ds_factor)
+                #         ) for k,v in loaded_params['params'].items() if get_plane_name(None,model.num_density_planes) not in k]))
 
             model.planes_ = loaded_params['params']
-            model.box_coords = {scene:loaded_params['coords_normalization']}
+            model.box_coords = {LR_scene:loaded_params['coords_normalization']}
             if hasattr(model,'SR_model'):
                 model.SR_model.clear_SR_planes(all_planes=True)
-                for k,v in loaded_params['params'].items():
-                    if not model.SR_model.SR_viewdir and get_plane_name(None,model.num_density_planes) in k:  continue
-                    model.SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=False)
+                if scene not in self.scenes_with_planes:
+                    for k,v in loaded_params['params'].items():
+                        if not model.SR_model.SR_viewdir and get_plane_name(None,model.num_density_planes) in k:  continue
+                        model.SR_model.set_LR_planes(v.detach() if model.SR_model.detach_LR_planes else v,id=k,save_interpolated=False)
         self.cur_scenes = [scene]
 
     def load_from_checkpoint(self,checkpoint):
@@ -770,7 +770,12 @@ class PlanesOptimizer(nn.Module):
         if to_checkpoint:
             all_params,all_states = nn.ParameterDict(),[]
         scene_num = 0
+        already_saved = []
         for scene in scenes_list:
+            if scene in model.scene_coupler.downsample_couples:
+                scene = model.scene_coupler.downsample_couples[scene]
+            if scene in already_saved: continue
+            already_saved.append(scene)
             if scene in self.cur_scenes:
                 params = nn.ParameterDict([(get_plane_name(scene,d),model.raw_plane(get_plane_name(scene,d),as_is=True)) for d in range(self.planes_per_scene)])
                 opt_states = [self.optimizer.state_dict()['state'][i+scene_num*self.planes_per_scene] if (i+scene_num*self.planes_per_scene) in self.optimizer.state_dict()['state'] else None for i in range(self.planes_per_scene)]
@@ -806,9 +811,14 @@ class PlanesOptimizer(nn.Module):
             model = self.models[model_name]
             if model_name=='coarse' or not self.use_coarse_planes:
                 params_dict,optimizer_states,box_coords = nn.ParameterDict(),[],{}
-                coupled_params = nn.ParameterDict()
+                # coupled_params = nn.ParameterDict()
                 # residual_planes = {}
+                already_loaded = []
                 for scene in self.cur_scenes:
+                    if scene in model.scene_coupler.downsample_couples:
+                        scene = model.scene_coupler.downsample_couples[scene]
+                    if scene in already_loaded: continue
+                    already_loaded.append(scene)
                     loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
                     params_dict.update(loaded_params['params'])
                     box_coords.update({scene:loaded_params['coords_normalization']})
@@ -817,35 +827,26 @@ class PlanesOptimizer(nn.Module):
                             optimizer_states.extend(loaded_params['opt_states'])
                         else:
                             optimizer_states.extend([None for p in loaded_params['params']])
-                    if scene in model.coupled_scenes:
-                        matching_scene_params = torch.load(self.param_path(model_name=model_name,scene=model.coupled_scenes[scene]))['params']
-                        # if model.force_planes_consistency:
-                        #     residual_planes.update(dict([(k,torch.nn.functional.interpolate(
-                        #             matching_scene_params[model.scene_matcher(k)],
-                        #             scale_factor=model.force_planes_consistency,mode=model.plane_interp,
-                        #             align_corners=model.align_corners,
-                        #             ).cuda()
-                        #         ) for k,v in loaded_params['params'].items() if get_plane_name(None,model.num_density_planes) not in k]))
-                        # else:
-                        coupled_params.update(dict([(k,
-                            v if model.force_planes_consistency else
-                            # For SR, passing the consistent HR plane:
-                            torch.nn.functional.interpolate(
-                                loaded_params['params'][get_plane_name(scene,int(k[-1]))],
-                                scale_factor=self.models['fine'].SR_model.scale_factor,mode=model.plane_interp,
-                                align_corners=model.align_corners,
-                                )+model.remove_low_freqs(matching_scene_params[k],self.models['fine'].SR_model.scale_factor)
-                            ) for k,v in matching_scene_params.items() if get_plane_name(None,model.num_density_planes) not in k]))
+                    # if scene in model.coupled_scenes:
+                    #     matching_scene_params = torch.load(self.param_path(model_name=model_name,scene=model.coupled_scenes[scene]))['params']
+                    #     coupled_params.update(dict([(k,
+                    #         v if model.scene_coupler else
+                    #         # For SR, passing the consistent HR plane:
+                    #         torch.nn.functional.interpolate(
+                    #             loaded_params['params'][get_plane_name(scene,int(k[-1]))],
+                    #             scale_factor=self.models['fine'].SR_model.scale_factor,mode=model.plane_interp,
+                    #             align_corners=model.align_corners,
+                    #             )+model.remove_low_freqs(matching_scene_params[k],self.models['fine'].SR_model.scale_factor)
+                    #         ) for k,v in matching_scene_params.items() if get_plane_name(None,model.num_density_planes) not in k]))
 
             model.planes_ = params_dict.cuda()
-            model.planes_.update(coupled_params)
-            # model.residual_planes_ = residual_planes
+            # model.planes_.update(coupled_params)
             self.models[model_name].box_coords = box_coords
             if hasattr(model,'SR_model'):
                 model.SR_model.clear_SR_planes(all_planes=True)
                 for k,v in params_dict.items():
                     if not model.SR_model.SR_viewdir and get_plane_name(None,model.num_density_planes) in k:  continue
-                    model.SR_model.set_LR_planes(v.detach(),id=k,save_interpolated=False)
+                    model.SR_model.set_LR_planes(v.detach() if model.SR_model.detach_LR_planes else v,id=k,save_interpolated=False)
             if not self.optimize:   continue
             if model_name=='coarse' or not self.use_coarse_planes:
                 # params = list(model.planes_.values())
@@ -861,9 +862,9 @@ class PlanesOptimizer(nn.Module):
         if self.optimize and opt_step:
             self.optimizer.step()
             self.saving_needed = True
-            residual_planes = dict([(k,v) for k,v in self.models['coarse'].residual_planes_.items() if self.models['coarse'].cur_id not in self.models['coarse'].scene_matcher(k)])
-            for model in self.models.values():
-                model.residual_planes_ = residual_planes
+            # residual_planes = dict([(k,v) for k,v in self.models['coarse'].residual_planes_.items() if self.models['coarse'].cur_id not in self.models['coarse'].scene_matcher(k)])
+            # for model in self.models.values():
+            #     model.residual_planes_ = residual_planes
         self.steps_since_drawing += 1
         if self.steps_since_drawing==self.steps_per_buffer:
             self.draw_scenes()
@@ -920,7 +921,7 @@ class _Residual_Block(nn.Module):
         return output 
 
 class EDSR(nn.Module):
-    def __init__(self,scale_factor,in_channels,out_channels,sr_config,plane_interp,
+    def __init__(self,scale_factor,in_channels,out_channels,sr_config,plane_interp,detach_LR_planes,
             # hidden_size,n_blocks=32,input_normalization=False,consistency_loss_w:float=None
         ):
         super(EDSR, self).__init__()
@@ -928,13 +929,16 @@ class EDSR(nn.Module):
         hidden_size = sr_config.model.hidden_size
         n_blocks = sr_config.model.n_blocks
         input_normalization = sr_config.get("input_normalization",False)
-
+        self.detach_LR_planes = detach_LR_planes
         # rgb_mean = (0.4488, 0.4371, 0.4040)
         # self.sub_mean = MeanShift(rgb_mean, -1)
         self.scale_factor = scale_factor
         self.plane_interp = plane_interp
         self.n_blocks = n_blocks
         self.single_plane = getattr(sr_config.model,'single_plane',True)
+        self.per_channel_sr = getattr(sr_config.model,'per_channel_sr',False)
+        if self.per_channel_sr:
+            in_channels = out_channels = 1
         PADDING,KERNEL_SIZE = 0,3
         self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False)
         self.required_padding,rf_factor = KERNEL_SIZE//2,1
@@ -1042,7 +1046,10 @@ class EDSR(nn.Module):
             # assert plane_roi is None,'Unsupported yet'
             out = self.SR_planes[plane_name].cuda()
         else:
-            LR_plane = self.LR_planes[plane_name].detach().cuda()
+            # LR_plane = self.LR_planes[plane_name].detach().cuda()
+            LR_plane = self.LR_planes[plane_name].cuda()
+            if self.detach_LR_planes:
+                LR_plane = LR_plane.detach()
             x = 1*LR_plane
             if hasattr(self,'planes_mean_NON_LEARNED'):
                 x = x-self.planes_mean_NON_LEARNED
@@ -1059,8 +1066,11 @@ class EDSR(nn.Module):
             x = x[...,plane_roi[0,0]-pre_padding[0]:plane_roi[1,0]+post_padding[0],plane_roi[0,1]-pre_padding[1]:plane_roi[1,1]+post_padding[1]]
             x = torch.nn.functional.pad(x,
                 pad=(self.required_padding-pre_padding[1],self.required_padding-post_padding[1],self.required_padding-pre_padding[0],self.required_padding-post_padding[0]),
-                mode='replicate') 
-            difference = self.inner_forward(x)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
+                mode='replicate')
+            if self.per_channel_sr:
+                difference = torch.cat([self.inner_forward(x[:,ch:ch+1,...]) for ch in range(x.shape[1])],1)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
+            else:
+                difference = self.inner_forward(x)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
             # if '_D0' in plane_name:
             #     print('!!!!!!WARNING!!!!!!!!')
             #     import matplotlib.pyplot as plt
@@ -1072,7 +1082,7 @@ class EDSR(nn.Module):
             out = (torch.ones_like(residual_plane)*float('nan'))
             out[...,min_index[0]:max_index[0],min_index[1]:max_index[1]] = super_resolved
             if full_plane:   self.SR_planes[plane_name] = out.cpu()
-            if self.consistency_loss_w is not None and self.training:
+            if self.consistency_loss_w is not None: # and self.training:
                 self.consistentcy_loss.append(
                     torch.nn.functional.interpolate(
                         difference,

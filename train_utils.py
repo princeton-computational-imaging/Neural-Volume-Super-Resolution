@@ -10,6 +10,7 @@ import numpy as np
 from torch.nn.functional import pad
 import os
 import models
+from re import search
 
 def run_network(network_fn, pts, ray_batch, chunksize, embed_fn,\
      embeddirs_fn,return_input_grads=False,mip_nerf=False,z_vals=None,ds_factor_or_id=1,):
@@ -334,6 +335,8 @@ def run_one_iter_of_nerf(
     #     chunk_size *=2
     if (SR_model is not None or hasattr(model_fine,'SR_model')):
         chunk_size //= 10 #5 #(2*int(np.ceil(np.log2(model_fine.SR_model.n_blocks))))
+        # if model_fine.SR_model.per_channel_sr and model_fine.SR_model.training:
+        #     chunk_size //= 100
         # if model_fine.SR_model.training:
         #     chunk_size //= int(2*np.ceil(np.log2(model_fine.SR_model.n_blocks)))
     if spatial_margin is not None: # and not hasattr(model_fine,'SR_model'):
@@ -449,7 +452,9 @@ def eval_nerf(
 
     return rgb_coarse, None, None, rgb_fine, None, None, rgb_SR, None,None
 
-def find_latest_checkpoint(ckpt_path):
+def find_latest_checkpoint(ckpt_path,sr):
     if os.path.isdir(ckpt_path):
-        ckpt_path = os.path.join(ckpt_path,sorted([f for f in os.listdir(ckpt_path) if "checkpoint" in f and f[-5:]==".ckpt"],key=lambda x:int(x[len("checkpoint"):-5]))[-1])
+        pattern = "(?<="+("SR_checkpoint" if sr else "^checkpoint")+")(\d)+(?=\.ckpt)"
+        ckpt_path = os.path.join(ckpt_path,sorted([f for f in os.listdir(ckpt_path) if search(pattern,f) is not None],
+            key=lambda x:int(search(pattern,x).group(0)))[-1])
     return ckpt_path

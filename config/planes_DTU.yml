@@ -31,15 +31,12 @@ dataset:
   # excluded_scenes:  ['scan4']
   # Load only some of the scenes in the dataset:
   # max_scenes: 6
-  # Save images corresponding to up to 
-  # max_scene_savings:  9
   # Evaluate up to so many scenes:
   max_scenes_eval:  9
   # For the Blender datasets (synthetic), optionally return images
   # at half the original resolution of 800 x 800, to save space.
   # half_res: True
   # Stride (include one per "testskip" images in the dataset).
-  # downsampling_factor: 4 # downsampling factor for the downsampling experiment
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
