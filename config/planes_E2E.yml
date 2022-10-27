@@ -1,12 +1,13 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_Consist1_PerChSR16L32C_detachLR # debug-lego200 # DTU
-  id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_Consist1
+  id: E2E_Synt_Dec4L16C_Res8Sc200_6Sc800_32_LR100_400_Consist1_detachLR
+  # id: E2E_Synt_Pln12C_Res8Sc25_6Sc100_32_LR100_400_Consist1_detachLR
+  # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_Consist1_1
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
-  randomseed: 20 # 34  # 8239
+  randomseed: 10 # 34  # 8239
   # Number of training iterations.
   train_iters: 750000
   # Number of training iterations after which to validate.
@@ -24,13 +25,19 @@ dataset:
   # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
     train:
-      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
-      # 8,200,32:   ['chair','mic']
-      # 2,800,32:   ['chair']
+      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
+      8,200,32:   ['chair','mic']
+      2,800,32:   ['chair']
+      # 8,25,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      # 2,100,32:   ['chair','drums','ficus','hotdog','lego','materials']
+      # 8,25,32:   ['chair','mic']
+      # 2,100,32:   ['chair']
     val:
-      2,800,32:   ['mic','ship']
-      # 2,800,32:   ['mic']
+      # 2,800,32:   ['mic','ship']
+      2,800,32:   ['mic']
+      # 2,100,32:   ['mic','ship']
+      # 2,100,32:   ['mic']
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -62,11 +69,11 @@ models:
     # Planes interpolation method (default to bilinear):
     plane_interp: bilinear # bicubic # bilinear
     # Number of layers in the density decoder.
-    dec_density_layers: 8
+    dec_density_layers: 4 #8
     # Number of layers in the rgb decoder.
-    dec_rgb_layers: 8
-    # dec_channels: 256
-    # num_plane_channels: 256
+    dec_rgb_layers: 4 #8
+    dec_channels: 16 #256
+    # num_plane_channels: 12
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
     # How to combine projections from different planes:
@@ -102,7 +109,7 @@ optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 5.0E-3
+  lr: 1.E-3 #5.0E-3
 
 # NeRF parameters.
 nerf:
@@ -118,7 +125,7 @@ nerf:
   # encode_direction_fn: None
   train:
     # End-to-end training of representation and SR models
-    train_end2end:  True
+    train_end2end:  LR_planes # HR_planes #LR_planes
     # detach_LR_planes: False
     # # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
     # spatial_sampling: 1.
@@ -132,7 +139,7 @@ nerf:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
-      # buffer_size:  1
+      # buffer_size:  4
       steps_per_buffer: 1
     # Whether or not to perturb the sampled depth values.
     perturb: True
@@ -142,6 +149,8 @@ nerf:
     num_fine: 64
     # Whether to render models using a white background.
     white_background: False
+    # Add Gaussian noise to points coordinates before projecting them to planes:
+    # point_coords_noise: 0.1
     # Standard deviation of noise to be added to the radiance field when
     # performing volume rendering.
     radiance_field_noise_std: 0.2
@@ -181,18 +190,19 @@ super_resolution:
   SR_viewdir: False
   # input_normalization:  True
   consistency_loss_w: 1 #0.001
+  plane_loss_w:  0 #1
   # rendering_loss: 0
-  plane_dropout:  0.5
+  # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
   model:
     # Name of the torch.nn.Module class that implements the model.
     type: EDSR
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
-    hidden_size:  32 #256 #128 #256
+    hidden_size: 256 #128 #256
     # Number of residual blocks (originally 32):
-    n_blocks: 16 #32
+    n_blocks: 32
     # scale_factor: sqrt #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
     # single_plane: False
-    per_channel_sr: True
+    # per_channel_sr: True

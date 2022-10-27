@@ -115,7 +115,7 @@ nerf:
   # encode_direction_fn: None
   train:
     # End-to-end training of representation and SR models
-    train_end2end:  True
+    train_end2end:  HR_planes # LR_planes
     # detach_LR_planes: False # Default is True
     # Number of random rays to retain from each image.
     # These sampled rays are used for training, and the others are discarded.

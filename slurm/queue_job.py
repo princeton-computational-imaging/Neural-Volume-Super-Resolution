@@ -23,8 +23,8 @@ CONFIG_FILE = "config/planes_E2E.yml"
 # CONFIG_FILE = "config/DTU_E2E.yml"
 
 
-RESUME_TRAINING = 1
-# RESUME_TRAINING = None
+# RESUME_TRAINING = 1
+RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
 

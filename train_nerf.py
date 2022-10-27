@@ -74,6 +74,7 @@ def main():
     if "super_resolution" in cfg:
         SR_experiment = "model" if "model" in cfg.super_resolution.keys() else "refine"
     end2end_training = getattr(cfg.nerf.train,'train_end2end',False)
+    assert end2end_training in ['HR_planes','LR_planes',False]
     rep_model_training = not SR_experiment or end2end_training
     # if SR_experiment:
     if not rep_model_training:
@@ -88,7 +89,7 @@ def main():
                 params = torch.load(f)
                 if '_PlRes' not in cur_scene_name:
                     ds_factor = getattr(LR_model_config.dataset,'downsampling_factor',1)*(2 if hasattr(LR_model_config.dataset,'half_res') else 1)
-                    new_scene_id = get_scene_id(cur_scene_name,ds_factor=ds_factor,
+                    new_scene_id = models.get_scene_id(cur_scene_name,ds_factor=ds_factor,
                         plane_res=(LR_model_config.models.coarse.plane_resolutions,LR_model_config.models.coarse.viewdir_plane_resolution))
                     params['params'] = torch.nn.ParameterDict([(k.replace(cur_scene_name,new_scene_id),v) for k,v in params['params'].items()])
                 torch.save(params,f.replace(cur_scene_name,new_scene_id) if '_PlRes' not in cur_scene_name else f)
@@ -152,7 +153,7 @@ def main():
                     ds_factors.append(conf[0])
                     plane_res.append((conf[1],conf[2] if len(conf)>2 else conf[1]))
                     dir.append(s)
-                    scene_ids.append(get_scene_id(dir[-1],ds_factors[-1],plane_res[-1]))
+                    scene_ids.append(models.get_scene_id(dir[-1],ds_factors[-1],plane_res[-1]))
             return ds_factors,dir,plane_res,scene_ids
         downsampling_factors,train_dirs,plane_resolutions,train_ids = get_scene_configs(cfg.dataset.dir.train)
         val_only_dirs = get_scene_configs(getattr(cfg.dataset.dir,'val',{}))
@@ -168,7 +169,7 @@ def main():
         i_train,i_val = OrderedDict(),OrderedDict()
         font_scale = 4/min(downsampling_factors)
         for basedir,ds_factor,plane_res in zip(tqdm(basedirs,desc='Loading scenes'),downsampling_factors,plane_resolutions):
-            scene_id = get_scene_id(basedir,ds_factor,plane_res)
+            scene_id = models.get_scene_id(basedir,ds_factor,plane_res)
             val_only = scene_id not in train_ids
             # if not rep_model_training:
             #     new_scene_id,original_ds = find_scene_match(existing_scenes=existing_LR_scenes,pattern=ds_factor_extraction_pattern(scene_id))
@@ -207,7 +208,7 @@ def main():
             scene_ids += [scene_id for i in cur_images]
         H, W, focal,ds_factor = hwfDs
     else:
-        dataset = load_DTU.DVRDataset(config=cfg.dataset,scene_id_func=get_scene_id,eval_ratio=0.1,
+        dataset = load_DTU.DVRDataset(config=cfg.dataset,scene_id_func=models.get_scene_id,eval_ratio=0.1,
             existing_scenes2match=existing_LR_scenes,ds_factor_extraction_pattern=ds_factor_extraction_pattern)
         val_only_scene_ids = dataset.val_scene_IDs()
         scene_ids = dataset.per_im_scene_id
@@ -231,6 +232,7 @@ def main():
         i_val,val_only_scene_ids = subsample_dataset(scenes_dict=i_val,max_scenes=cfg.dataset.max_scenes_eval,val_only_scenes=val_only_scene_ids,max_val_only_scenes=cfg.dataset.max_scenes_eval)
     val_ims_per_scene = len(i_val[list(i_val.keys())[0]])
     eval_training_too = not eval_mode
+    available_scenes = list(scenes_set)
     if eval_training_too:
         for id in sorted(scenes_set):
             if id not in i_train:    continue
@@ -238,8 +240,45 @@ def main():
             if id in i_val.keys(): #Avoid evaluating training images for scenes which were discarded for evaluation due to max_scenes_eval
                 i_val[id+'_train'] = [x for i,x in enumerate(i_train[id]) if (i+im_freq//2)%im_freq==0]
     training_scenes = list(i_train.keys())
+    scene_coupler = None
+    if end2end_training:
+        if not rep_model_training:
+            available_scenes = []
+            for conf,scenes in LR_model_config.dataset.dir.train.items():
+                conf=eval(conf)
+                for sc in scenes:
+                    available_scenes.append(models.get_scene_id(sc,conf[0],(conf[1],conf[2] if len(conf)>2 else conf[1])))
+
+        scene_coupler = models.SceneCoupler(available_scenes,planes_res_level=end2end_training,
+            num_planes=getattr(cfg.models.coarse,'num_planes',3)+cfg.nerf.use_viewdirs,training_scenes=training_scenes)
+        if end2end_training=='HR_planes':
+            for sc in scene_coupler.downsample_couples:
+                if sc in training_scenes:
+                    i_val[sc+'_HRplane'] = 1*i_val[sc]
+                    if sc+'_train' in i_val:
+                        i_val[sc+'_HRplane_train'] = 1*i_val[sc+'_train']
+        for sc in scene_coupler.downsample_couples.keys():  
+            if end2end_training=='HR_planes' and sc in training_scenes:
+                scene_id_plane_resolution.pop(scene_coupler.downsample_couples[sc])
+            else:
+                scene_id_plane_resolution.pop(sc)
+            if not load_saved_models:
+                # coords_normalization.pop(sc)
+                coords_normalization[sc] = 1*coords_normalization[scene_coupler.downsample_couples[sc]]
+
     evaluation_sequences = list(i_val.keys())
-    val_strings = ['blind_validation' if id in val_only_scene_ids else 'train_imgs' if '_train' in id else 'validation' for id in evaluation_sequences]
+    val_strings = []
+    for id in evaluation_sequences:
+        bare_id = id.replace('_train','').replace('_HRplane','')
+        tags = []
+        if id in val_only_scene_ids:    tags.append('blind_validation')
+        elif '_train' in id:    tags.append('train_imgs')
+        else:   tags.append('validation')
+        if bare_id in scene_coupler.downsample_couples.values(): tags.append('LR')
+        elif '_HRplane' in id:  tags.append('HRplanes')
+        val_strings.append('_'.join(tags))
+    # val_strings = ['blind_validation' if id in val_only_scene_ids else 'train_imgs' if '_train' in id else 'validation' for id in evaluation_sequences]
+    # val_strings = [s+'_HRplanes' if '_HRplane' in sc else s for s,sc in zip(val_strings,evaluation_sequences)]
     def print_scenes_list(title,scenes):
         print('\n%d %s scenes:'%(len(scenes),title))
         print(scenes)
@@ -256,7 +295,7 @@ def main():
         if not eval_mode:
             writer.add_scalar(name,value,iter)
 
-    def write_image(name,images,text,iter,psnrs=[]):
+    def write_image(name,images,text,iter,psnrs=[],fontscale=font_scale):
         if eval_mode:
             SAVE_IMS_ANYWAY = True
             scene_name = evaluation_sequences[int(text)]
@@ -272,7 +311,7 @@ def main():
                 vid_path = os.path.join(ims_folder_name,'%s_%s_%s.mp4'%(eval_name,scene_name,results_dir.split('/')[-1]))
                 imageio.mimwrite(vid_path, [np.array(255*torch.clamp(im,0,1).cpu()).astype(np.uint8) for im in images], fps = 30, macro_block_size = 8)  # pip install imageio-ffmpeg
         else:
-            writer.add_image(name,arange_ims(images,text,psnrs=psnrs,fontScale=font_scale),iter)
+            writer.add_image(name,arange_ims(images,text,psnrs=psnrs,fontScale=fontscale),iter)
 
 
     # Seed experiment for repeatability
@@ -316,23 +355,6 @@ def main():
         assert not getattr(cfg.models.coarse,'force_planes_consistency',False),"Depricated"
         store_planes = hasattr(cfg.nerf.train,'store_planes')
         if store_planes:    assert not getattr(cfg.nerf.train,'save_GPU_memory',False),'I think this is unnecessary.'
-        available_scenes = list(scenes_set)
-        scene_coupler = None
-        if end2end_training:
-            if not rep_model_training:
-                available_scenes = []
-                for conf,scenes in LR_model_config.dataset.dir.train.items():
-                    conf=eval(conf)
-                    for sc in scenes:
-                        available_scenes.append(get_scene_id(sc,conf[0],(conf[1],conf[2] if len(conf)>2 else conf[1])))
-
-            scene_coupler = SceneCoupler(available_scenes)
-            if end2end_training:
-                for sc in scene_coupler.upsample_couples.values():  
-                    scene_id_plane_resolution.pop(sc)
-                    if not load_saved_models:
-                        coords_normalization.pop(sc)
-
         model_coarse = models.TwoDimPlanesModel(
             use_viewdirs=cfg.nerf.use_viewdirs,
             scene_id_plane_resolution=None if store_planes else scene_id_plane_resolution,
@@ -351,8 +373,8 @@ def main():
             viewdir_proj_combination=getattr(cfg.models.coarse,'viewdir_proj_combination',None),
             num_planes_or_rot_mats=getattr(cfg.models.coarse,'num_planes',3),
             viewdir_mapping=getattr(cfg.nerf,'viewdir_mapping',False),
-            # force_planes_consistency=res_factor,
             scene_coupler=scene_coupler,
+            point_coords_noise=getattr(cfg.nerf.train,'point_coords_noise',0),
         )
         
     else:
@@ -399,8 +421,8 @@ def main():
                     num_planes_or_rot_mats=model_coarse.rot_mats() if getattr(cfg.models.fine,'use_coarse_planes',False) else getattr(cfg.models.fine,'num_planes',3),
                     viewdir_mapping=getattr(cfg.nerf,'viewdir_mapping',False),
                     plane_loss_w=rgetattr(cfg,'super_resolution.plane_loss_w',None),
-                    # force_planes_consistency=res_factor,
                     scene_coupler=scene_coupler,
+                    point_coords_noise=getattr(cfg.nerf.train,'point_coords_noise',0),
                 )
             else:
                 model_fine = getattr(models, cfg.models.fine.type)(
@@ -427,7 +449,7 @@ def main():
         if not eval_mode:   saved_rgb_fine = dict(zip(evaluation_sequences,[{} for i in evaluation_sequences]))
         sf_config = getattr(cfg.super_resolution.model,'scale_factor','linear')
         assert sf_config in ['linear','sqrt','one']
-        assert cfg.super_resolution.get("consistency_loss_w",0)==0 or cfg.super_resolution.get("plane_loss_w",0)==0,'Cannot use both loss terms'
+        # assert cfg.super_resolution.get("consistency_loss_w",0)==0 or cfg.super_resolution.get("plane_loss_w",0)==0,'Cannot use both loss terms'
         if sf_config=='one':
             SR_factor = 1
         elif sf_config=='linear':
@@ -554,7 +576,6 @@ def main():
                 
     assert isinstance(spatial_sampling,bool) or spatial_sampling>=1
     if planes_model and SR_model is not None:
-        # if not getattr(cfg.super_resolution.model,'single_plane',True): assert getattr(cfg.super_resolution,'plane_dropout',0)==0,'Cannot drop separate planes in this case.'
         save_RAM_memory = not store_planes and len(model_coarse.planes_)>=10
         if getattr(cfg.super_resolution,'apply_2_coarse',False):
             model_coarse.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,save_interpolated=not save_RAM_memory,
@@ -595,7 +616,7 @@ def main():
                     cur_scene_name = f.split('/')[-1][len('coarse_'):-4]
                     params = torch.load(f)
                     if '_PlRes' not in cur_scene_name:
-                        new_scene_id = get_scene_id(cur_scene_name,ds_factor=getattr(checkpoint_config.dataset,'downsampling_factor',1),
+                        new_scene_id = models.get_scene_id(cur_scene_name,ds_factor=getattr(checkpoint_config.dataset,'downsampling_factor',1),
                             plane_res=(checkpoint_config.models.coarse.plane_resolutions,checkpoint_config.models.coarse.viewdir_plane_resolution))
                         params['params'] = torch.nn.ParameterDict([(k.replace(cur_scene_name,new_scene_id),v) for k,v in params['params'].items()])
                     torch.save(params,f.replace(cur_scene_name,new_scene_id) if '_PlRes' not in cur_scene_name else f)
@@ -667,7 +688,7 @@ def main():
 
             record_fine = True
             for eval_cycle in range(eval_cycles):
-                coarse_loss,fine_loss,loss,psnr,rgb_coarse,rgb_fine,rgb_SR,target_ray_values,consistency_loss = defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list)
+                coarse_loss,fine_loss,loss,psnr,rgb_coarse,rgb_fine,rgb_SR,target_ray_values,consistency_loss,planes_SR_loss = defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list)
                 for eval_num,img_idx in enumerate(tqdm(img_indecis[eval_cycle],
                     desc='Evaluating '+('scene (%d/%d): %s'%(eval_cycle+1,eval_cycles,evaluation_sequences[eval_cycle]) if eval_mode else 'scenes'))):
                     if eval_mode:
@@ -675,6 +696,8 @@ def main():
                         scene_num = eval_cycle
                     else:
                         scene_num = eval_num
+                    sr_scene = SR_experiment and scene_ids[img_idx] in scene_coupler.downsample_couples and '_HRplane' not in evaluation_sequences[scene_num]
+                    scene_coupler.toggle_used_planes_res(HR='_HRplane' in evaluation_sequences[scene_num])
                     if dataset_type=='synt':
                         img_target = images[img_idx].to(device)
                         pose_target = poses[img_idx, :3, :4].to(device)
@@ -703,7 +726,6 @@ def main():
                         spatial_margin=spatial_margin,
                     )
                     target_ray_values[val_strings[scene_num]].append(img_target[...,:3])
-                    sr_scene = SR_experiment and scene_ids[img_idx] in scene_coupler.downsample_couples
                     if sr_scene:
                         if SR_experiment=="refine" or planes_model:
                             rgb_SR_ = 1*rgb_fine_
@@ -739,6 +761,10 @@ def main():
                         consistency_loss_ = SR_model.return_consistency_loss()
                         if consistency_loss_ is not None:
                             consistency_loss[val_strings[scene_num]].append(consistency_loss_.item())
+                        planes_SR_loss_ = model_fine.return_planes_SR_loss()
+                        if planes_SR_loss_ is not None:
+                            planes_SR_loss[val_strings[scene_num]].append(planes_SR_loss_.item())
+
                     else:
                         coarse_loss[val_strings[scene_num]].append(img2mse(rgb_coarse_[..., :3], img_target[..., :3]).item())
                         fine_loss[val_strings[scene_num]].append(0.0)
@@ -753,18 +779,22 @@ def main():
                         last_scene_eval = img_idx==img_indecis[eval_cycle][-1]
                         if (store_planes and (not eval_mode or last_scene_eval)) or save_RAM_memory:
                             SR_model.clear_SR_planes(all_planes=store_planes)
+                            scene_coupler.downsampled_planes = {}
                 SAVE_COARSE_IMAGES = False
                 cur_val_sets = [val_strings[eval_cycle]] if eval_mode else set(val_strings)
                 for val_set in cur_val_sets:
-                    if SR_experiment:
-                        sr_scene_inds = [i for i,im in enumerate(rgb_SR[val_set]) if im is not None]
+                    sr_scene_inds = [i for i,im in enumerate(rgb_SR[val_set]) if im is not None]
+                    if len(sr_scene_inds)>0: #SR_experiment and '_HRplanes' not in val_set:
                         write_scalar("%s/SR_psnr_gain"%(val_set),
                             np.mean([psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in sr_scene_inds]), iter)
                         write_image(name="%s/rgb_SR"%(val_set),
                             images=[torch.zeros_like(rgb_fine[val_set][i]) if im is None else im for i,im in enumerate(rgb_SR[val_set])],
-                            text=str(val_ind(val_set)),psnrs=psnr[val_set],iter=iter)
+                            text=str(val_ind(val_set)),psnrs=[None if im is None else psnr[val_set][i] for i,im in enumerate(rgb_SR[val_set])],
+                            iter=iter,fontscale=font_scale/scene_coupler.ds_factor if '_LR' in val_set else font_scale)
                         if val_set in consistency_loss:
                             write_scalar("%s/SR_consistency"%(val_set), np.mean(consistency_loss[val_set]), iter)
+                        if val_set in planes_SR_loss:
+                            write_scalar("%s/SR_planes"%(val_set), np.mean(planes_SR_loss[val_set]), iter)
                     write_scalar("%s/fine_loss"%(val_set), np.mean(fine_loss[val_set]), iter)
                     write_scalar("%s/fine_psnr"%(val_set), np.mean([mse2psnr(l) for l in fine_loss[val_set]]), iter)
                     write_scalar("%s/loss"%(val_set), np.mean(loss[val_set]), iter)
@@ -775,13 +805,15 @@ def main():
                         if record_fine:
                             write_scalar("%s/fine_loss"%(val_set), np.mean(fine_loss[val_set]), val_ind(val_set) if not rep_model_training else iter)
                             write_image(name="%s/rgb_fine"%(val_set),images=rgb_fine[val_set],text=str(val_ind(val_set)),
-                                psnrs=[mse2psnr(l) for l in fine_loss[val_set]],iter=val_ind(val_set) if not rep_model_training else iter)
+                                psnrs=[mse2psnr(l) for l in fine_loss[val_set]],iter=val_ind(val_set) if not rep_model_training else iter,
+                                fontscale=font_scale/scene_coupler.ds_factor if '_LR' in val_set else font_scale)
                     if SAVE_COARSE_IMAGES:
                         write_image(name="%s/rgb_coarse"%(val_set),images=rgb_coarse[val_set],text=str(val_ind(val_set)),
-                            psnrs=[mse2psnr(l) for l in coarse_loss[val_set]],iter=iter)
+                            psnrs=[mse2psnr(l) for l in coarse_loss[val_set]],iter=iter,
+                            fontscale=font_scale/scene_coupler.ds_factor if '_LR' in val_set else font_scale)
                     if not eval_mode and val_ind(val_set) not in saved_target_ims[val_set]:
                         write_image(name="%s/img_target"%(val_set),images=target_ray_values[val_set],
-                            text=str(val_ind(val_set)),iter=val_ind(val_set))
+                            text=str(val_ind(val_set)),iter=val_ind(val_set),fontscale=font_scale/scene_coupler.ds_factor if '_LR' in val_set else font_scale)
                         saved_target_ims[val_set].add(val_ind(val_set))
                     if not eval_mode:
                         tqdm.write(
@@ -862,7 +894,12 @@ def main():
         if first_v_batch_iter:
             optimizer.zero_grad()
         if store_planes:    planes_opt.zero_grad()
-        if hasattr(model_fine,'SR_model'): # Handling SR planes dropout
+        if len(scene_coupler.HR_planes)>0 and scene_ids[img_idx] in scene_coupler.downsample_couples:
+            scene_coupler.toggle_used_planes_res(np.random.uniform()>=0.5)
+        if hasattr(model_fine,'SR_model'):
+            if end2end_training:
+                model_fine.assign_LR_planes(scene=scene_ids[img_idx])
+            # Handling SR planes dropout:
             model_fine.SR_planes2drop = [] if np.random.uniform()>=model_fine.SR_plane_dropout\
                  else sorted(list(np.random.choice(range(model_fine.num_density_planes),size=np.random.randint(1,model_fine.num_density_planes),replace=False)))
         else: # Handling representation model planes dropout:
@@ -918,12 +955,13 @@ def main():
         loss.backward()
         new_drawn_scenes = None
         if store_planes:
-            # new_drawn_scenes = planes_opt.step(opt_step=last_v_batch_iter)
-            new_drawn_scenes = planes_opt.step()
+            new_drawn_scenes = planes_opt.step(reload_planes_4_SR=end2end_training)
         if last_v_batch_iter:
             optimizer.step()
             # If training an SR model operating on planes, discarding super-resolved planes after updating the model:
-            if planes_model and SR_experiment=='model': SR_model.clear_SR_planes()
+            if planes_model and SR_experiment=='model':
+                # SR_model.clear_SR_planes(all_planes=end2end_training)
+                scene_coupler.downsampled_planes = {}
         # if SR_experiment!="model" or planes_model:
         if coarse_loss is not None:
             write_scalar("train/coarse_loss", coarse_loss.item(), iter)
@@ -959,7 +997,7 @@ def main():
             evaluation_time = time.time()-start_time
             if store_planes and not eval_mode:
                 if not jump_start_phase or iter==0:
-                    planes_opt.draw_scenes()
+                    planes_opt.draw_scenes(assign_LR_planes=not end2end_training)
                     new_drawn_scenes = planes_opt.cur_scenes
                     if jump_start_phase:    new_drawn_scenes = new_drawn_scenes[:n_jump_start_scenes]
                     available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]

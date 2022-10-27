@@ -46,40 +46,6 @@ class Counter:
             return True
         return False
 
-def get_scene_id(basedir,ds_factor,plane_res):
-    return '%s_DS%d_PlRes%s'%(basedir,ds_factor,'' if plane_res[0] is None else '%d_%d'%(plane_res))
-
-def extract_ds_and_res(scene_name):
-    ds = int(search('(?<=_DS)(\d)+(?=_PlRes)',scene_name).group(0))
-    res = int(search('(?<=_PlRes)(\d)+(?=_)',scene_name).group(0))
-    return ds,res
-
-class SceneCoupler:
-    def __init__(self,scenes_list) -> None:
-        name_pattern = lambda name: name.split('_DS')[0]+'_DS'+'(\d)+_PlRes(\d)+_'+name.split('_')[-1]
-        ds_ratios,res_ratios = [],[]
-        self.upsample_couples,self.downsample_couples = {},{}
-        for sc_num in range(len(scenes_list)):
-            matching_scenes = [sc for sc in [s for i,s in enumerate(scenes_list) if i!=sc_num] if search(name_pattern(scenes_list[sc_num]),sc)]
-            if len(matching_scenes)>0:
-                assert len(matching_scenes)==1
-                org_vals = extract_ds_and_res(scenes_list[sc_num])
-                found_vals = extract_ds_and_res(matching_scenes[0])
-                ds_ratios.append(found_vals[0]/org_vals[0])
-                res_ratios.append(found_vals[1]/org_vals[1])
-                if ds_ratios[-1]>1:
-                    self.upsample_couples[matching_scenes[0]] = scenes_list[sc_num]
-                    self.downsample_couples[scenes_list[sc_num]] = matching_scenes[0]
-                else:
-                    self.downsample_couples[matching_scenes[0]] = scenes_list[sc_num]
-                    self.upsample_couples[scenes_list[sc_num]] = matching_scenes[0]
-
-        self.ds_factor = int(max(1/res_ratios[0],res_ratios[0]))
-        for match_num in range(len(ds_ratios)):
-            assert res_ratios[match_num]==1/ds_ratios[match_num],"I expect to have the downsampling factor match the plane resolution ratio."
-            assert res_ratios[match_num] in [self.ds_factor,1/self.ds_factor],"Not all plane resolution ratios/downsampling factors are the same"
-        
-
 def set_config_defaults(source,target):
     for k in source.keys():
         if k not in target: setattr(target,k,getattr(source,k))
