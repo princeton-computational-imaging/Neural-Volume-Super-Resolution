@@ -375,7 +375,7 @@ def main():
             viewdir_mapping=getattr(cfg.nerf,'viewdir_mapping',False),
             scene_coupler=scene_coupler,
             point_coords_noise=getattr(cfg.nerf.train,'point_coords_noise',0),
-            zero_mean_planes_w=rgetattr(cfg.nerf.train,'zero_mean_planes_w',None),
+            zero_mean_planes_w=getattr(cfg.nerf.train,'zero_mean_planes_w',None),
         )
         
     else:
@@ -424,7 +424,6 @@ def main():
                     plane_loss_w=rgetattr(cfg,'super_resolution.plane_loss_w',None),
                     scene_coupler=scene_coupler,
                     point_coords_noise=getattr(cfg.nerf.train,'point_coords_noise',0),
-                    # zero_mean_planes_w=rgetattr(cfg.nerf.train,'zero_mean_planes_w',None),
                 )
             else:
                 model_fine = getattr(models, cfg.models.fine.type)(

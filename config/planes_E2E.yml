@@ -2,7 +2,7 @@
 experiment:
   # Unique experiment identifier
   # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR
-  id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR
+  id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_PlnLowRank01
   # id: E2E_Synt_Pln12C_Res8Sc25_6Sc100_32_LR100_400_Consist1_detachLR
   # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_Consist1_1
   # Experiment logs will be stored at "logdir"/"id"
@@ -26,10 +26,10 @@ dataset:
   # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
     train:
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','mic','ship']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy']
       8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
+      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','mic','ship']
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy']
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
       # 8,200,32:   ['chair','mic']
@@ -73,7 +73,6 @@ models:
     # Number of layers in the rgb decoder.
     dec_rgb_layers: 8
     # dec_channels: 16 #256
-    # num_plane_channels: 12
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
     # How to combine projections from different planes:
@@ -90,8 +89,10 @@ models:
     skip_connect_every: 3
     # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
     # interp_viewdirs: bilinear #'bilinear','bicubic',None
-    # When training a decoder with both low-res and corresponding high-res scenes, force high-res planes to be consistent with their low-res counterparts:
-    # force_planes_consistency: True
+    #### Plane coniguration: ####
+    # num_plane_channels: 12
+    # Limiting planes' rank by constructing them as a product of two matrices. The following parameter determines the ratio of the rank relative to the full rank:
+    planes_rank_ratio:  0.1
   fine:
     # Name of the torch.nn.Module class that implements the model.
     # type: use_same
@@ -196,6 +197,8 @@ super_resolution:
   # input_normalization:  True
   consistency_loss_w: 0 #1 #0.001
   plane_loss_w:  0 #1
+  # Add Gaussian noise to SR input, with STD relative to the plane's STD:
+  # sr_input_noise: 0.1
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
@@ -207,6 +210,8 @@ super_resolution:
     hidden_size: 256 #128 #256
     # Number of residual blocks (originally 32):
     n_blocks: 32
+    # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
+    # receptive_field_bound:  55
     # scale_factor: sqrt #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
     # single_plane: False

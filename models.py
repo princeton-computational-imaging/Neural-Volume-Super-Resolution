@@ -320,6 +320,7 @@ class TwoDimPlanesModel(nn.Module):
         self.relu = nn.functional.relu
 
         if scene_id_plane_resolution is not None: #If not using the store_panes configuration
+            raise Exception('Depricated')
             if planes is None:
                 self.planes_ = nn.ParameterDict([
                     (get_plane_name(id,d),
@@ -393,9 +394,9 @@ class TwoDimPlanesModel(nn.Module):
         self.SR_plane_dropout = plane_dropout
         self.single_plane_SR = single_plane
         self.skip_SR_ = False
-        assert not set_planes,'Depricated'
         assert not SR_viewdir,'Ceased supporting this option'
-        if set_planes:
+        if set_planes: 
+            raise Exception('Depricated')
             for k,v in self.planes_.items():
                 if not SR_viewdir and get_plane_name(None,self.num_density_planes) in k:  continue
                 self.SR_model.set_LR_plane(v.detach(),id=k,save_interpolated=save_interpolated)
@@ -529,11 +530,6 @@ class TwoDimPlanesModel(nn.Module):
             return torch.cat([pos_planes,viewdir_planes],1)
 
     def forward(self, x):
-        if False:
-            change_maps = [torch.all((self.raw_plane(k)-self.planes_copy[k].cuda()!=0),1).squeeze(0) for k in self.planes_.keys()]
-            import matplotlib.pyplot as plt
-            for i,m in enumerate(change_maps):
-                plt.imsave('Changed%d.png'%(i),m.cpu(),cmap='gray')
         if self.use_viewdirs:
             x = torch.cat([x[...,:3],cart2az_el(x[...,3:])],-1)
         else:
@@ -674,14 +670,12 @@ class PlanesOptimizer(nn.Module):
             available_scenes:list=[],
             ) -> None:
         super(PlanesOptimizer,self).__init__()
-        # self.scenes = list(scene_id_plane_resolution.keys())
         self.scenes = available_scenes
         if training_scenes is None:
             training_scenes = 1*self.scenes
         self.training_scenes = training_scenes
         self.scenes_with_planes = scene_id_plane_resolution.keys()
         assert len(available_scenes)>0
-        # if len(available_scenes)==0:    available_scenes = self.training_scenes
         self.buffer_size = getattr(options,'buffer_size',len(self.training_scenes))
         self.steps_per_buffer,self.steps_since_drawing = options.steps_per_buffer,0
         if self.buffer_size>=len(self.training_scenes):  self.steps_per_buffer = -1
@@ -696,10 +690,8 @@ class PlanesOptimizer(nn.Module):
         self.use_coarse_planes = use_coarse_planes
         self.save_location = save_location
         self.lr = lr
-        # residual_planes = {}
         for model_name,model in zip(['coarse','fine'],[model_coarse,model_fine]):
             self.models[model_name] = model
-            # model.residual_planes_ = residual_planes
             if model_name=='fine' and use_coarse_planes:    continue
             self.planes_per_scene = model.num_density_planes+model.use_viewdirs
             if init_params:
@@ -837,7 +829,6 @@ class PlanesOptimizer(nn.Module):
 
             if not self.optimize:   continue
             if model_name=='coarse' or not self.use_coarse_planes:
-                # params = list(model.planes_.values())
                 params = list(params_dict.values())
                 if self.optimizer is None: # First call to this function:
                     self.optimizer = torch.optim.Adam(params, lr=self.lr)
@@ -889,7 +880,7 @@ class PlanesOptimizer(nn.Module):
 class _Residual_Block(nn.Module): 
     def __init__(self,hidden_size,padding,kernel_size):
         super(_Residual_Block, self).__init__()
-        self.margins = None if padding else 2*(kernel_size//2)
+        self.margins = None if (padding or kernel_size==1) else 2*(kernel_size//2)
         self.conv1 = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=kernel_size, stride=1, padding=padding, bias=False)
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=kernel_size, stride=1, padding=padding, bias=False)
@@ -918,33 +909,49 @@ class EDSR(nn.Module):
         self.scale_factor = scale_factor
         self.plane_interp = plane_interp
         self.n_blocks = n_blocks
+        self.input_noise = getattr(sr_config,'sr_input_noise',0)
         self.single_plane = getattr(sr_config.model,'single_plane',True)
         self.per_channel_sr = getattr(sr_config.model,'per_channel_sr',False)
         if self.per_channel_sr:
             in_channels = out_channels = 1
         PADDING,KERNEL_SIZE = 0,3
-        self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False)
-        self.required_padding,rf_factor = KERNEL_SIZE//2,1
+        # kernel_size = 1*KERNEL_SIZE
+        self.required_padding,rf_factor = 0,1
 
-        self.residual = self.make_layer(_Residual_Block,{'hidden_size':hidden_size,'padding':PADDING,'kernel_size':KERNEL_SIZE}, n_blocks)
-        self.required_padding += rf_factor*2*n_blocks*((KERNEL_SIZE-1)//2)
+        def kernel_size(num_layers=1):
+            if (1+2*(self.required_padding+rf_factor*num_layers*((KERNEL_SIZE-1)//2)))<=getattr(sr_config.model,'receptive_field_bound',np.iinfo(np.int32).max):
+                self.required_padding += rf_factor*num_layers*(KERNEL_SIZE//2)
+                return KERNEL_SIZE
+            else:
+                return 1
 
-        self.conv_mid = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False)
-        self.required_padding += rf_factor*((KERNEL_SIZE-1)//2)
+        # self.required_padding,rf_factor = KERNEL_SIZE//2,1
+        # kernel_size = lambda: KERNEL_SIZE if (1+2*self.required_padding)<=getattr(sr_config.model,'receptive_field_bound',np.iinfo(np.int32).max) else 1
+        self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
+        # self.required_padding,rf_factor = kernel_size()//2,1
+
+        self.residual = nn.Sequential()
+        for _ in range(n_blocks):
+            self.residual.append(_Residual_Block(hidden_size=hidden_size,padding=PADDING,kernel_size=kernel_size(2)))
+        # self.residual = self.make_layer(_Residual_Block,{'hidden_size':hidden_size,'padding':PADDING,'kernel_size':kernel_size()}, n_blocks)
+        # self.required_padding += rf_factor*2*n_blocks*((kernel_size()-1)//2)
+
+        self.conv_mid = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
+        # self.required_padding += rf_factor*((kernel_size()-1)//2)
         assert math.log2(scale_factor)==int(math.log2(scale_factor)),"Supperting only scale factors that are an integer power of 2."
         upscaling_layers = []
         for _ in range(int(math.log2(scale_factor))):
             upscaling_layers += [
-                nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size*4, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False),
+                nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size*4, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False),
                 nn.PixelShuffle(2),
             ]
-            self.required_padding += rf_factor*((KERNEL_SIZE-1)//2)
+            # self.required_padding += rf_factor*((kernel_size()-1)//2)
             rf_factor /= 2
 
         self.upscale = nn.Sequential(*upscaling_layers)
 
-        self.conv_output = nn.Conv2d(in_channels=hidden_size, out_channels=out_channels, kernel_size=KERNEL_SIZE, stride=1, padding=PADDING, bias=False)
-        self.required_padding += rf_factor*((KERNEL_SIZE-1)//2)
+        self.conv_output = nn.Conv2d(in_channels=hidden_size, out_channels=out_channels, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
+        # self.required_padding += rf_factor*((kernel_size()-1)//2)
         self.HR_overpadding = int(self.required_padding*self.scale_factor)
         self.required_padding = int(np.ceil(self.required_padding))
         self.HR_overpadding = self.required_padding*self.scale_factor-self.HR_overpadding
@@ -1022,15 +1029,14 @@ class EDSR(nn.Module):
         else:
             full_plane = True
             plane_roi = torch.tensor([[-1,-1],[1,1]]).type(self.LR_planes[plane_name].type()).cuda()
-        # if full_plane and plane_name in self.SR_planes:
         if plane_name in self.SR_planes:
-            # assert plane_roi is None,'Unsupported yet'
             out = self.SR_planes[plane_name].cuda()
         else:
-            # LR_plane = self.LR_planes[plane_name].detach().cuda()
             LR_plane = self.LR_planes[plane_name].cuda()
             if self.detach_LR_planes:
                 LR_plane = LR_plane.detach()
+            if self.training and self.input_noise>0:
+                LR_plane = LR_plane+torch.normal(mean=0,std=self.input_noise*LR_plane.std(),size=LR_plane.shape).type(LR_plane.type())
             x = 1*LR_plane
             if hasattr(self,'planes_mean_NON_LEARNED'):
                 x = x-self.planes_mean_NON_LEARNED
