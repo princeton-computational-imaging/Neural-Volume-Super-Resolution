@@ -375,6 +375,7 @@ def main():
             viewdir_mapping=getattr(cfg.nerf,'viewdir_mapping',False),
             scene_coupler=scene_coupler,
             point_coords_noise=getattr(cfg.nerf.train,'point_coords_noise',0),
+            zero_mean_planes_w=rgetattr(cfg.nerf.train,'zero_mean_planes_w',None),
         )
         
     else:
@@ -423,6 +424,7 @@ def main():
                     plane_loss_w=rgetattr(cfg,'super_resolution.plane_loss_w',None),
                     scene_coupler=scene_coupler,
                     point_coords_noise=getattr(cfg.nerf.train,'point_coords_noise',0),
+                    # zero_mean_planes_w=rgetattr(cfg.nerf.train,'zero_mean_planes_w',None),
                 )
             else:
                 model_fine = getattr(models, cfg.models.fine.type)(
@@ -449,7 +451,6 @@ def main():
         if not eval_mode:   saved_rgb_fine = dict(zip(evaluation_sequences,[{} for i in evaluation_sequences]))
         sf_config = getattr(cfg.super_resolution.model,'scale_factor','linear')
         assert sf_config in ['linear','sqrt','one']
-        # assert cfg.super_resolution.get("consistency_loss_w",0)==0 or cfg.super_resolution.get("plane_loss_w",0)==0,'Cannot use both loss terms'
         if sf_config=='one':
             SR_factor = 1
         elif sf_config=='linear':
@@ -688,7 +689,8 @@ def main():
 
             record_fine = True
             for eval_cycle in range(eval_cycles):
-                coarse_loss,fine_loss,loss,psnr,rgb_coarse,rgb_fine,rgb_SR,target_ray_values,consistency_loss,planes_SR_loss = defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list)
+                coarse_loss,fine_loss,loss,psnr,rgb_coarse,rgb_fine,rgb_SR,target_ray_values,consistency_loss,planes_SR_loss,zero_mean_planes_loss =\
+                    defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list)
                 for eval_num,img_idx in enumerate(tqdm(img_indecis[eval_cycle],
                     desc='Evaluating '+('scene (%d/%d): %s'%(eval_cycle+1,eval_cycles,evaluation_sequences[eval_cycle]) if eval_mode else 'scenes'))):
                     if eval_mode:
@@ -726,6 +728,9 @@ def main():
                         spatial_margin=spatial_margin,
                     )
                     target_ray_values[val_strings[scene_num]].append(img_target[...,:3])
+                    zero_mean_planes_loss_ = model_coarse.return_zero_mean_planes_loss()
+                    if zero_mean_planes_loss_ is not None:
+                        zero_mean_planes_loss[val_strings[scene_num]].append(zero_mean_planes_loss_.item())
                     if sr_scene:
                         if SR_experiment=="refine" or planes_model:
                             rgb_SR_ = 1*rgb_fine_
@@ -795,6 +800,8 @@ def main():
                             write_scalar("%s/SR_consistency"%(val_set), np.mean(consistency_loss[val_set]), iter)
                         if val_set in planes_SR_loss:
                             write_scalar("%s/SR_planes"%(val_set), np.mean(planes_SR_loss[val_set]), iter)
+                    if val_set in zero_mean_planes_loss:
+                        write_scalar("%s/zero_mean_planes_loss"%(val_set), np.mean(zero_mean_planes_loss[val_set]), iter)
                     write_scalar("%s/fine_loss"%(val_set), np.mean(fine_loss[val_set]), iter)
                     write_scalar("%s/fine_psnr"%(val_set), np.mean([mse2psnr(l) for l in fine_loss[val_set]]), iter)
                     write_scalar("%s/loss"%(val_set), np.mean(loss[val_set]), iter)
@@ -942,15 +949,20 @@ def main():
             psnr = mse2psnr(loss.item())
             write_scalar("train/psnr", psnr, iter)
 
-        if SR_experiment=="model" and planes_model:
-            SR_consistency_loss = SR_model.return_consistency_loss()
-            if SR_consistency_loss is not None:
-                write_scalar("train/inconsistency", SR_consistency_loss.item(), iter)
-                loss += cfg.super_resolution.consistency_loss_w*SR_consistency_loss
-            planes_SR_loss = model_fine.return_planes_SR_loss()
-            if planes_SR_loss is not None:
-                write_scalar("train/planes_SR", planes_SR_loss.item(), iter)
-                loss += cfg.super_resolution.plane_loss_w*planes_SR_loss
+        if planes_model:
+            zero_mean_planes_loss = model_coarse.return_zero_mean_planes_loss()
+            if zero_mean_planes_loss is not None:
+                write_scalar("train/zero_mean_planes_loss", zero_mean_planes_loss.item(), iter)
+                loss += cfg.nerf.train.zero_mean_planes_w*zero_mean_planes_loss
+            if SR_experiment=="model":
+                SR_consistency_loss = SR_model.return_consistency_loss()
+                if SR_consistency_loss is not None:
+                    write_scalar("train/inconsistency", SR_consistency_loss.item(), iter)
+                    loss += cfg.super_resolution.consistency_loss_w*SR_consistency_loss
+                planes_SR_loss = model_fine.return_planes_SR_loss()
+                if planes_SR_loss is not None:
+                    write_scalar("train/planes_SR", planes_SR_loss.item(), iter)
+                    loss += cfg.super_resolution.plane_loss_w*planes_SR_loss
 
         loss.backward()
         new_drawn_scenes = None

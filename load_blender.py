@@ -51,6 +51,7 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
     assert all([s in splits for s in splits2use])
     metas = {}
     for s in splits:
+        if s not in splits2use: continue
         with open(os.path.join(basedir, f"transforms_{s}.json"), "r") as fp:
             metas[s] = json.load(fp)
 
@@ -60,10 +61,15 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
     ds_f_nums = []
     counts = [0]
     for s in splits:
-        meta = metas[s]
-        # if val_only and s=='train':
-        if s not in splits2use:
-            meta["frames"] = []
+        # meta = metas[s]
+        if s in splits2use:
+            meta = metas[s]
+            camera_angle_x = float(meta["camera_angle_x"])
+            focal_over_W = 0.5 / np.tan(0.5 * camera_angle_x)
+            total_split_frames = len(meta["frames"])
+        else:
+            # meta["frames"] = []
+            meta = {"frames":[]}
         imgs = []
         poses = []
         if s=='val':
@@ -74,9 +80,9 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
         # else:
         #     skip = testskip
 
-        camera_angle_x = float(meta["camera_angle_x"])
-        focal_over_W = 0.5 / np.tan(0.5 * camera_angle_x)
-        total_split_frames = len(meta["frames"])
+        # camera_angle_x = float(meta["camera_angle_x"])
+        # focal_over_W = 0.5 / np.tan(0.5 * camera_angle_x)
+        # total_split_frames = len(meta["frames"])
         for f_num,frame in enumerate(meta["frames"][::skip]):
             # if f_num>=2:
             #     print("!!!!!WARNING!!!!!!!")
@@ -90,14 +96,12 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
             if s=="train" and train_im_inds is not None and (f_num not in train_im_inds if isinstance(train_im_inds,list) else f_num>train_im_inds*total_split_frames):
                 per_im_ds_factor = cfg.super_resolution.ds_factor
                 ds_f_nums.append(f_num)
-            # for factor in per_im_ds_factor:
             H.append(img.shape[0])
             W.append(img.shape[1])
             if half_res:
                 per_im_ds_factor *= 2
             H[-1] //= (per_im_ds_factor)
             W[-1] //= (per_im_ds_factor)
-            # resized_img = torch.from_numpy(cv2.resize(img, dsize=(img.shape[1]//per_im_ds_factor, img.shape[0]//per_im_ds_factor), interpolation=cv2.INTER_AREA))
             resized_img = torch.from_numpy(im_resize(img, scale_factor=per_im_ds_factor))
 
             focal.append(focal_over_W*W[-1])
@@ -111,20 +115,15 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
         all_poses.append(poses)
 
     imgs = [im for s in all_imgs for im in s]
-    i_split = [np.arange(counts[i], counts[i + 1]) for i in range(3)]
+    i_split = [np.arange(counts[i], counts[i + 1]) for i in range(len(splits))]
     if len(ds_f_nums)>0:
         i_split[0] = ([i for i in i_split[0] if i not in ds_f_nums],ds_f_nums)
         pose_dists = np.sum((np.stack([all_poses[0][i] for i in i_split[0][0]],0)[:,None,...]-all_poses[1][None,...])**2,axis=(2,3))
         closest_val = np.argmin(pose_dists)%pose_dists.shape[1]
         furthest_val = np.argmax(np.min(pose_dists,0))
         i_split[1] = (i_split[1],{"closest_val":closest_val,"furthest_val":furthest_val})
-    # imgs = np.concatenate(all_imgs, 0)
+
     poses = np.concatenate(all_poses, 0)
-
-    # H, W = imgs[0].shape[:2]
-    # camera_angle_x = float(meta["camera_angle_x"])
-    # focal = 0.5 * W / np.tan(0.5 * camera_angle_x)
-
     render_poses = torch.stack(
         [
             torch.from_numpy(pose_spherical(angle, -30.0, 4.0))

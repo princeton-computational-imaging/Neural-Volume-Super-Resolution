@@ -23,7 +23,7 @@ CONFIG_FILE = "config/planes_E2E.yml"
 # CONFIG_FILE = "config/DTU_E2E.yml"
 
 
-# RESUME_TRAINING = 1
+# RESUME_TRAINING = 0
 RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
@@ -111,9 +111,9 @@ for run_num in range(len(PARAM2SWEEP[1])):
 
         if sweep_jobs:
             rsetattr(cfg, '.'.join(PARAM2SWEEP[0]), PARAM2SWEEP[1][run_num])
-        setattr(cfg.experiment, 'id',job_identifier)
-        with open(os.path.join(code_folder,config_filename), "w") as f:
-            f.write(cfg.dump())  # cfg, f, default_flow_style=False)
+    setattr(cfg.experiment, 'id',job_identifier)
+    with open(os.path.join(code_folder,config_filename), "w") as f:
+        f.write(cfg.dump())  # cfg, f, default_flow_style=False)
 
     python_command = "python train_nerf.py --config %s"%(config_filename)
     if RESUME_TRAINING is not None:

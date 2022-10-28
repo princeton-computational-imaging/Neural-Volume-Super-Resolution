@@ -1,7 +1,8 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: E2E_Synt_Dec4L16C_Res8Sc200_6Sc800_32_LR100_400_Consist1_detachLR
+  # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR
+  id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR
   # id: E2E_Synt_Pln12C_Res8Sc25_6Sc100_32_LR100_400_Consist1_detachLR
   # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_Consist1_1
   # Experiment logs will be stored at "logdir"/"id"
@@ -25,19 +26,18 @@ dataset:
   # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
     train:
+      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','mic','ship']
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy']
+      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
-      8,200,32:   ['chair','mic']
-      2,800,32:   ['chair']
-      # 8,25,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,100,32:   ['chair','drums','ficus','hotdog','lego','materials']
-      # 8,25,32:   ['chair','mic']
-      # 2,100,32:   ['chair']
+      # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
+      # 8,200,32:   ['chair','mic']
+      # 2,800,32:   ['chair']
     val:
-      # 2,800,32:   ['mic','ship']
-      2,800,32:   ['mic']
-      # 2,100,32:   ['mic','ship']
-      # 2,100,32:   ['mic']
+      2,800,32:   ['mic','ship']
+      # 2,800,32:   ['mic']
+      # 2,800,32: ['chair','drums',]
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -69,10 +69,10 @@ models:
     # Planes interpolation method (default to bilinear):
     plane_interp: bilinear # bicubic # bilinear
     # Number of layers in the density decoder.
-    dec_density_layers: 4 #8
+    dec_density_layers: 8
     # Number of layers in the rgb decoder.
-    dec_rgb_layers: 4 #8
-    dec_channels: 16 #256
+    dec_rgb_layers: 8
+    # dec_channels: 16 #256
     # num_plane_channels: 12
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
@@ -126,6 +126,9 @@ nerf:
   train:
     # End-to-end training of representation and SR models
     train_end2end:  LR_planes # HR_planes #LR_planes
+    # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
+    # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
+    #  since HR images are not available for their training) (default: True):
     # detach_LR_planes: False
     # # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
     # spatial_sampling: 1.
@@ -151,6 +154,8 @@ nerf:
     white_background: False
     # Add Gaussian noise to points coordinates before projecting them to planes:
     # point_coords_noise: 0.1
+    # Encourage per-channel 0 mean on the planes. This is meant to replace input normalization for SR in the end-2-end training scheme.
+    zero_mean_planes_w: 0 #1
     # Standard deviation of noise to be added to the radiance field when
     # performing volume rendering.
     radiance_field_noise_std: 0.2
@@ -189,7 +194,7 @@ super_resolution:
   # Super-resolve view-directions plane as well, or only positional planes:
   SR_viewdir: False
   # input_normalization:  True
-  consistency_loss_w: 1 #0.001
+  consistency_loss_w: 0 #1 #0.001
   plane_loss_w:  0 #1
   # rendering_loss: 0
   # plane_dropout:  0.5

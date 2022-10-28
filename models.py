@@ -248,6 +248,7 @@ class TwoDimPlanesModel(nn.Module):
         plane_loss_w=None,
         scene_coupler=None,
         point_coords_noise=0,
+        zero_mean_planes_w=None,
     ):
         self.num_density_planes = num_planes_or_rot_mats if isinstance(num_planes_or_rot_mats,int) else len(num_planes_or_rot_mats)
         # self.PLANES_2_INFER = [self.num_density_planes]
@@ -284,6 +285,9 @@ class TwoDimPlanesModel(nn.Module):
             else:
                 assert self.plane_loss_w==0,'Cannot penalize for plane differences when using HR planes'
                 self.plane_loss_w = None
+        self.zero_mean_planes_w = zero_mean_planes_w
+        if self.zero_mean_planes_w is not None:
+            self.zero_mean_planes_loss = {}
 
         # Density (alpha) decoder:
         self.density_dec = nn.ModuleList()
@@ -358,6 +362,8 @@ class TwoDimPlanesModel(nn.Module):
             )
 
     def raw_plane(self,plane_name,downsample=False):
+        if self.zero_mean_planes_w is not None and self.scene_coupler.plane2saved[plane_name] not in self.zero_mean_planes_loss:
+            self.zero_mean_planes_loss[self.scene_coupler.plane2saved[plane_name]] = torch.mean(self.planes_[plane_name],(2,3)).abs().mean()
         if downsample:
             if plane_name not in self.scene_coupler.downsampled_planes:
                 self.scene_coupler.downsampled_planes[plane_name] =\
@@ -590,6 +596,13 @@ class TwoDimPlanesModel(nn.Module):
                 LR_plane = v 
             if self.SR_model.detach_LR_planes: LR_plane = LR_plane.detach()
             self.SR_model.set_LR_plane(LR_plane,id=k,save_interpolated=False)
+
+    def return_zero_mean_planes_loss(self):
+        loss = None
+        if self.zero_mean_planes_w is not None and len(self.zero_mean_planes_loss)>0:
+            loss = torch.mean(torch.stack(list(self.zero_mean_planes_loss.values())))
+            self.zero_mean_planes_loss = {}
+        return loss
 
 
 def create_plane(resolution,num_plane_channels,init_STD):
@@ -893,9 +906,7 @@ class _Residual_Block(nn.Module):
         return output 
 
 class EDSR(nn.Module):
-    def __init__(self,scale_factor,in_channels,out_channels,sr_config,plane_interp,detach_LR_planes,
-            # hidden_size,n_blocks=32,input_normalization=False,consistency_loss_w:float=None
-        ):
+    def __init__(self,scale_factor,in_channels,out_channels,sr_config,plane_interp,detach_LR_planes):
         super(EDSR, self).__init__()
 
         hidden_size = sr_config.model.hidden_size
