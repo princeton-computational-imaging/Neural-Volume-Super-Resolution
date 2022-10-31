@@ -2,8 +2,8 @@
 experiment:
   # Unique experiment identifier
   # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR
-  id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_PlnLowRank01
-  # id: E2E_Synt_Pln12C_Res8Sc25_6Sc100_32_LR100_400_Consist1_detachLR
+  id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_SepDecSRtraining
+  # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR
   # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_Consist1_1
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
@@ -26,17 +26,17 @@ dataset:
   # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
     train:
-      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
+      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','mic','ship']
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy']
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
-      # 8,200,32:   ['chair','mic']
-      # 2,800,32:   ['chair']
+      8,200,32:   ['chair','mic']
+      2,800,32:   ['chair']
     val:
-      2,800,32:   ['mic','ship']
-      # 2,800,32:   ['mic']
+      # 2,800,32:   ['mic','ship']
+      2,800,32:   ['mic']
       # 2,800,32: ['chair','drums',]
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
@@ -72,7 +72,7 @@ models:
     dec_density_layers: 8
     # Number of layers in the rgb decoder.
     dec_rgb_layers: 8
-    # dec_channels: 16 #256
+    # dec_channels: 256
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
     # How to combine projections from different planes:
@@ -90,9 +90,9 @@ models:
     # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
     # interp_viewdirs: bilinear #'bilinear','bicubic',None
     #### Plane coniguration: ####
-    # num_plane_channels: 12
+    # num_plane_channels: 6
     # Limiting planes' rank by constructing them as a product of two matrices. The following parameter determines the ratio of the rank relative to the full rank:
-    planes_rank_ratio:  0.1
+    # planes_rank_ratio:  0.005
   fine:
     # Name of the torch.nn.Module class that implements the model.
     # type: use_same
@@ -127,6 +127,10 @@ nerf:
   train:
     # End-to-end training of representation and SR models
     train_end2end:  LR_planes # HR_planes #LR_planes
+    # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes
+    # sr_val_scenes_with_LR:  True
+    # In the end-2-end training, learn decoder and sr model separately by not performing decoder steps during SR iterations
+    separate_decoder_sr:  True
     # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
     # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
     #  since HR images are not available for their training) (default: True):

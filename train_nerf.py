@@ -2,7 +2,7 @@ import argparse
 import glob
 import os
 import time
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict,deque
 import numpy as np
 import torch
 # import yaml
@@ -144,9 +144,21 @@ def main():
     if getattr(cfg.nerf.train,'plane_dropout',0)>0: assert cfg.models.coarse.proj_combination=='avg' and cfg.models.coarse.num_planes>3
 
     ds_factor_extraction_pattern = lambda name: '(?<='+name.split('_DS')[0]+'_DS'+')(\d)+(?=_PlRes'+name.split('_PlRes')[1]+')'
+    sr_val_scenes_with_LR = getattr(cfg.nerf.train,'sr_val_scenes_with_LR',False)
     if dataset_type=='synt':
-        def get_scene_configs(config_dict):
+        def get_scene_configs(config_dict,add_val_scene_LR=False):
             ds_factors,dir,plane_res,scene_ids = [],[],[],[]
+            config_dict = dict(config_dict)
+            if add_val_scene_LR:
+                assert len(config_dict)==2
+                conf_HR_planes,conf_LR_planes = config_dict.keys()
+                if len(config_dict[conf_HR_planes])>len(config_dict[conf_LR_planes]):
+                    conf_HR_planes,conf_LR_planes = conf_LR_planes,conf_HR_planes
+                # conf_HR_planes,conf_LR_planes = eval(conf_HR_planes),eval(conf_LR_planes)
+                assert conf_HR_planes.split(',')[2]==conf_LR_planes.split(',')[2]
+                config_dict.update({','.join([conf_LR_planes.split(',')[0],conf_HR_planes.split(',')[1],conf_LR_planes.split(',')[2]]):
+                    [sc for sc in config_dict[conf_LR_planes] if sc not in config_dict[conf_HR_planes]]})
+
             for conf,scenes in config_dict.items():
                 conf = eval(conf)
                 for s in scenes:
@@ -155,7 +167,8 @@ def main():
                     dir.append(s)
                     scene_ids.append(models.get_scene_id(dir[-1],ds_factors[-1],plane_res[-1]))
             return ds_factors,dir,plane_res,scene_ids
-        downsampling_factors,train_dirs,plane_resolutions,train_ids = get_scene_configs(cfg.dataset.dir.train)
+
+        downsampling_factors,train_dirs,plane_resolutions,train_ids = get_scene_configs(cfg.dataset.dir.train,add_val_scene_LR=sr_val_scenes_with_LR)
         val_only_dirs = get_scene_configs(getattr(cfg.dataset.dir,'val',{}))
         downsampling_factors += val_only_dirs[0]
         plane_resolutions += val_only_dirs[2]
@@ -208,6 +221,7 @@ def main():
             scene_ids += [scene_id for i in cur_images]
         H, W, focal,ds_factor = hwfDs
     else:
+        assert not sr_val_scenes_with_LR
         dataset = load_DTU.DVRDataset(config=cfg.dataset,scene_id_func=models.get_scene_id,eval_ratio=0.1,
             existing_scenes2match=existing_LR_scenes,ds_factor_extraction_pattern=ds_factor_extraction_pattern)
         val_only_scene_ids = dataset.val_scene_IDs()
@@ -263,7 +277,6 @@ def main():
             else:
                 scene_id_plane_resolution.pop(sc)
             if not load_saved_models:
-                # coords_normalization.pop(sc)
                 coords_normalization[sc] = 1*coords_normalization[scene_coupler.downsample_couples[sc]]
 
     evaluation_sequences = list(i_val.keys())
@@ -275,10 +288,9 @@ def main():
         elif '_train' in id:    tags.append('train_imgs')
         else:   tags.append('validation')
         if bare_id in scene_coupler.downsample_couples.values(): tags.append('LR')
+        elif bare_id in scene_coupler.HR_planes_LR_ims_scenes:  tags.append('downscaled')
         elif '_HRplane' in id:  tags.append('HRplanes')
         val_strings.append('_'.join(tags))
-    # val_strings = ['blind_validation' if id in val_only_scene_ids else 'train_imgs' if '_train' in id else 'validation' for id in evaluation_sequences]
-    # val_strings = [s+'_HRplanes' if '_HRplane' in sc else s for s,sc in zip(val_strings,evaluation_sequences)]
     def print_scenes_list(title,scenes):
         print('\n%d %s scenes:'%(len(scenes),title))
         print(scenes)
@@ -291,9 +303,15 @@ def main():
     assert all([val_ims_per_scene==len(i_val[id]) for id in evaluation_sequences]),'Assuming all scenes have the same number of evaluation images'
     i_train = [i for s in i_train.values() for i in s]
 
-    def write_scalar(name,value,iter):
+    running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','zero_mean_planes_loss','fine_loss','fine_psnr','loss','coarse_loss','inconsistency']
+    running_scores = dict([(score,dict([(cat,deque(maxlen=val_ims_per_scene)) for cat in list(set(val_strings))+['train']])) for score in running_mean_logs])
+
+    def write_scalar(name,new_value,iter):
+        RUNNING_MEAN = True
         if not eval_mode:
-            writer.add_scalar(name,value,iter)
+            val_set,metric = name.split('/')
+            running_scores[metric][val_set].append(new_value)
+            writer.add_scalar(name,np.mean(running_scores[metric][val_set]) if RUNNING_MEAN else new_value,iter)
 
     def write_image(name,images,text,iter,psnrs=[],fontscale=font_scale):
         if eval_mode:
@@ -436,7 +454,6 @@ def main():
             print("Fine model: %d parameters"%num_parameters(model_fine))
             model_fine.to(device)
 
-
     if planes_model and getattr(cfg.nerf.train,'save_GPU_memory',False):
         model_coarse.planes2cpu()
         model_fine.planes2cpu()
@@ -498,7 +515,6 @@ def main():
         optimizer = getattr(torch.optim, cfg.optimizer.type)(
             trainable_parameters, lr=cfg.optimizer.lr
         )
-
     # Load an existing checkpoint, if a path is specified.
     start_i,eval_counter = 0,0
     models2save = (['representation'] if rep_model_training else [])+(['SR'] if SR_experiment=='model' else [])
@@ -563,16 +579,16 @@ def main():
 
     spatial_padding_size = SR_model.receptive_field//2 if isinstance(SR_model,models.Conv3D) else 0
     spatial_sampling = spatial_padding_size>0 or cfg.nerf.train.get("spatial_sampling",False)
-    if spatial_padding_size>0 or spatial_sampling:
+    if spatial_padding_size>0 or spatial_sampling or sr_val_scenes_with_LR:
         SAMPLE_PATCH_BY_CONTENT = True
         patch_size = chunksize_to_2D(cfg.nerf.train.num_random_rays)
-        patch_size = int(np.ceil(spatial_sampling*patch_size))
+        optional_size_divider = scene_coupler.ds_factor if sr_val_scenes_with_LR else 1
         if SAMPLE_PATCH_BY_CONTENT:
             assert getattr(cfg.nerf.train,'spatial_patch_sampling','background_est') in ['background_est','STD']
             if getattr(cfg.nerf.train,'spatial_patch_sampling','background_est')=='STD':
-                im_2_sampling_dist = image_STD_2_distribution(patch_size=patch_size)
+                im_2_sampling_dist = image_STD_2_distribution(patch_size=patch_size//optional_size_divider)
             else:
-                im_2_sampling_dist = estimated_background_2_distribution(patch_size=patch_size)
+                im_2_sampling_dist = estimated_background_2_distribution(patch_size=patch_size//optional_size_divider)
                 
     assert isinstance(spatial_sampling,bool) or spatial_sampling>=1
     if planes_model and SR_model is not None:
@@ -650,7 +666,7 @@ def main():
             coords_normalization=None if load_saved_models else coords_normalization,
             do_when_reshuffling=lambda:scenes_cycle_counter.step(print_str='Number of scene cycles performed: '),
             STD_factor=getattr(cfg.nerf.train,'STD_factor',0.1),
-            available_scenes=available_scenes,
+            available_scenes=available_scenes,planes_rank_ratio=getattr(cfg.models.coarse,'planes_rank_ratio',None),
         )
 
     if planes_model:    assert not (hasattr(cfg.models.coarse,'plane_resolutions') or hasattr(cfg.models.coarse,'viewdir_plane_resolution')),'Depricated.'
@@ -665,6 +681,9 @@ def main():
     else:
         spatial_margin = 0
     virtual_batch_size = getattr(cfg.nerf.train,'virtual_batch_size',1)
+    if sr_val_scenes_with_LR:
+        def downsample_rendered_pixels(pixels):
+            return model_fine.downsample_plane(pixels.permute(1,0).reshape([1,3,patch_size,patch_size])).reshape([3,-1]).permute(1,0)
 
     def evaluate():
         tqdm.write("[VAL] =======> Iter: " + str(iter))
@@ -698,6 +717,7 @@ def main():
                     else:
                         scene_num = eval_num
                     sr_scene = SR_experiment and scene_ids[img_idx] in scene_coupler.downsample_couples and '_HRplane' not in evaluation_sequences[scene_num]
+                    HR_plane_LR_im = scene_ids[img_idx] in scene_coupler.HR_planes_LR_ims_scenes
                     scene_coupler.toggle_used_planes_res(HR='_HRplane' in evaluation_sequences[scene_num])
                     if dataset_type=='synt':
                         img_target = images[img_idx].to(device)
@@ -705,6 +725,10 @@ def main():
                         cur_H,cur_W,cur_focal,cur_ds_factor = H[img_idx], W[img_idx], focal[img_idx],ds_factor[img_idx]
                     else:
                         img_target,pose_target,cur_H,cur_W,cur_focal,cur_ds_factor = dataset.item(img_idx,device)
+                    if HR_plane_LR_im:
+                        cur_H *= scene_coupler.ds_factor
+                        cur_W *= scene_coupler.ds_factor
+                        cur_focal *= scene_coupler.ds_factor
                     ray_origins, ray_directions = get_ray_bundle(
                         cur_H, cur_W, cur_focal, pose_target,padding_size=spatial_padding_size,downsampling_offset=downsampling_offset(cur_ds_factor),
                     )
@@ -733,6 +757,8 @@ def main():
                     if sr_scene:
                         if SR_experiment=="refine" or planes_model:
                             rgb_SR_ = 1*rgb_fine_
+                            if HR_plane_LR_im:
+                                rgb_SR_ = model_fine.downsample_plane(rgb_SR_.permute(2,0,1).unsqueeze(0)).squeeze(0).permute(1,2,0)
                             rgb_SR_coarse_ = 1*rgb_coarse_
                             if eval_mode or val_ind(val_strings[scene_num]) not in saved_rgb_fine[evaluation_sequences[scene_num]]:
                                 record_fine = True
@@ -760,6 +786,9 @@ def main():
                             else:
                                 record_fine = False
                                 rgb_fine_ = 1*saved_rgb_fine[evaluation_sequences[scene_num]][val_ind(val_strings[scene_num])]
+                            if HR_plane_LR_im:
+                                rgb_fine_ = model_fine.downsample_plane(rgb_fine_.permute(2,0,1).unsqueeze(0)).squeeze(0).permute(1,2,0)
+
                         fine_loss[val_strings[scene_num]].append(img2mse(rgb_fine_[..., :3], img_target[..., :3]).item())
                         loss[val_strings[scene_num]].append(img2mse(rgb_SR_[..., :3], img_target[..., :3]).item())
                         consistency_loss_ = SR_model.return_consistency_loss()
@@ -783,25 +812,26 @@ def main():
                         last_scene_eval = img_idx==img_indecis[eval_cycle][-1]
                         if (store_planes and (not eval_mode or last_scene_eval)) or save_RAM_memory:
                             SR_model.clear_SR_planes(all_planes=store_planes)
+                            planes_opt.generated_planes.clear()
                             scene_coupler.downsampled_planes = {}
                 SAVE_COARSE_IMAGES = False
                 cur_val_sets = [val_strings[eval_cycle]] if eval_mode else set(val_strings)
                 for val_set in cur_val_sets:
                     sr_scene_inds = [i for i,im in enumerate(rgb_SR[val_set]) if im is not None]
                     if len(sr_scene_inds)>0: #SR_experiment and '_HRplanes' not in val_set:
-                        write_scalar("%s/SR_psnr_gain"%(val_set),
-                            np.mean([psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in sr_scene_inds]), iter)
+                        SR_psnr_gain = np.mean([psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in sr_scene_inds])
+                        write_scalar("%s/SR_psnr_gain"%(val_set),SR_psnr_gain,iter)
                         write_image(name="%s/rgb_SR"%(val_set),
                             images=[torch.zeros_like(rgb_fine[val_set][i]) if im is None else im for i,im in enumerate(rgb_SR[val_set])],
                             text=str(val_ind(val_set)),psnrs=[None if im is None else psnr[val_set][i] for i,im in enumerate(rgb_SR[val_set])],
-                            iter=iter,fontscale=font_scale/scene_coupler.ds_factor if '_LR' in val_set else font_scale)
+                            iter=iter,fontscale=font_scale/scene_coupler.ds_factor if ('_LR' in val_set or '_downscaled' in val_set) else font_scale)
                         if val_set in consistency_loss:
-                            write_scalar("%s/SR_consistency"%(val_set), np.mean(consistency_loss[val_set]), iter)
+                            write_scalar("%s/inconsistency"%(val_set), np.mean(consistency_loss[val_set]), iter)
                         if val_set in planes_SR_loss:
-                            write_scalar("%s/SR_planes"%(val_set), np.mean(planes_SR_loss[val_set]), iter)
+                            write_scalar("%s/planes_SR"%(val_set), np.mean(planes_SR_loss[val_set]), iter)
                     if val_set in zero_mean_planes_loss:
                         write_scalar("%s/zero_mean_planes_loss"%(val_set), np.mean(zero_mean_planes_loss[val_set]), iter)
-                    write_scalar("%s/fine_loss"%(val_set), np.mean(fine_loss[val_set]), iter)
+                    # write_scalar("%s/fine_loss"%(val_set), np.mean(fine_loss[val_set]), iter)
                     write_scalar("%s/fine_psnr"%(val_set), np.mean([mse2psnr(l) for l in fine_loss[val_set]]), iter)
                     write_scalar("%s/loss"%(val_set), np.mean(loss[val_set]), iter)
                     write_scalar("%s/psnr"%(val_set), np.mean(psnr[val_set]), iter)
@@ -812,14 +842,14 @@ def main():
                             write_scalar("%s/fine_loss"%(val_set), np.mean(fine_loss[val_set]), val_ind(val_set) if not rep_model_training else iter)
                             write_image(name="%s/rgb_fine"%(val_set),images=rgb_fine[val_set],text=str(val_ind(val_set)),
                                 psnrs=[mse2psnr(l) for l in fine_loss[val_set]],iter=val_ind(val_set) if not rep_model_training else iter,
-                                fontscale=font_scale/scene_coupler.ds_factor if '_LR' in val_set else font_scale)
+                                fontscale=font_scale/scene_coupler.ds_factor if ('_LR' in val_set or '_downscaled' in val_set) else font_scale)
                     if SAVE_COARSE_IMAGES:
                         write_image(name="%s/rgb_coarse"%(val_set),images=rgb_coarse[val_set],text=str(val_ind(val_set)),
                             psnrs=[mse2psnr(l) for l in coarse_loss[val_set]],iter=iter,
-                            fontscale=font_scale/scene_coupler.ds_factor if '_LR' in val_set else font_scale)
+                            fontscale=font_scale/scene_coupler.ds_factor if ('_LR' in val_set or '_downscaled' in val_set) else font_scale)
                     if not eval_mode and val_ind(val_set) not in saved_target_ims[val_set]:
                         write_image(name="%s/img_target"%(val_set),images=target_ray_values[val_set],
-                            text=str(val_ind(val_set)),iter=val_ind(val_set),fontscale=font_scale/scene_coupler.ds_factor if '_LR' in val_set else font_scale)
+                            text=str(val_ind(val_set)),iter=val_ind(val_set),fontscale=font_scale/scene_coupler.ds_factor if ('_LR' in val_set or '_downscaled' in val_set) else font_scale)
                         saved_target_ims[val_set].add(val_ind(val_set))
                     if not eval_mode:
                         tqdm.write(
@@ -852,20 +882,25 @@ def main():
             img_idx = np.random.choice(available_train_inds)
         else:
             img_idx = np.random.choice(i_train)
-
+        cur_scene_id = scene_ids[img_idx]
+        sr_iter = cur_scene_id in scene_coupler.downsample_couples
+        HR_plane_LR_im = cur_scene_id in scene_coupler.HR_planes_LR_ims_scenes
         if dataset_type=='synt':
             img_target = images[img_idx].to(device)
             pose_target = poses[img_idx, :3, :4].to(device)
             cur_H,cur_W,cur_focal,cur_ds_factor = H[img_idx], W[img_idx], focal[img_idx],ds_factor[img_idx]
         else:
             img_target,pose_target,cur_H,cur_W,cur_focal,cur_ds_factor = dataset.item(img_idx,device)
-
+        if HR_plane_LR_im:
+            cur_H *= scene_coupler.ds_factor
+            cur_W *= scene_coupler.ds_factor
+            cur_focal *= scene_coupler.ds_factor
         ray_origins, ray_directions = get_ray_bundle(cur_H, cur_W, cur_focal, pose_target,padding_size=spatial_padding_size,downsampling_offset=downsampling_offset(cur_ds_factor),)
         coords = torch.stack(
             meshgrid_xy(torch.arange(cur_H+2*spatial_padding_size).to(device), torch.arange(cur_W+2*spatial_padding_size).to(device)),
             dim=-1,
         )
-        if spatial_padding_size>0 or spatial_sampling:
+        if spatial_padding_size>0 or spatial_sampling or HR_plane_LR_im:
             if SAMPLE_PATCH_BY_CONTENT:
                 patches_vacancy_dist = im_2_sampling_dist(img_target[...,:3])
                 upper_left_corner = torch.argwhere(torch.rand([])<torch.cumsum(patches_vacancy_dist.reshape([-1]),0))[0].item()
@@ -873,15 +908,18 @@ def main():
             else:
                 upper_left_corner = np.random.uniform(size=[2])*(np.array([cur_H,cur_W])-patch_size)
                 upper_left_corner = np.floor(upper_left_corner).astype(np.int32)
+            cropped_inds =\
+                coords[upper_left_corner[1]:upper_left_corner[1]+patch_size//optional_size_divider,\
+                upper_left_corner[0]:upper_left_corner[0]+patch_size//optional_size_divider]
+            cropped_inds = cropped_inds.reshape([-1,2])
+            if HR_plane_LR_im:
+                upper_left_corner *= scene_coupler.ds_factor
             select_inds = \
                 coords[upper_left_corner[1]:upper_left_corner[1]+patch_size+2*spatial_padding_size,\
                 upper_left_corner[0]:upper_left_corner[0]+patch_size+2*spatial_padding_size]
             select_inds = select_inds.reshape([-1,2])
-            cropped_inds =\
-                coords[upper_left_corner[1]:upper_left_corner[1]+patch_size,\
-                upper_left_corner[0]:upper_left_corner[0]+patch_size]
-            cropped_inds = cropped_inds.reshape([-1,2])
             if spatial_sampling>1:
+                raise Exception('Unsupported')
                 selected_witin_selected = np.sort(np.random.permutation(select_inds.shape[0])[:cfg.nerf.train.num_random_rays])
                 select_inds = select_inds[selected_witin_selected,:]
                 cropped_inds = cropped_inds[selected_witin_selected,:]
@@ -900,11 +938,11 @@ def main():
         if first_v_batch_iter:
             optimizer.zero_grad()
         if store_planes:    planes_opt.zero_grad()
-        if len(scene_coupler.HR_planes)>0 and scene_ids[img_idx] in scene_coupler.downsample_couples:
+        if len(scene_coupler.HR_planes)>0 and cur_scene_id in scene_coupler.downsample_couples:
             scene_coupler.toggle_used_planes_res(np.random.uniform()>=0.5)
         if hasattr(model_fine,'SR_model'):
             if end2end_training:
-                model_fine.assign_LR_planes(scene=scene_ids[img_idx])
+                model_fine.assign_LR_planes(scene=cur_scene_id)
             # Handling SR planes dropout:
             model_fine.SR_planes2drop = [] if np.random.uniform()>=model_fine.SR_plane_dropout\
                  else sorted(list(np.random.choice(range(model_fine.num_density_planes),size=np.random.randint(1,model_fine.num_density_planes),replace=False)))
@@ -925,11 +963,12 @@ def main():
             encode_position_fn=encode_position_fn,
             encode_direction_fn=encode_direction_fn,
             SR_model=None if planes_model else SR_model,
-            ds_factor_or_id=scene_ids[img_idx] if planes_model else ds_factor[img_idx],
+            ds_factor_or_id=cur_scene_id if planes_model else ds_factor[img_idx],
             spatial_margin=spatial_margin,
         )
         target_ray_values = target_s
-
+        if HR_plane_LR_im:
+            rgb_coarse,rgb_fine = downsample_rendered_pixels(rgb_coarse),downsample_rendered_pixels(rgb_fine)
         coarse_loss,fine_loss = None,None
         if sr_rendering_loss_w is not None:
             if rep_model_training or getattr(cfg.super_resolution.training,'loss','both')!='fine':
@@ -966,8 +1005,16 @@ def main():
         loss.backward()
         new_drawn_scenes = None
         if store_planes:
-            new_drawn_scenes = planes_opt.step(reload_planes_4_SR=end2end_training)
+            # new_drawn_scenes = planes_opt.step(reload_planes_4_SR=end2end_training)
+            new_drawn_scenes = planes_opt.step()
         if last_v_batch_iter:
+            if end2end_training and getattr(cfg.nerf.train,'separate_decoder_sr',False):
+                if sr_iter:
+                    optimizer.param_groups[1]['lr'] = 0
+                else:
+                    optimizer.param_groups[1]['lr'] = cfg.optimizer.lr
+
+
             optimizer.step()
             # If training an SR model operating on planes, discarding super-resolved planes after updating the model:
             if planes_model and SR_experiment=='model':
