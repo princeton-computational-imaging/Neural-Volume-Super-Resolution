@@ -264,7 +264,7 @@ def main():
                     available_scenes.append(models.get_scene_id(sc,conf[0],(conf[1],conf[2] if len(conf)>2 else conf[1])))
 
         scene_coupler = models.SceneCoupler(available_scenes,planes_res_level=end2end_training,
-            num_planes=getattr(cfg.models.coarse,'num_planes',3)+cfg.nerf.use_viewdirs,training_scenes=training_scenes)
+            num_pos_planes=getattr(cfg.models.coarse,'num_planes',3),viewdir_plane=cfg.nerf.use_viewdirs,training_scenes=training_scenes)
         if end2end_training=='HR_planes':
             for sc in scene_coupler.downsample_couples:
                 if sc in training_scenes:
@@ -813,7 +813,8 @@ def main():
                         if (store_planes and (not eval_mode or last_scene_eval)) or save_RAM_memory:
                             SR_model.clear_SR_planes(all_planes=store_planes)
                             planes_opt.generated_planes.clear()
-                            scene_coupler.downsampled_planes = {}
+                            planes_opt.downsampled_planes.clear()
+                            # scene_coupler.downsampled_planes = {}
                 SAVE_COARSE_IMAGES = False
                 cur_val_sets = [val_strings[eval_cycle]] if eval_mode else set(val_strings)
                 for val_set in cur_val_sets:
@@ -883,7 +884,10 @@ def main():
         else:
             img_idx = np.random.choice(i_train)
         cur_scene_id = scene_ids[img_idx]
-        sr_iter = cur_scene_id in scene_coupler.downsample_couples
+        hr_planes_iter = len(scene_coupler.HR_planes)>0 and cur_scene_id in scene_coupler.downsample_couples and np.random.uniform()>=0.5
+        # if len(scene_coupler.HR_planes)>0 and cur_scene_id in scene_coupler.downsample_couples:
+        scene_coupler.toggle_used_planes_res(hr_planes_iter)
+        sr_iter = cur_scene_id in scene_coupler.downsample_couples and not hr_planes_iter
         HR_plane_LR_im = cur_scene_id in scene_coupler.HR_planes_LR_ims_scenes
         if dataset_type=='synt':
             img_target = images[img_idx].to(device)
@@ -938,9 +942,7 @@ def main():
         if first_v_batch_iter:
             optimizer.zero_grad()
         if store_planes:    planes_opt.zero_grad()
-        if len(scene_coupler.HR_planes)>0 and cur_scene_id in scene_coupler.downsample_couples:
-            scene_coupler.toggle_used_planes_res(np.random.uniform()>=0.5)
-        if hasattr(model_fine,'SR_model'):
+        if hasattr(model_fine,'SR_model') and sr_iter:
             if end2end_training:
                 model_fine.assign_LR_planes(scene=cur_scene_id)
             # Handling SR planes dropout:
@@ -1017,9 +1019,9 @@ def main():
 
             optimizer.step()
             # If training an SR model operating on planes, discarding super-resolved planes after updating the model:
-            if planes_model and SR_experiment=='model':
-                # SR_model.clear_SR_planes(all_planes=end2end_training)
-                scene_coupler.downsampled_planes = {}
+            # if planes_model and SR_experiment=='model':
+            #     # SR_model.clear_SR_planes(all_planes=end2end_training)
+            #     scene_coupler.downsampled_planes = {}
         # if SR_experiment!="model" or planes_model:
         if coarse_loss is not None:
             write_scalar("train/coarse_loss", coarse_loss.item(), iter)

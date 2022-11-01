@@ -377,12 +377,15 @@ class TwoDimPlanesModel(nn.Module):
             # self.zero_mean_planes_loss[self.scene_coupler.plane2saved[plane_name]] = torch.mean(self.planes_[plane_name],(2,3)).abs().mean()
             self.zero_mean_planes_loss[self.scene_coupler.plane2saved[plane_name]] = torch.mean(plane,(2,3)).abs().mean()
         if downsample:
-            if plane_name not in self.scene_coupler.downsampled_planes:
-                self.scene_coupler.downsampled_planes[plane_name] =\
-                    torch.nn.functional.interpolate(plane,scale_factor=1/self.scene_coupler.ds_factor,mode=self.plane_interp,align_corners=self.align_corners,)
+            # if plane_name not in self.scene_coupler.downsampled_planes:
+            if plane_name not in self.downsampled_planes:
+                # self.scene_coupler.downsampled_planes[plane_name] = self.downsample_plane(plane)
+                self.downsampled_planes[plane_name] = self.downsample_plane(plane)
+                    # torch.nn.functional.interpolate(plane,scale_factor=1/self.scene_coupler.ds_factor,mode=self.plane_interp,align_corners=self.align_corners)
                     # torch.nn.functional.interpolate(self.planes_[plane_name],scale_factor=1/self.scene_coupler.ds_factor,mode=self.plane_interp,align_corners=self.align_corners,)
             # return self.scene_coupler.downsampled_planes[plane_name]
-            plane = self.scene_coupler.downsampled_planes[plane_name]
+            # plane = self.scene_coupler.downsampled_planes[plane_name]
+            plane = self.downsampled_planes[plane_name]
         else:
             if plane_name not in self.planes_ and not hasattr(self,'SR_model'): # Should only happen with the coarse model:
                 raise Exception('No longer expected')
@@ -433,7 +436,8 @@ class TwoDimPlanesModel(nn.Module):
 
     def planes(self,dim_num:int,super_resolve:bool,grid:torch.tensor=None)->torch.tensor:
         plane_name = get_plane_name(self.cur_id,dim_num)
-        downsample_plane = dim_num<self.num_density_planes and self.scene_coupler.should_downsample(plane_name)
+        # downsample_plane = dim_num<self.num_density_planes and self.scene_coupler.should_downsample(plane_name)
+        downsample_plane = self.scene_coupler.should_downsample(plane_name)
         plane_name = self.scene_coupler.scene_with_saved_plane(plane_name,plane_not_scene=True)
         if super_resolve:
             SR_input = plane_name
@@ -711,10 +715,12 @@ class PlanesOptimizer(nn.Module):
         self.lr = lr
         plane_rank_dict = None if planes_rank_ratio is None else dict([(get_plane_name(sc,d),int(np.ceil(planes_rank_ratio*res[0]))) for sc,res in scene_id_plane_resolution.items() for d in range(model_coarse.num_density_planes)])
         self.generated_planes = {}
+        self.downsampled_planes = {}
         for model_name,model in zip(['coarse','fine'],[model_coarse,model_fine]):
             self.models[model_name] = model
             model.plane_rank = plane_rank_dict
             model.generated_planes = self.generated_planes
+            model.downsampled_planes = self.downsampled_planes
             if model_name=='fine' and use_coarse_planes:    continue
             self.planes_per_scene = model.num_density_planes+model.use_viewdirs
             if init_params:
@@ -746,9 +752,10 @@ class PlanesOptimizer(nn.Module):
             scenes_planes_name = scene if scene in self.scenes_with_planes else model.scene_coupler.scene_with_saved_plane(scene)
             if model_name=='coarse' or not self.use_coarse_planes:
                 loaded_params = torch.load(self.param_path(model_name=model_name,scene=scenes_planes_name))
-                model.scene_coupler.downsampled_planes = {}
+                # model.scene_coupler.downsampled_planes = {}
             model.planes_ = loaded_params['params'].cuda()
             self.generated_planes.clear()
+            self.downsampled_planes.clear()
             model.box_coords = {scenes_planes_name:loaded_params['coords_normalization'],scene:loaded_params['coords_normalization']}
             if hasattr(model,'SR_model'):
                 model.SR_model.clear_SR_planes(all_planes=True)
@@ -830,7 +837,7 @@ class PlanesOptimizer(nn.Module):
         for model_name in ['coarse','fine']:
             model = self.models[model_name]
             if model_name=='coarse' or not self.use_coarse_planes:
-                model.scene_coupler.downsampled_planes = {}
+                # model.scene_coupler.downsampled_planes = {}
                 params_dict,optimizer_states,box_coords = nn.ParameterDict(),[],{}
                 already_loaded = []
                 for scene in self.cur_scenes:
@@ -849,6 +856,7 @@ class PlanesOptimizer(nn.Module):
 
             model.planes_ = params_dict.cuda()
             self.generated_planes.clear()
+            self.downsampled_planes.clear()
             self.models[model_name].box_coords = box_coords
             if hasattr(model,'SR_model'):
                 model.SR_model.clear_SR_planes(all_planes=True)
@@ -870,6 +878,7 @@ class PlanesOptimizer(nn.Module):
             self.optimizer.step()
             self.saving_needed = True
             self.generated_planes.clear()
+            self.downsampled_planes.clear()
         self.steps_since_drawing += 1
         if hasattr(self.models['fine'],'SR_model'):
             self.models['fine'].SR_model.clear_SR_planes(all_planes=self.optimize)
@@ -941,6 +950,7 @@ class EDSR(nn.Module):
         self.plane_interp = plane_interp
         self.n_blocks = n_blocks
         self.input_noise = getattr(sr_config,'sr_input_noise',0)
+        self.output_noise = getattr(sr_config,'sr_output_noise',0)
         self.single_plane = getattr(sr_config.model,'single_plane',True)
         self.per_channel_sr = getattr(sr_config.model,'per_channel_sr',False)
         if self.per_channel_sr:
@@ -1067,7 +1077,7 @@ class EDSR(nn.Module):
             if self.detach_LR_planes:
                 LR_plane = LR_plane.detach()
             if self.training and self.input_noise>0:
-                LR_plane = LR_plane+torch.normal(mean=0,std=self.input_noise*LR_plane.std(),size=LR_plane.shape).type(LR_plane.type())
+                LR_plane = torch.add(LR_plane,torch.normal(mean=0,std=self.input_noise*LR_plane.std(),size=LR_plane.shape).type(LR_plane.type()))
             x = 1*LR_plane
             if hasattr(self,'planes_mean_NON_LEARNED'):
                 x = x-self.planes_mean_NON_LEARNED
@@ -1097,6 +1107,8 @@ class EDSR(nn.Module):
             max_index = plane_roi[1]*self.scale_factor
             residual_plane = self.residual_plane(plane_name)
             super_resolved = torch.add(difference,residual_plane[...,min_index[0]:max_index[0],min_index[1]:max_index[1]])
+            if self.training and self.output_noise>0:
+                super_resolved = torch.add(super_resolved,torch.normal(mean=0,std=self.output_noise*difference.detach().std(),size=super_resolved.shape).type(super_resolved.type()))
             out = (torch.ones_like(residual_plane)*float('nan'))
             out[...,min_index[0]:max_index[0],min_index[1]:max_index[1]] = super_resolved
             if full_plane:   
@@ -1134,7 +1146,8 @@ def extract_ds_and_res(scene_name):
     return ds,res
 
 class SceneCoupler:
-    def __init__(self,scenes_list,planes_res_level,num_planes,training_scenes) -> None:
+    def __init__(self,scenes_list,planes_res_level,num_pos_planes,viewdir_plane,training_scenes) -> None:
+        num_planes = num_pos_planes+viewdir_plane
         name_pattern = lambda name: name.split('_DS')[0]+'_DS'+'(\d)+_PlRes(\d)+_'+name.split('_')[-1]
         ds_ratios,res_ratios = [],[]
         self.upsample_couples,self.downsample_couples,self.HR_planes_LR_ims_scenes = {},{},[]
@@ -1169,17 +1182,17 @@ class SceneCoupler:
             assert res_ratios[match_num] in [self.ds_factor,1/self.ds_factor],"Not all plane resolution ratios/downsampling factors are the same"
         self.use_HR_planes = False
         if planes_res_level=='HR_planes':
-            self.downsampled_planes = {}
-            self.HR_planes = [get_plane_name(k,d) for k in self.downsample_couples.keys() for d in range(num_planes)]
+            # self.downsampled_planes = {}
+            self.HR_planes = [get_plane_name(k,d) for k in self.downsample_couples.keys() for d in range(num_pos_planes)]
             self.scene2saved = dict([(sc,self.upsample_couples[sc] if sc in self.upsample_couples else sc if sc in training_scenes else self.downsample_couples[sc])
                 for sc in scenes_list])
             self.upsample_planes = dict([(get_plane_name(lr_scene,d),get_plane_name(hr_scene,d))\
-                for lr_scene,hr_scene in self.upsample_couples.items() if hr_scene in training_scenes for d in range(num_planes)])
+                for lr_scene,hr_scene in self.upsample_couples.items() if hr_scene in training_scenes for d in range(num_pos_planes)])
         else:
             self.HR_planes = []
             self.scene2saved = dict([(sc,self.downsample_couples[sc] if sc in self.downsample_couples else sc) for sc in scenes_list])
             self.downsample_planes = dict([(get_plane_name(hr_scene,d),get_plane_name(lr_scene,d))\
-                for hr_scene,lr_scene in self.downsample_couples.items() for d in range(num_planes)])
+                for hr_scene,lr_scene in self.downsample_couples.items() for d in range(num_pos_planes)])
         self.plane2saved = dict([(get_plane_name(k,d),get_plane_name(v,d)) for k,v in self.scene2saved.items() for d in range(num_planes)])
 
     def toggle_used_planes_res(self,HR):
@@ -1198,12 +1211,12 @@ class SceneCoupler:
 
     def scene_with_saved_plane(self,scene,plane_not_scene=False):
         return getattr(self,('plane' if plane_not_scene else 'scene')+'2saved')[scene]
-        if (not self.HR_planes) and scene in getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples')):
-            return getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples'))[scene]
-        elif self.HR_planes and scene in getattr(self,'upsample_'+('planes' if plane_not_scene else 'couples')):
-            return getattr(self,'upsample_'+('planes' if plane_not_scene else 'couples'))[scene]
-        else:
-            return scene
+        # if (not self.HR_planes) and scene in getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples')):
+        #     return getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples'))[scene]
+        # elif self.HR_planes and scene in getattr(self,'upsample_'+('planes' if plane_not_scene else 'couples')):
+        #     return getattr(self,'upsample_'+('planes' if plane_not_scene else 'couples'))[scene]
+        # else:
+        #     return scene
 
     def should_SR(self,scene,plane_not_scene=False):
         if len(self.HR_planes)>0:
@@ -1216,5 +1229,4 @@ class SceneCoupler:
             return scene in getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples'))
 
     def should_downsample(self,plane_name,for_LR_loading=False):
-        # return self.HR_planes and (not self.use_HR_planes or plane_name in self.upsample_planes)
-        return len(self.HR_planes)>0 and (for_LR_loading or not self.use_HR_planes) and plane_name in self.upsample_planes.values()
+        return len(self.HR_planes)>0 and (for_LR_loading or not self.use_HR_planes) and self.plane2saved[plane_name] in self.HR_planes

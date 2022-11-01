@@ -2,8 +2,8 @@
 experiment:
   # Unique experiment identifier
   # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR
-  id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_SepDecSRtraining
-  # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR
+  # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_SepDecSRtraining_HRplanes_NoiseSRout
+  id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_SepDecSRtraining_HRplanes_NoiseSRout01
   # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_Consist1_1
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
@@ -26,17 +26,17 @@ dataset:
   # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
     train:
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
+      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','mic','ship']
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy']
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
-      8,200,32:   ['chair','mic']
-      2,800,32:   ['chair']
+      # 8,200,32:   ['chair','mic']
+      # 2,800,32:   ['chair']
     val:
-      # 2,800,32:   ['mic','ship']
-      2,800,32:   ['mic']
+      2,800,32:   ['mic','ship']
+      # 2,800,32:   ['mic']
       # 2,800,32: ['chair','drums',]
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
@@ -126,7 +126,7 @@ nerf:
   # encode_direction_fn: None
   train:
     # End-to-end training of representation and SR models
-    train_end2end:  LR_planes # HR_planes #LR_planes
+    train_end2end:  HR_planes # HR_planes #LR_planes
     # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes
     # sr_val_scenes_with_LR:  True
     # In the end-2-end training, learn decoder and sr model separately by not performing decoder steps during SR iterations
@@ -203,6 +203,7 @@ super_resolution:
   plane_loss_w:  0 #1
   # Add Gaussian noise to SR input, with STD relative to the plane's STD:
   # sr_input_noise: 0.1
+  sr_output_noise:  0.1
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic

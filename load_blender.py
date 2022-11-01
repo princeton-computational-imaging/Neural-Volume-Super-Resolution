@@ -61,28 +61,20 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
     ds_f_nums = []
     counts = [0]
     for s in splits:
-        # meta = metas[s]
         if s in splits2use:
             meta = metas[s]
             camera_angle_x = float(meta["camera_angle_x"])
             focal_over_W = 0.5 / np.tan(0.5 * camera_angle_x)
             total_split_frames = len(meta["frames"])
         else:
-            # meta["frames"] = []
             meta = {"frames":[]}
         imgs = []
         poses = []
         if s=='val':
             skip = testskip
         else:
-        # if s == "train" or testskip == 0:
             skip = 1
-        # else:
-        #     skip = testskip
 
-        # camera_angle_x = float(meta["camera_angle_x"])
-        # focal_over_W = 0.5 / np.tan(0.5 * camera_angle_x)
-        # total_split_frames = len(meta["frames"])
         for f_num,frame in enumerate(meta["frames"][::skip]):
             # if f_num>=2:
             #     print("!!!!!WARNING!!!!!!!")
