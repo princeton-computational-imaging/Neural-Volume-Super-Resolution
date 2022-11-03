@@ -1,9 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR6vs2Scenes_32B256C_LR4_planeNorm_ConsistentHRLRDec_lr5e_5_PlnSR005_fishyConsistent #SR2vs1Scenes_16B256C_SFpos # SR_dirs_encoding_L4C256W0001  # SR_xyz_encoding # debug-lego200
-  # id: SR6vs2Scenes_32B256C_LR4_planeNorm_consLoss0001_HRtrainedDec_lr5e_6_DO05
-  # id: SR6vs2Scenes_32B256C_LR4_LR1e_4_NoSpatSamp_planeNorm
+  id: SR6vs2Scenes_32B256C_LR4_planeNorm
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -23,16 +21,21 @@ dataset:
   root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   dir:
     train:
-      2,200,32: ['chair','drums','ficus','hotdog','lego','materials',]
-      # 2,200,32: ['chair']
-    # train: ['chair'] #,'drums','ficus','hotdog','lego','materials','mic','ship']
-    # train: ['chair','drums'] #,'ficus','hotdog','lego','materials',]
-    # train: ['ficus','hotdog'] #,'lego','materials',]
-    # train: lego
+      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
+      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
+      # 8,200,32:   ['chair','mic']
+      # 2,800,32:   ['chair']
+      # 8,200,32:   ['mic','mic#1']
+      # 2,800,32:   ['mic']
     val:
-      2,200,32: ['mic','ship']
-      # 2,200,32: ['mic']
-    # val: mic
+      2,800,32:   ['mic','ship']
+      # 2,800,32:   ['mic']
+      # 2,800,32:   ['mic#1']
+      # 2,800,32: ['chair','drums',]
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -57,7 +60,7 @@ models:
   # HR and LR planes trained with 6 planes:
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400_ModelsCoarseNumplanes6_1
   # HR and LR planes trained consistently:
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400_JumpStart_ConstForcing_3_temp
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_1
 
 # Optimizer params.
 optimizer:
@@ -121,18 +124,15 @@ nerf:
     lindisp: False
 
 super_resolution:
-  # dataset:
-    # Use specific HR training images (by passing image indices):
-    # train_im_inds: [0] # [0,1,2,3,4,5,6,7,8,9] # 0.1 #
+  lr: 5.E-5
   training:
-  #   LR_ims_chance: 0.5
     loss: fine # fine,coarse,both
   apply_2_coarse: False #True # False
   # Super-resolve view-directions plane as well, or only positional planes:
   SR_viewdir: False
   input_normalization:  True
   consistency_loss_w: 0 #0.001
-  plane_loss_w:  0.05 #1
+  plane_loss_w:  0 #1
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic

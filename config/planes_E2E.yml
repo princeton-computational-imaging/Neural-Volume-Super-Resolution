@@ -1,9 +1,9 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR
+  # id: E2E_Synt_Pln12C_Res16Sc200_14Sc800_32_LR100_400_detachLR_SRrecField15noise01_PZerMean1
   # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_SepDecSRtraining_HRplanes_NoiseSRout
-  id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_SepDecSRtraining_HRplanes_NoiseSRout01
+  id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_SR16L32CperChRecField15
   # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_Consist1_1
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
@@ -26,17 +26,20 @@ dataset:
   # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
   dir:
     train:
-      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','mic','ship']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy']
+      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
+      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
       # 8,200,32:   ['chair','mic']
       # 2,800,32:   ['chair']
+      # 8,200,32:   ['mic','mic#1']
+      # 2,800,32:   ['mic']
     val:
       2,800,32:   ['mic','ship']
       # 2,800,32:   ['mic']
+      # 2,800,32:   ['mic#1']
       # 2,800,32: ['chair','drums',]
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
@@ -72,7 +75,7 @@ models:
     dec_density_layers: 8
     # Number of layers in the rgb decoder.
     dec_rgb_layers: 8
-    # dec_channels: 256
+    # dec_channels: 64
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
     # How to combine projections from different planes:
@@ -90,13 +93,14 @@ models:
     # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
     # interp_viewdirs: bilinear #'bilinear','bicubic',None
     #### Plane coniguration: ####
-    # num_plane_channels: 6
+    # num_plane_channels: 12
     # Limiting planes' rank by constructing them as a product of two matrices. The following parameter determines the ratio of the rank relative to the full rank:
     # planes_rank_ratio:  0.005
   fine:
     # Name of the torch.nn.Module class that implements the model.
     # type: use_same
     type: TwoDimPlanesModel
+    # ensemble_size:  2
     # Plane side size:
     # plane_resolutions: 128
     # # Number of layers in the density decoder.
@@ -110,7 +114,7 @@ optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 1.E-3 #5.0E-3
+  lr: 5.E-4 #1.E-3 #5.0E-3
 
 # NeRF parameters.
 nerf:
@@ -126,11 +130,13 @@ nerf:
   # encode_direction_fn: None
   train:
     # End-to-end training of representation and SR models
-    train_end2end:  HR_planes # HR_planes #LR_planes
+    train_end2end:  LR_planes # HR_planes #LR_planes
     # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes
     # sr_val_scenes_with_LR:  True
     # In the end-2-end training, learn decoder and sr model separately by not performing decoder steps during SR iterations
-    separate_decoder_sr:  True
+    # separate_decoder_sr:  True
+    # In the end-2-end training, learn the LR planes corresponding to the validation scenes without affecting the decoder (almost as if learned afterwards.)
+    separate_decoder_val_scenes:  True
     # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
     # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
     #  since HR images are not available for their training) (default: True):
@@ -203,7 +209,7 @@ super_resolution:
   plane_loss_w:  0 #1
   # Add Gaussian noise to SR input, with STD relative to the plane's STD:
   # sr_input_noise: 0.1
-  sr_output_noise:  0.1
+  # sr_output_noise:  1
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
@@ -212,12 +218,12 @@ super_resolution:
     type: EDSR
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
-    hidden_size: 256 #128 #256
+    hidden_size: 32 #256 #128 #256
     # Number of residual blocks (originally 32):
-    n_blocks: 32
+    n_blocks: 16 #32
     # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
-    # receptive_field_bound:  55
+    receptive_field_bound:  15
     # scale_factor: sqrt #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
     # single_plane: False
-    # per_channel_sr: True
+    per_channel_sr: True

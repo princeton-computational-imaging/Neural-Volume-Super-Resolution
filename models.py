@@ -249,6 +249,7 @@ class TwoDimPlanesModel(nn.Module):
         scene_coupler=None,
         point_coords_noise=0,
         zero_mean_planes_w=None,
+        ensemble_size=1,
     ):
         self.num_density_planes = num_planes_or_rot_mats if isinstance(num_planes_or_rot_mats,int) else len(num_planes_or_rot_mats)
         # self.PLANES_2_INFER = [self.num_density_planes]
@@ -290,32 +291,40 @@ class TwoDimPlanesModel(nn.Module):
             self.zero_mean_planes_loss = {}
 
         # Density (alpha) decoder:
-        self.density_dec = nn.ModuleList()
+        self.density_dec = nn.ModuleDict([(str(i),nn.ModuleList()) for i in range(ensemble_size)])
+        # self.density_dec = nn.ModuleList()
         self.debug = {'max_norm':defaultdict(lambda: torch.finfo(torch.float32).min),'min_norm':defaultdict(lambda: torch.finfo(torch.float32).max)}
         in_channels = num_plane_channels*(self.num_density_planes if proj_combination=='concat' else 1)
-        self.density_dec.append(nn.Linear(in_channels,dec_channels))
-        for layer_num in range(dec_density_layers-1):
-            if self.is_skip_layer(layer_num=layer_num):
-                self.density_dec.append(nn.Linear(in_channels + dec_channels, dec_channels))
-            else:
-                self.density_dec.append(nn.Linear(dec_channels,dec_channels))
-        self.fc_alpha = nn.Linear(dec_channels,1)
+        for i in range(ensemble_size):
+            self.density_dec[str(i)].append(nn.Linear(in_channels,dec_channels))
+            for layer_num in range(dec_density_layers-1):
+                if self.is_skip_layer(layer_num=layer_num):
+                    self.density_dec[str(i)].append(nn.Linear(in_channels + dec_channels, dec_channels))
+                else:
+                    self.density_dec[str(i)].append(nn.Linear(dec_channels,dec_channels))
+        self.fc_alpha = nn.ModuleDict([(str(i),nn.Linear(dec_channels,1)) for i in range(ensemble_size)])
         if 'features' in self.rgb_dec_input:
-            self.fc_feat = nn.Linear(dec_channels,num_plane_channels)
+            self.fc_feat = nn.ModuleDict([(str(i),nn.Linear(dec_channels,num_plane_channels)) for i in range(ensemble_size)])
+        # self.fc_alpha = nn.Linear(dec_channels,1)
+        # if 'features' in self.rgb_dec_input:
+        #     self.fc_feat = nn.Linear(dec_channels,num_plane_channels)
 
         # RGB decoder:
-        self.rgb_dec = nn.ModuleList()
+        # self.rgb_dec = nn.ModuleList()
+        self.rgb_dec = nn.ModuleDict([(str(i),nn.ModuleList()) for i in range(ensemble_size)])
         plane_C_mult = 1
         if proj_combination=='concat':  plane_C_mult += self.num_density_planes-1
         if use_viewdirs and viewdir_proj_combination=='concat':  plane_C_mult +=1
 
-        self.rgb_dec.append(nn.Linear(num_plane_channels*plane_C_mult,dec_channels))
-        for layer_num in range(dec_rgb_layers-1):
-            if self.is_skip_layer(layer_num=layer_num):
-                self.rgb_dec.append(nn.Linear(num_plane_channels*plane_C_mult + dec_channels, dec_channels))
-            else:
-                self.rgb_dec.append(nn.Linear(dec_channels,dec_channels))
-        self.fc_rgb = nn.Linear(dec_channels,3)
+        for i in range(ensemble_size):
+            self.rgb_dec[str(i)].append(nn.Linear(num_plane_channels*plane_C_mult,dec_channels))
+            for layer_num in range(dec_rgb_layers-1):
+                if self.is_skip_layer(layer_num=layer_num):
+                    self.rgb_dec[str(i)].append(nn.Linear(num_plane_channels*plane_C_mult + dec_channels, dec_channels))
+                else:
+                    self.rgb_dec[str(i)].append(nn.Linear(dec_channels,dec_channels))
+        # self.fc_rgb = nn.Linear(dec_channels,3)
+        self.fc_rgb = nn.ModuleDict([(str(i),nn.Linear(dec_channels,3)) for i in range(ensemble_size)])
 
         self.relu = nn.functional.relu
 
@@ -374,17 +383,10 @@ class TwoDimPlanesModel(nn.Module):
     def raw_plane(self,plane_name,downsample=False):
         plane = self.gen_plane(plane_name)
         if self.zero_mean_planes_w is not None and self.scene_coupler.plane2saved[plane_name] not in self.zero_mean_planes_loss:
-            # self.zero_mean_planes_loss[self.scene_coupler.plane2saved[plane_name]] = torch.mean(self.planes_[plane_name],(2,3)).abs().mean()
             self.zero_mean_planes_loss[self.scene_coupler.plane2saved[plane_name]] = torch.mean(plane,(2,3)).abs().mean()
         if downsample:
-            # if plane_name not in self.scene_coupler.downsampled_planes:
             if plane_name not in self.downsampled_planes:
-                # self.scene_coupler.downsampled_planes[plane_name] = self.downsample_plane(plane)
                 self.downsampled_planes[plane_name] = self.downsample_plane(plane)
-                    # torch.nn.functional.interpolate(plane,scale_factor=1/self.scene_coupler.ds_factor,mode=self.plane_interp,align_corners=self.align_corners)
-                    # torch.nn.functional.interpolate(self.planes_[plane_name],scale_factor=1/self.scene_coupler.ds_factor,mode=self.plane_interp,align_corners=self.align_corners,)
-            # return self.scene_coupler.downsampled_planes[plane_name]
-            # plane = self.scene_coupler.downsampled_planes[plane_name]
             plane = self.downsampled_planes[plane_name]
         else:
             if plane_name not in self.planes_ and not hasattr(self,'SR_model'): # Should only happen with the coarse model:
@@ -436,7 +438,6 @@ class TwoDimPlanesModel(nn.Module):
 
     def planes(self,dim_num:int,super_resolve:bool,grid:torch.tensor=None)->torch.tensor:
         plane_name = get_plane_name(self.cur_id,dim_num)
-        # downsample_plane = dim_num<self.num_density_planes and self.scene_coupler.should_downsample(plane_name)
         downsample_plane = self.scene_coupler.should_downsample(plane_name)
         plane_name = self.scene_coupler.scene_with_saved_plane(plane_name,plane_not_scene=True)
         if super_resolve:
@@ -557,16 +558,17 @@ class TwoDimPlanesModel(nn.Module):
         if self.use_viewdirs:
             projected_views = self.project_viewdir(x[...,3:])
 
+        model_num = str(np.random.randint(len(self.density_dec))) if self.training else '0'
         # Projecting and summing
         x = 1*projected_xyz
-        for layer_num,l in enumerate(self.density_dec):
+        for layer_num,l in enumerate(self.density_dec[model_num]):
             if self.is_skip_layer(layer_num=layer_num-1):
                 x = torch.cat((x, projected_xyz), dim=-1)
             x = self.relu(l(x))
-        alpha = self.fc_alpha(x)
+        alpha = self.fc_alpha[model_num](x)
 
         if 'features' in self.rgb_dec_input:
-            x_rgb = self.fc_feat(x)
+            x_rgb = self.fc_feat[model_num](x)
 
         if self.rgb_dec_input=='projections_features':
             x_rgb = self.combine_pos_planes([x_rgb,projected_xyz])
@@ -576,17 +578,12 @@ class TwoDimPlanesModel(nn.Module):
         if self.use_viewdirs:
             x_rgb = self.combine_all_planes(pos_planes=x_rgb,viewdir_planes=projected_views)
 
-        if False and self.skip_connect_every is None:
-            for layer_num,l in enumerate(self.rgb_dec):
-                x_rgb = self.relu(l(x_rgb))
-            rgb = self.fc_rgb(x_rgb)
-        else:
-            x = x_rgb
-            for layer_num,l in enumerate(self.rgb_dec):
-                if self.is_skip_layer(layer_num=layer_num-1):
-                    x = torch.cat((x, x_rgb), dim=-1)
-                x = self.relu(l(x))
-            rgb = self.fc_rgb(x)
+        x = x_rgb
+        for layer_num,l in enumerate(self.rgb_dec[model_num]):
+            if self.is_skip_layer(layer_num=layer_num-1):
+                x = torch.cat((x, x_rgb), dim=-1)
+            x = self.relu(l(x))
+        rgb = self.fc_rgb[model_num](x)
 
         return torch.cat((rgb, alpha), dim=-1)
 
@@ -730,7 +727,7 @@ class PlanesOptimizer(nn.Module):
                     params = nn.ParameterDict([
                         (get_plane_name(scene,d),
                             create_plane(res[0] if d<model.num_density_planes else res[1],num_plane_channels=model.num_plane_channels,
-                            init_STD=STD_factor*model.fc_alpha.weight.data.std().cpu())
+                            init_STD=STD_factor*model.fc_alpha['0'].weight.data.std().cpu())
                             if plane_rank_dict is None or d>=model.num_density_planes else
                             create_plane([res[0],2*plane_rank_dict[get_plane_name(scene,d)]] ,num_plane_channels=model.num_plane_channels,
                             init_STD=np.sqrt(STD_factor*model.fc_alpha.weight.data.std().cpu()))
@@ -778,7 +775,8 @@ class PlanesOptimizer(nn.Module):
     def get_plane_stats(self,viewdir=False,single_plane=True):
         model_name='coarse'
         plane_means,plane_STDs = [],[]
-        for scene in tqdm(self.training_scenes,desc='Collecting plane statistics'):
+        # for scene in tqdm(self.training_scenes,desc='Collecting plane statistics'):
+        for scene in tqdm(self.models[model_name].scene_coupler.downsample_couples.values(),desc='Collecting plane statistics'):
             loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
             for k,p in loaded_params['params'].items():
                 if not viewdir and get_plane_name(None,self.models[model_name].num_density_planes) in k:  continue

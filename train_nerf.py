@@ -76,7 +76,7 @@ def main():
     end2end_training = getattr(cfg.nerf.train,'train_end2end',False)
     assert end2end_training in ['HR_planes','LR_planes',False]
     rep_model_training = not SR_experiment or end2end_training
-    # if SR_experiment:
+
     if not rep_model_training:
         LR_model_folder = cfg.models.path
         if os.path.isfile(LR_model_folder):   LR_model_folder = "/".join(LR_model_folder.split("/")[:-1])
@@ -132,8 +132,7 @@ def main():
     # # (Optional:) enable this to track autograd issues when debugging
     # torch.autograd.set_detect_anomaly(True)
 
-    # If a pre-cached dataset is available, skip the dataloader.
-    images, poses, render_poses, hwf, i_split = None, None, None, None, None
+    # images, poses, render_poses, hwf, i_split = None, None, None, None, None
     H, W, focal, i_train, i_val, i_test = None, None, None, None, None, None
     # Load dataset
     dataset_type = getattr(cfg.dataset,'type','synt')
@@ -146,6 +145,7 @@ def main():
     ds_factor_extraction_pattern = lambda name: '(?<='+name.split('_DS')[0]+'_DS'+')(\d)+(?=_PlRes'+name.split('_PlRes')[1]+')'
     sr_val_scenes_with_LR = getattr(cfg.nerf.train,'sr_val_scenes_with_LR',False)
     if dataset_type=='synt':
+
         def get_scene_configs(config_dict,add_val_scene_LR=False):
             ds_factors,dir,plane_res,scene_ids = [],[],[],[]
             config_dict = dict(config_dict)
@@ -184,10 +184,6 @@ def main():
         for basedir,ds_factor,plane_res in zip(tqdm(basedirs,desc='Loading scenes'),downsampling_factors,plane_resolutions):
             scene_id = models.get_scene_id(basedir,ds_factor,plane_res)
             val_only = scene_id not in train_ids
-            # if not rep_model_training:
-            #     new_scene_id,original_ds = find_scene_match(existing_scenes=existing_LR_scenes,pattern=ds_factor_extraction_pattern(scene_id))
-            #     # ds_factor_ratio.append(int(original_ds)/int(find_scene_match([scene_id],ds_factor_extraction_pattern(scene_id))[1]))
-            #     scene_id = new_scene_id
             scenes_set.add(scene_id)
             if val_only:    val_only_scene_ids.append(scene_id)
             if planes_model:
@@ -196,8 +192,11 @@ def main():
                 splits2use = ['test']
             else:
                 splits2use = ['val'] if val_only else ['train','val']
+            scene_path = os.path.join(cfg.dataset.root,basedir)
+            if search('#(\d)+',basedir) is not None:
+                scene_path = scene_path.replace(search('#(\d)+',basedir).group(0),'')
             cur_images, cur_poses, cur_render_poses, cur_hwfDs, cur_i_split = load_blender_data(
-                os.path.join(cfg.dataset.root,basedir),
+                scene_path,
                 testskip=cfg.dataset.testskip,
                 downsampling_factor=ds_factor,
                 val_downsampling_factor=None,
@@ -254,17 +253,21 @@ def main():
             if id in i_val.keys(): #Avoid evaluating training images for scenes which were discarded for evaluation due to max_scenes_eval
                 i_val[id+'_train'] = [x for i,x in enumerate(i_train[id]) if (i+im_freq//2)%im_freq==0]
     training_scenes = list(i_train.keys())
-    scene_coupler = None
-    if end2end_training:
-        if not rep_model_training:
-            available_scenes = []
-            for conf,scenes in LR_model_config.dataset.dir.train.items():
-                conf=eval(conf)
-                for sc in scenes:
-                    available_scenes.append(models.get_scene_id(sc,conf[0],(conf[1],conf[2] if len(conf)>2 else conf[1])))
+    # scene_coupler = None
+    # if True or end2end_training:
+    if not rep_model_training:
+        available_scenes = []
+        for conf,scenes in [c for p in LR_model_config.dataset.dir.values() for c in p.items()]:
+        # for conf,scenes in LR_model_config.dataset.dir.train.items():
+            conf=eval(conf)
+            for sc in scenes:
+                available_scenes.append(models.get_scene_id(sc,conf[0],(conf[1],conf[2] if len(conf)>2 else conf[1])))
 
-        scene_coupler = models.SceneCoupler(available_scenes,planes_res_level=end2end_training,
-            num_pos_planes=getattr(cfg.models.coarse,'num_planes',3),viewdir_plane=cfg.nerf.use_viewdirs,training_scenes=training_scenes)
+    scene_coupler = models.SceneCoupler(available_scenes,planes_res_level=end2end_training,
+        num_pos_planes=getattr(cfg.models.coarse,'num_planes',3),viewdir_plane=cfg.nerf.use_viewdirs,training_scenes=training_scenes)
+    if not rep_model_training:
+        assert all([sc not in scene_coupler.downsample_couples.values() for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
+    if SR_experiment=='model':
         if end2end_training=='HR_planes':
             for sc in scene_coupler.downsample_couples:
                 if sc in training_scenes:
@@ -272,12 +275,14 @@ def main():
                     if sc+'_train' in i_val:
                         i_val[sc+'_HRplane_train'] = 1*i_val[sc+'_train']
         for sc in scene_coupler.downsample_couples.keys():  
-            if end2end_training=='HR_planes' and sc in training_scenes:
-                scene_id_plane_resolution.pop(scene_coupler.downsample_couples[sc])
-            else:
-                scene_id_plane_resolution.pop(sc)
             if not load_saved_models:
                 coords_normalization[sc] = 1*coords_normalization[scene_coupler.downsample_couples[sc]]
+            if end2end_training=='HR_planes' and sc in training_scenes:
+                if scene_coupler.downsample_couples[sc] not in scene_id_plane_resolution:   continue
+                scene_id_plane_resolution.pop(scene_coupler.downsample_couples[sc])
+            else:
+                if sc not in scene_id_plane_resolution:   continue
+                scene_id_plane_resolution.pop(sc)
 
     evaluation_sequences = list(i_val.keys())
     val_strings = []
@@ -442,6 +447,7 @@ def main():
                     plane_loss_w=rgetattr(cfg,'super_resolution.plane_loss_w',None),
                     scene_coupler=scene_coupler,
                     point_coords_noise=getattr(cfg.nerf.train,'point_coords_noise',0),
+                    ensemble_size=getattr(cfg.models.fine,'ensemble_size',1),
                 )
             else:
                 model_fine = getattr(models, cfg.models.fine.type)(
@@ -561,8 +567,9 @@ def main():
         checkpoint = torch.load(checkpoint)
 
         def load_saved_parameters(model,saved_params,reduced_set=False):
+            if not all([search('density_dec\.(\d)+\.(\d)+\.',p) is not None for p in saved_params if 'density_dec' in p]):
+                saved_params = OrderedDict([(k if 'NON_LEARNED' in k else k.replace('.','.0.',1),v) for k,v in saved_params.items()])
             mismatch = model.load_state_dict(saved_params,strict=False)
-            # assert (len(mismatch.missing_keys)==0 or (store_planes and all(['planes_.sc' in k for k in mismatch.missing_keys])))\
             allowed_missing = []
             if store_planes:    allowed_missing.append('planes_.sc')
             if reduced_set: allowed_missing.append('rot_mats')
@@ -1010,11 +1017,16 @@ def main():
             # new_drawn_scenes = planes_opt.step(reload_planes_4_SR=end2end_training)
             new_drawn_scenes = planes_opt.step()
         if last_v_batch_iter:
-            if end2end_training and getattr(cfg.nerf.train,'separate_decoder_sr',False):
-                if sr_iter:
-                    optimizer.param_groups[1]['lr'] = 0
-                else:
+            if end2end_training and (getattr(cfg.nerf.train,'separate_decoder_sr',False) or getattr(cfg.nerf.train,'separate_decoder_val_scenes',False)):
+                decoder_step = True
+                if getattr(cfg.nerf.train,'separate_decoder_sr',False):
+                    decoder_step &= not sr_iter
+                if getattr(cfg.nerf.train,'separate_decoder_val_scenes',False):
+                    decoder_step &= cur_scene_id in [s for k in scene_coupler.upsample_couples.items() for s in k]
+                if decoder_step:
                     optimizer.param_groups[1]['lr'] = cfg.optimizer.lr
+                else:
+                    optimizer.param_groups[1]['lr'] = 0
 
 
             optimizer.step()

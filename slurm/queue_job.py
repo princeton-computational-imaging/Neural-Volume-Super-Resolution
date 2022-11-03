@@ -36,7 +36,7 @@ PARAM2SWEEP = None
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 EVAL_FOLDER = "/tigress/yb6751/projects/NeuralMFSR/results"
 CONDA_ENV = "torch-env" if 'della-' in socket.gethostname() else "volumetric_enhance"
-RUN_TIME = 48 # 20 # 10 # Hours
+RUN_TIME = 24 # 20 # 10 # Hours
 
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True
@@ -104,7 +104,9 @@ for run_num in range(len(PARAM2SWEEP[1])):
             print("Evaluating model in %s"%(job_identifier))
 
     config_filename = "config%s.yml"%(str(run_num) if sweep_jobs else '')
-    if RESUME_TRAINING is None or OVERWRITE_RESUMED_CONFIG:
+    if RESUME_TRAINING is None or OVERWRITE_RESUMED_CONFIG or not os.path.exists(code_folder):
+        if not os.path.exists(code_folder):
+            os.mkdir(code_folder)
         if run_num==0:
             for f in [f for f in os.listdir() if f[-3:]==".py"]:
                 shutil.copyfile(f,os.path.join(code_folder,f))
