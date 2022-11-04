@@ -687,7 +687,7 @@ class PlanesOptimizer(nn.Module):
             lr:float,model_coarse:TwoDimPlanesModel,model_fine:TwoDimPlanesModel,use_coarse_planes:bool,
             init_params:bool,optimize:bool,training_scenes:list=None,coords_normalization:dict=None,
             do_when_reshuffling=lambda:None,STD_factor:float=0.1,
-            available_scenes:list=[],planes_rank_ratio:float=None,
+            available_scenes:list=[],planes_rank_ratio:float=None,copy_params_path=None,
             ) -> None:
         super(PlanesOptimizer,self).__init__()
         self.scenes = available_scenes
@@ -696,6 +696,7 @@ class PlanesOptimizer(nn.Module):
         self.training_scenes = training_scenes
         self.scenes_with_planes = scene_id_plane_resolution.keys()
         assert len(available_scenes)>0
+        assert copy_params_path is None or not init_params,"Those two don't work together"
         self.buffer_size = getattr(options,'buffer_size',len(self.training_scenes))
         self.steps_per_buffer,self.steps_since_drawing = options.steps_per_buffer,0
         if self.buffer_size>=len(self.training_scenes):  self.steps_per_buffer = -1
@@ -720,20 +721,26 @@ class PlanesOptimizer(nn.Module):
             model.downsampled_planes = self.downsampled_planes
             if model_name=='fine' and use_coarse_planes:    continue
             self.planes_per_scene = model.num_density_planes+model.use_viewdirs
-            if init_params:
+            if init_params or copy_params_path:
                 if model.viewdir_mapping:
                     model.viewdir_plane_coverage = {}
                 for scene,res in tqdm(scene_id_plane_resolution.items(),desc='Initializing scene planes',):
-                    params = nn.ParameterDict([
-                        (get_plane_name(scene,d),
-                            create_plane(res[0] if d<model.num_density_planes else res[1],num_plane_channels=model.num_plane_channels,
-                            init_STD=STD_factor*model.fc_alpha['0'].weight.data.std().cpu())
-                            if plane_rank_dict is None or d>=model.num_density_planes else
-                            create_plane([res[0],2*plane_rank_dict[get_plane_name(scene,d)]] ,num_plane_channels=model.num_plane_channels,
-                            init_STD=np.sqrt(STD_factor*model.fc_alpha.weight.data.std().cpu()))
-                        )
-                        for d in range(self.planes_per_scene)])
-                    torch.save({'params':params,'coords_normalization':coords_normalization[scene]},self.param_path(model_name=model_name,scene=scene))
+                    if init_params:
+                        params = nn.ParameterDict([
+                            (get_plane_name(scene,d),
+                                create_plane(res[0] if d<model.num_density_planes else res[1],num_plane_channels=model.num_plane_channels,
+                                init_STD=STD_factor*model.fc_alpha['0'].weight.data.std().cpu())
+                                if plane_rank_dict is None or d>=model.num_density_planes else
+                                create_plane([res[0],2*plane_rank_dict[get_plane_name(scene,d)]] ,num_plane_channels=model.num_plane_channels,
+                                init_STD=np.sqrt(STD_factor*model.fc_alpha.weight.data.std().cpu()))
+                            )
+                            for d in range(self.planes_per_scene)])
+                        cn = coords_normalization[scene]
+                    else:
+                        params = torch.load(self.param_path(model_name=model_name,scene=scene,save_location=copy_params_path))
+                        cn = params['coords_normalization']
+                        params = params['params']
+                    torch.save({'params':params,'coords_normalization':cn},self.param_path(model_name=model_name,scene=scene))
                     if model.viewdir_mapping:
                         model.viewdir_plane_coverage[get_plane_name(scene,model.num_density_planes)] = torch.zeros([res[1]+15,res[1]+15])
 
@@ -769,8 +776,10 @@ class PlanesOptimizer(nn.Module):
             opt_states = [checkpoint['plane_optimizer_states'][param2num[get_plane_name(scene,d)]] for d in range(self.planes_per_scene)]
             torch.save({'params':params,'opt_states':opt_states},self.param_path(model_name=model_name,scene=scene))
 
-    def param_path(self,model_name,scene):
-        return os.path.join(self.save_location,"%s_%s.par"%(model_name,scene))
+    def param_path(self,model_name,scene,save_location=None):
+        if save_location is None:
+            save_location = self.save_location
+        return os.path.join(save_location,"%s_%s.par"%(model_name,scene))
 
     def get_plane_stats(self,viewdir=False,single_plane=True):
         model_name='coarse'
@@ -842,16 +851,27 @@ class PlanesOptimizer(nn.Module):
                     scene = model.scene_coupler.scene_with_saved_plane(scene)
                     if scene in already_loaded: continue
                     already_loaded.append(scene)
-                    loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
+                    try:
+                        loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
+                    except Exception as e:
+                        print("!!!! WARNING: planes model seems to be currpted for scene %s:\n%s"%(scene,e))
+                        raise e
+                        # res = [int(search('(?<=PlRes)(\d)+(?=_)',scene).group(0)),int(search('(?<=_)(\d)+(?=$)',scene).group(0))]
+                        # params = nn.ParameterDict([
+                        #     (get_plane_name(scene,d),
+                        #         create_plane(res[0] if d<model.num_density_planes else res[1],num_plane_channels=model.num_plane_channels,
+                        #         init_STD=STD_factor*model.fc_alpha['0'].weight.data.std().cpu())
+                        #     )
+                        #     for d in range(self.planes_per_scene)])
+                        # cn = coords_normalization[scene]
+                        # torch.save({'params':params,'coords_normalization':cn},self.param_path(model_name=model_name,scene=scene))
                     params_dict.update(loaded_params['params'])
-                    # box_coords.update({scene:loaded_params['coords_normalization'],model.scene_coupler.coupled_scene(scene):loaded_params['coords_normalization']})
                     box_coords.update(dict([(sc,loaded_params['coords_normalization']) for sc in [scene]+model.scene_coupler.coupled_scene(scene)]))
                     if self.optimize:
                         if 'opt_states' in loaded_params:
                             optimizer_states.extend(loaded_params['opt_states'])
                         else:
                             optimizer_states.extend([None for p in loaded_params['params']])
-
             model.planes_ = params_dict.cuda()
             self.generated_planes.clear()
             self.downsampled_planes.clear()
@@ -1146,7 +1166,7 @@ def extract_ds_and_res(scene_name):
 class SceneCoupler:
     def __init__(self,scenes_list,planes_res_level,num_pos_planes,viewdir_plane,training_scenes) -> None:
         num_planes = num_pos_planes+viewdir_plane
-        name_pattern = lambda name: name.split('_DS')[0]+'_DS'+'(\d)+_PlRes(\d)+_'+name.split('_')[-1]
+        name_pattern = lambda name: '^'+name.split('_DS')[0]+'_DS'+'(\d)+_PlRes(\d)+_'+name.split('_')[-1]
         ds_ratios,res_ratios = [],[]
         self.upsample_couples,self.downsample_couples,self.HR_planes_LR_ims_scenes = {},{},[]
         for sc_num in range(len(scenes_list)):
@@ -1172,8 +1192,8 @@ class SceneCoupler:
                         self.downsample_couples[match] = scenes_list[sc_num]
                         if match in training_scenes:
                             self.upsample_couples[scenes_list[sc_num]] = match
-
-        self.ds_factor = int(max(1/res_ratios[0],res_ratios[0]))
+        
+        self.ds_factor = int(max(1/res_ratios[0],res_ratios[0])) if len(self.downsample_couples)>0 else 1
         for match_num in range(len(ds_ratios)):
             if res_ratios[match_num]!=1/ds_ratios[match_num]:
                 assert ds_ratios[match_num]==1,"I expect to have the downsampling factor match the plane resolution ratio."

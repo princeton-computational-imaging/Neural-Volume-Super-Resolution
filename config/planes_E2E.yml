@@ -1,10 +1,9 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  # id: E2E_Synt_Pln12C_Res16Sc200_14Sc800_32_LR100_400_detachLR_SRrecField15noise01_PZerMean1
-  # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_SepDecSRtraining_HRplanes_NoiseSRout
-  id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_SR16L32CperChRecField15
-  # id: E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_Consist1_1
+  id: E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1
+  # id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_SR8L32CperChRecField15
+  # id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -22,23 +21,31 @@ experiment:
 dataset:
   # Base directory of dataset.
   # type: DTU # DTU,synt
-  root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
-  # root: /scratch/gpfs/yb6751/datasets/rs_dtu_4
+  # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
+  root: /scratch/gpfs/yb6751/datasets/Synthetic
+  max_scenes_eval:  9
+  # auto_remove_val:  True
   dir:
     train:
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
-      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship',[0,251]]
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,251]]
+      2,800,32:   ['bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,251]]
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
       # 8,200,32:   ['chair','mic']
+      # 8,200,32:   ['chair','mic',[0,50]]
       # 2,800,32:   ['chair']
       # 8,200,32:   ['mic','mic#1']
       # 2,800,32:   ['mic']
     val:
-      2,800,32:   ['mic','ship']
-      # 2,800,32:   ['mic']
+      # 2,800,32:   ['mic','ship']
+      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      # 2,800,32:   'bugatti'
       # 2,800,32:   ['mic#1']
       # 2,800,32: ['chair','drums',]
   # Optionally, provide a path to the pre-cached dataset dir. This
@@ -136,7 +143,7 @@ nerf:
     # In the end-2-end training, learn decoder and sr model separately by not performing decoder steps during SR iterations
     # separate_decoder_sr:  True
     # In the end-2-end training, learn the LR planes corresponding to the validation scenes without affecting the decoder (almost as if learned afterwards.)
-    separate_decoder_val_scenes:  True
+    # separate_decoder_val_scenes:  True
     # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
     # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
     #  since HR images are not available for their training) (default: True):
@@ -166,7 +173,7 @@ nerf:
     # Add Gaussian noise to points coordinates before projecting them to planes:
     # point_coords_noise: 0.1
     # Encourage per-channel 0 mean on the planes. This is meant to replace input normalization for SR in the end-2-end training scheme.
-    zero_mean_planes_w: 0 #1
+    zero_mean_planes_w: 1 #0 #1
     # Standard deviation of noise to be added to the radiance field when
     # performing volume rendering.
     radiance_field_noise_std: 0.2
@@ -218,12 +225,14 @@ super_resolution:
     type: EDSR
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
-    hidden_size: 32 #256 #128 #256
+    # hidden_size: 32 #256 #128 #256
+    hidden_size: 256 #128 #256
     # Number of residual blocks (originally 32):
-    n_blocks: 16 #32
+    # n_blocks: 8 #32
+    n_blocks: 32
     # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
-    receptive_field_bound:  15
+    receptive_field_bound:  55
     # scale_factor: sqrt #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
     # single_plane: False
-    per_channel_sr: True
+    # per_channel_sr: True

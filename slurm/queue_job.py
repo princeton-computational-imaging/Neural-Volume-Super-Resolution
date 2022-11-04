@@ -23,14 +23,15 @@ CONFIG_FILE = "config/planes_E2E.yml"
 # CONFIG_FILE = "config/DTU_E2E.yml"
 
 
-# RESUME_TRAINING = 0
-RESUME_TRAINING = None
+RESUME_TRAINING = 0
+# RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
 
 # PARAM2SWEEP = (['optimizer','lr'],[1e-5*(2**i) for i in range(9)])
 # PARAM2SWEEP = (['dataset','max_scenes'],[10*i for i in range(1,11)])
 # PARAM2SWEEP = (['models','coarse','num_planes'],[6,9])
+# PARAM2SWEEP = (['dataset','dir','val','2,800,32'],['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'])
 PARAM2SWEEP = None
 
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
@@ -54,7 +55,7 @@ if PARAM2SWEEP is None:
     PARAM2SWEEP = ([],[None])
 
 sweep_jobs = len(PARAM2SWEEP[0])>0
-sweep_suffix = '_'+''.join([w[0].upper()+w[1:].replace('_','') for w in PARAM2SWEEP[0]]) if sweep_jobs else ''
+sweep_suffix = '_'+''.join([w[0].upper()+w[1:].replace('_','').replace(',','_') for w in PARAM2SWEEP[0]]) if sweep_jobs else ''
 job_name += sweep_suffix
 existing_ids = [int(search("(?<="+job_name+"_)(\d)+(?=$)",f).group(0)) for f in os.listdir(LOGS_FOLDER) if search("^"+job_name+"_(\d)+$",f) is not None]
 config_file = ''+CONFIG_FILE

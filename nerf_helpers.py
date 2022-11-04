@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import OrderedDict
 from pickletools import uint8
 from typing import Optional
 import numpy as np
@@ -87,20 +87,20 @@ def subsample_dataset(scenes_dict,max_scenes,val_only_scenes=[],scene_id_func=No
         val_only_scenes = [scene_id_func(i) for i in val_only_scenes]
     if isinstance(scenes_dict,list):
         convert2list = True
-        scenes_dict = dict(zip([scene_id_func(i) for i in range(len(scenes_dict))],scenes_dict))
+        scenes_dict = OrderedDict(zip([scene_id_func(i) for i in range(len(scenes_dict))],scenes_dict))
     else:
         assert scene_id_func is None
         scene_id_func = lambda x:x
     i_val_val_only = [(k,v) for k,v in scenes_dict.items() if k in val_only_scenes]
     i_val_others = [(k,v) for k,v in scenes_dict.items() if k not in val_only_scenes]
-    sampled_dict = dict([i_val_others[i] for i in np.unique(np.round(np.linspace(0,len(i_val_others)-1,max_scenes)).astype(int))])
+    sampled_dict = OrderedDict([i_val_others[i] for i in np.unique(np.round(np.linspace(0,len(i_val_others)-1,max_scenes)).astype(int))])
     sampled_val_only_scenes = []
     if len(i_val_val_only)>0:
         if max_val_only_scenes is None:
             sampled_val_only_scenes = i_val_val_only
         else:
             sampled_val_only_scenes = [i_val_val_only[i] for i in np.unique(np.round(np.linspace(0,len(i_val_val_only)-1,max_val_only_scenes)).astype(int))]
-        sampled_dict.update(dict(sampled_val_only_scenes))
+        sampled_dict.update(OrderedDict(sampled_val_only_scenes))
         sampled_val_only_scenes = [s[0] for s in sampled_val_only_scenes]
         if val_scene_as_inds:
             sampled_val_only_scenes = [list(sampled_dict.keys()).index(s) for s in sampled_val_only_scenes]

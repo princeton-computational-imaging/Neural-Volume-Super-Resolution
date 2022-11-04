@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR6vs2Scenes_32B256C_LR4_planeNorm
+  id: SR6vs2Scenes_32B256C_LR4_planeNorm_SRrecField15
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -18,7 +18,8 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
+  # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
+  root: /scratch/gpfs/yb6751/datasets/Synthetic
   dir:
     train:
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
@@ -145,6 +146,8 @@ super_resolution:
     hidden_size: 256 #128 #256
     # Number of residual blocks (originally 32):
     n_blocks: 32
+    # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
+    receptive_field_bound:  15
     # scale_factor: one #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
     # single_plane: False
