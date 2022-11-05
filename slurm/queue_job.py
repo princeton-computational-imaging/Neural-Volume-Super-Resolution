@@ -10,21 +10,22 @@ from subprocess import call
 from deepdiff import DeepDiff
 import socket
 from nerf_helpers import get_config,rsetattr
+from tqdm import trange
 
 # CONFIG_FILE = "config/lego_SR.yml"
 # CONFIG_FILE = "config/lego_ds.yml"
 # CONFIG_FILE = "config/planes.yml"
-# CONFIG_FILE = "config/planes_SR.yml"
+CONFIG_FILE = "config/planes_SR.yml"
 # CONFIG_FILE = "config/planes_DTU.yml"
 # CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
-CONFIG_FILE = "config/planes_E2E.yml"
+# CONFIG_FILE = "config/planes_E2E.yml"
 # CONFIG_FILE = "config/DTU_E2E.yml"
 
 
-RESUME_TRAINING = 0
-# RESUME_TRAINING = None
+# RESUME_TRAINING = 0
+RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
 
@@ -37,7 +38,7 @@ PARAM2SWEEP = None
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 EVAL_FOLDER = "/tigress/yb6751/projects/NeuralMFSR/results"
 CONDA_ENV = "torch-env" if 'della-' in socket.gethostname() else "volumetric_enhance"
-RUN_TIME = 24 # 20 # 10 # Hours
+RUN_TIME = 2 # 20 # 10 # Hours
 
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True
@@ -62,7 +63,7 @@ config_file = ''+CONFIG_FILE
 cfg = get_config(config_file)
 
 job_name += '%s'
-for run_num in range(len(PARAM2SWEEP[1])):
+for run_num in (trange(len(PARAM2SWEEP[1])) if len(PARAM2SWEEP[1])>1 else range(len(PARAM2SWEEP[1]))):
     run_suffix = str(PARAM2SWEEP[1][run_num]).replace('.','_') if sweep_jobs else ''
     if RESUME_TRAINING is None:
         job_identifier = job_name%(run_suffix)+"_%d"%(0 if len(existing_ids)==0 else max(existing_ids)+1)

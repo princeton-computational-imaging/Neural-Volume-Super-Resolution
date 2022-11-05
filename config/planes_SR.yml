@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR6vs2Scenes_32B256C_LR4_planeNorm_SRrecField15
+  id: SR16vs2Scenes_32B256C_LR4_planeNorm_SRrecField15
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -20,10 +20,12 @@ dataset:
   # Base directory of dataset.
   # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   root: /scratch/gpfs/yb6751/datasets/Synthetic
+  max_scenes_eval:  9
   dir:
     train:
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
+      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] #,[0,51]]
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
@@ -61,7 +63,10 @@ models:
   # HR and LR planes trained with 6 planes:
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planes_Res8Sc200_6Sc800_32_DSpos12_LR100_400_ModelsCoarseNumplanes6_1
   # HR and LR planes trained consistently:
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_1
+  # E2E model with 6 HR training scenes:
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_1
+  # Model with 64 training scenes:
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/Synt_Res66Sc200_32_LR100_400_SepValSceneTrain_fromE2E_0
 
 # Optimizer params.
 optimizer:

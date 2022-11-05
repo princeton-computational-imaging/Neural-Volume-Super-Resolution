@@ -273,12 +273,11 @@ def main():
     if not rep_model_training:
         available_scenes = []
         for conf,scenes in [c for p in LR_model_config.dataset.dir.values() for c in p.items()]:
-        # for conf,scenes in LR_model_config.dataset.dir.train.items():
             conf=eval(conf)
-            for sc in scenes:
+            for sc in interpret_scene_list(scenes):
                 available_scenes.append(models.get_scene_id(sc,conf[0],(conf[1],conf[2] if len(conf)>2 else conf[1])))
 
-    scene_coupler = models.SceneCoupler(available_scenes,planes_res_level=end2end_training,
+    scene_coupler = models.SceneCoupler(list(set(available_scenes+val_only_scene_ids)),planes_res_level=end2end_training,
         num_pos_planes=getattr(cfg.models.coarse,'num_planes',3),viewdir_plane=cfg.nerf.use_viewdirs,training_scenes=training_scenes)
     if rep_model_training:
         if not end2end_training:
@@ -584,7 +583,7 @@ def main():
         for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed','type_changes']:
             if ch_type not in config_diffs: continue
             for diff in config_diffs[ch_type]:
-                if ch_type=='dictionary_item_added' and diff=="root['path']":  continue
+                if ch_type in ['dictionary_item_added','values_changed'] and diff=="root['path']":  continue
                 if ch_type=='dictionary_item_removed' and "['use_viewdirs']" in diff:  continue
                 elif ch_type=='dictionary_item_added' and diff[:len("root['fine']")]=="root['fine']":  continue
                 elif ch_type=='dictionary_item_removed' and "root['fine']" in str(config_diffs[ch_type]):   continue

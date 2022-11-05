@@ -50,6 +50,16 @@ def set_config_defaults(source,target):
     for k in source.keys():
         if k not in target: setattr(target,k,getattr(source,k))
 
+def interpret_scene_list(dict_values):
+    scenes = []
+    for sc in dict_values:
+        if isinstance(sc,list):
+            assert len(sc)==2
+            scenes.extend([str(i) for i in range(sc[0],sc[1])])
+        else:
+            scenes.append(sc)
+    return scenes
+
 def find_scene_match(existing_scenes,pattern):
     matching_scene = [es for es in existing_scenes if search(pattern,es) is not None]
     assert len(matching_scene)==1

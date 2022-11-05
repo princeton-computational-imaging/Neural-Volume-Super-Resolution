@@ -700,7 +700,7 @@ class PlanesOptimizer(nn.Module):
         self.buffer_size = getattr(options,'buffer_size',len(self.training_scenes))
         self.steps_per_buffer,self.steps_since_drawing = options.steps_per_buffer,0
         if self.buffer_size>=len(self.training_scenes):  self.steps_per_buffer = -1
-        assert all([s in self.scenes for s in self.training_scenes])
+        assert all([s in self.scenes or model_fine.scene_coupler.downsample_couples[s] in self.scenes for s in self.training_scenes])
         assert optimizer_type=='Adam','Optimizer %s not supported yet.'%(optimizer_type)
         assert use_coarse_planes,'Unsupported yet, probably requires adding a param_group to the optimizer'
         assert not init_params or optimize,'This would means using (frozen) random planes...'
@@ -753,7 +753,8 @@ class PlanesOptimizer(nn.Module):
             self.save_params()
         for model_name in ['coarse','fine']:
             model = self.models[model_name]
-            scenes_planes_name = scene if scene in self.scenes_with_planes else model.scene_coupler.scene_with_saved_plane(scene)
+            # scenes_planes_name = scene if scene in self.scenes_with_planes else model.scene_coupler.scene_with_saved_plane(scene)
+            scenes_planes_name = model.scene_coupler.scene2saved[scene]
             if model_name=='coarse' or not self.use_coarse_planes:
                 loaded_params = torch.load(self.param_path(model_name=model_name,scene=scenes_planes_name))
                 # model.scene_coupler.downsampled_planes = {}
@@ -785,8 +786,9 @@ class PlanesOptimizer(nn.Module):
         model_name='coarse'
         plane_means,plane_STDs = [],[]
         # for scene in tqdm(self.training_scenes,desc='Collecting plane statistics'):
-        for scene in tqdm(self.models[model_name].scene_coupler.downsample_couples.values(),desc='Collecting plane statistics'):
-            loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
+        # for scene in tqdm(self.models[model_name].scene_coupler.downsample_couples.values(),desc='Collecting plane statistics'):
+        for scene in tqdm(self.training_scenes,desc='Collecting plane statistics'):
+            loaded_params = torch.load(self.param_path(model_name=model_name,scene=self.models[model_name].scene_coupler.scene2saved[scene]))
             for k,p in loaded_params['params'].items():
                 if not viewdir and get_plane_name(None,self.models[model_name].num_density_planes) in k:  continue
                 plane_means.append(torch.mean(p,(2,3)).squeeze(0))
@@ -847,7 +849,8 @@ class PlanesOptimizer(nn.Module):
                 # model.scene_coupler.downsampled_planes = {}
                 params_dict,optimizer_states,box_coords = nn.ParameterDict(),[],{}
                 already_loaded = []
-                for scene in self.cur_scenes:
+                scenes2load = self.cur_scenes if len(self.cur_scenes)<20 else tqdm(self.cur_scenes,desc='Loading scene planes')
+                for scene in scenes2load:
                     scene = model.scene_coupler.scene_with_saved_plane(scene)
                     if scene in already_loaded: continue
                     already_loaded.append(scene)
@@ -1169,6 +1172,7 @@ class SceneCoupler:
         name_pattern = lambda name: '^'+name.split('_DS')[0]+'_DS'+'(\d)+_PlRes(\d)+_'+name.split('_')[-1]
         ds_ratios,res_ratios = [],[]
         self.upsample_couples,self.downsample_couples,self.HR_planes_LR_ims_scenes = {},{},[]
+        scenes_list = list(set(scenes_list+training_scenes))
         for sc_num in range(len(scenes_list)):
             matching_scenes = [sc for sc in [s for i,s in enumerate(scenes_list) if i!=sc_num] if search(name_pattern(scenes_list[sc_num]),sc)]
             if len(matching_scenes)>0:

@@ -6,7 +6,7 @@ from re import search
 import imageio
 import numpy as np
 import torch
-from nerf_helpers import im_resize,calc_scene_box
+from nerf_helpers import im_resize,calc_scene_box,interpret_scene_list
 # from models import get_scene_id
 from collections import OrderedDict
 from magic import from_file
@@ -131,21 +131,22 @@ class BlenderDataset(torch.utils.data.Dataset):
         for conf,scenes in config_dict.items():
             conf = eval(conf)
             if not isinstance(scenes,list): scenes = [scenes]
-            for sc in scenes:
-                if isinstance(sc,list):
-                    assert len(sc)==2
-                    scs = [str(i) for i in range(sc[0],sc[1])]
-                else:
-                    scs = [sc]
-                for s in scs:
-                    cur_factor,cur_dir,cur_res = conf[0],s,(conf[1],conf[2] if len(conf)>2 else conf[1])
-                    cur_id = self.get_scene_id(cur_dir,cur_factor,cur_res)
-                    if cur_id in excluded_scene_ids:
-                        continue
-                    scene_ids.append(cur_id)
-                    ds_factors.append(cur_factor)
-                    plane_res.append(cur_res)
-                    dir.append(cur_dir)
+            # for sc in scenes:
+            for s in interpret_scene_list(scenes):
+                # if isinstance(sc,list):
+                #     assert len(sc)==2
+                #     scs = [str(i) for i in range(sc[0],sc[1])]
+                # else:
+                #     scs = [sc]
+                # for s in scs:
+                cur_factor,cur_dir,cur_res = conf[0],s,(conf[1],conf[2] if len(conf)>2 else conf[1])
+                cur_id = self.get_scene_id(cur_dir,cur_factor,cur_res)
+                if cur_id in excluded_scene_ids:
+                    continue
+                scene_ids.append(cur_id)
+                ds_factors.append(cur_factor)
+                plane_res.append(cur_res)
+                dir.append(cur_dir)
                     # scene_ids.append(self.get_scene_id(dir[-1],ds_factors[-1],plane_res[-1]))
         return ds_factors,dir,plane_res,scene_ids
 
