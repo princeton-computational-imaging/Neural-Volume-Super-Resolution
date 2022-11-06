@@ -699,7 +699,9 @@ class PlanesOptimizer(nn.Module):
         assert copy_params_path is None or not init_params,"Those two don't work together"
         self.buffer_size = getattr(options,'buffer_size',len(self.training_scenes))
         self.steps_per_buffer,self.steps_since_drawing = options.steps_per_buffer,0
-        if self.buffer_size>=len(self.training_scenes):  self.steps_per_buffer = -1
+        if self.buffer_size>=len(self.training_scenes):
+            self.buffer_size = len(self.training_scenes)
+            self.steps_per_buffer = -1
         assert all([s in self.scenes or model_fine.scene_coupler.downsample_couples[s] in self.scenes for s in self.training_scenes])
         assert optimizer_type=='Adam','Optimizer %s not supported yet.'%(optimizer_type)
         assert use_coarse_planes,'Unsupported yet, probably requires adding a param_group to the optimizer'
