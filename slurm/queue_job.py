@@ -20,12 +20,12 @@ CONFIG_FILE = "config/planes.yml"
 # CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
-# CONFIG_FILE = "config/planes_E2E.yml"
+CONFIG_FILE = "config/planes_E2E.yml"
 # CONFIG_FILE = "config/DTU_E2E.yml"
 
 
-# RESUME_TRAINING = 0
-RESUME_TRAINING = None
+RESUME_TRAINING = 0
+# RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
 
@@ -89,7 +89,7 @@ for run_num in (trange(len(PARAM2SWEEP[1])) if len(PARAM2SWEEP[1])>1 else range(
             for k,v in config_diffs[ch_type].items():
                 if k=="root['experiment']['id']":   continue
                 diff_warnings.append("(%s): Configuration values changed comapred to old file:\n %s: %s"%(ch_type,k,v))
-        for ch_type in [c for c in ['dictionary_item_removed','dictionary_item_added'] if c in config_diffs]:
+        for ch_type in [c for c in ['dictionary_item_removed','dictionary_item_added','iterable_item_removed'] if c in config_diffs]:
             for diff in config_diffs[ch_type]:
                 diff_warnings.append("%s: %s"%(ch_type,diff))
         if len(diff_warnings)>0:

@@ -154,10 +154,13 @@ def main():
             scene_ids = dataset.per_im_scene_id
             i_val = dataset.i_val
             i_train = dataset.i_train
-            scenes_set = set(scene_ids)
+            scenes_set = dataset.scenes_set
             coords_normalization = dataset.coords_normalization
             scene_id_plane_resolution = dataset.scene_id_plane_resolution
             val_only_scene_ids = dataset.val_only_scene_ids
+            CURREPTED_VAL_PATCH = True
+            if CURREPTED_VAL_PATCH:
+                i_val = OrderedDict([(k,v) for k,v in i_val.items() if search('^(\d)+_',k) is None])
         else:
             scenes_set = set()
             def get_scene_configs(config_dict,add_val_scene_LR=False):
@@ -566,7 +569,7 @@ def main():
 
                 SR_model.load_state_dict(torch.load(SR_model_checkpoint)["SR_model"])
         if rep_model_training:
-            if configargs.load_checkpoint=='':
+            if configargs.load_checkpoint=='': # Initializing a representation model with a pre-trained model
                 checkpoint = find_latest_checkpoint(cfg.models.path,sr=False)
                 params_init_path = os.path.join(cfg.models.path,'planes')
                 print("Initializing model training from model %s"%(checkpoint))
@@ -608,6 +611,9 @@ def main():
         load_saved_parameters(model_coarse,checkpoint["model_coarse_state_dict"])
         if checkpoint["model_fine_state_dict"]:
             load_saved_parameters(model_fine,checkpoint["model_fine_state_dict"],reduced_set=True)
+        if "optimizer_state_dict" in checkpoint:
+            print("Loading optimizer's checkpoint")
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         del checkpoint # Importent: Releases GPU memory occupied by loaded data.
 
     spatial_padding_size = SR_model.receptive_field//2 if isinstance(SR_model,models.Conv3D) else 0
@@ -1171,6 +1177,7 @@ def main():
                             planes_opt.save_params(to_checkpoint=False)
                         else:
                             checkpoint_dict.update({"coords_normalization": model_fine.box_coords})
+                    checkpoint_dict.update({"optimizer_state_dict": optimizer.state_dict()})
 
                 ckpt_name = os.path.join(logdir, model_filename + str(iter).zfill(5) + ".ckpt")
                 torch.save(checkpoint_dict,ckpt_name,)

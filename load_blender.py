@@ -41,13 +41,10 @@ class BlenderDataset(torch.utils.data.Dataset):
     def __init__(self,config,scene_id_func,add_val_scene_LR,eval_mode,scene_norm_coords=None) -> None:
         super(BlenderDataset,self).__init__()
         self.get_scene_id = scene_id_func
-        # self.downsampling_factors,train_dirs,plane_resolutions,train_ids = self.get_scene_configs(config.dir.train,add_val_scene_LR=add_val_scene_LR)
-        # val_only_dirs = self.get_scene_configs(getattr(config.dir,'val',{}))
-        # self.downsampling_factors += val_only_dirs[0]
-        # plane_resolutions += val_only_dirs[2]
-        # val_ids = val_only_dirs[3]
-        # val_only_dirs = val_only_dirs[1]
         self.downsampling_factors,self.all_scenes,plane_resolutions,val_ids = self.get_scene_configs(getattr(config.dir,'val',{}))
+        # if eval_mode:
+        #     train_ids = []
+        # else:
         train_dirs = self.get_scene_configs(config.dir.train,add_val_scene_LR=add_val_scene_LR,excluded_scene_ids=val_ids if getattr(config,'auto_remove_val',False) else [])
         self.downsampling_factors += train_dirs[0]
         plane_resolutions += train_dirs[2]
@@ -55,23 +52,22 @@ class BlenderDataset(torch.utils.data.Dataset):
         if len(set(train_ids+val_ids))!=len(train_ids+val_ids):
             raise Exception('I suspect an overlap between training and validation scenes. The following appear in both:\n%s'%([s for s in val_ids if s in train_ids]))
         train_dirs = train_dirs[1]
-        # self.all_scenes = train_dirs+val_only_dirs
         self.all_scenes.extend(train_dirs)
         self.images, self.poses, render_poses, self.hwfDs, i_split,self.per_im_scene_id = [],torch.zeros([0,4,4]),[],[],[np.array([]).astype(np.int64) for i in range(3)],[]
         scene_id,self.val_only_scene_ids,self.coords_normalization = -1,[],{}
         self.scene_id_plane_resolution = {}
-        # ds_factor_ratio = []
         self.i_train,self.i_val = OrderedDict(),OrderedDict()
-        # scenes_set = set()
+        self.scenes_set = set()
         for basedir,ds_factor,plane_res in zip(tqdm(self.all_scenes,desc='Loading scenes'),self.downsampling_factors,plane_resolutions):
             scene_id = self.get_scene_id(basedir,ds_factor,plane_res)
             if scene_id in self.i_train:
                 raise Exception("Scene %s already in the set"%(scene_id))
+            self.scenes_set.add(scene_id)
             val_only = scene_id not in train_ids
-            # scenes_set.add(scene_id)
             if val_only:    self.val_only_scene_ids.append(scene_id)
             self.scene_id_plane_resolution[scene_id] = plane_res
             if eval_mode:
+                if not val_only:    continue
                 splits2use = ['test']
             else:
                 splits2use = ['val'] if val_only else ['train','val']

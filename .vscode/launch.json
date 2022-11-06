@@ -173,6 +173,20 @@
             ]
         },
         {
+            "name": "synt SR EVAL",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/planes_SR.yml",
+                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
+                "--eval","video", //"images",
+                "--results_path","/tigress/yb6751/projects/NeuralMFSR/results"
+            ]
+        },
+        {
             "name": "end2end synt EVAL",
             "type": "python",
             "request": "launch",
