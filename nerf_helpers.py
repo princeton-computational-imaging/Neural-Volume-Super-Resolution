@@ -49,6 +49,8 @@ class Counter:
 def set_config_defaults(source,target):
     for k in source.keys():
         if k not in target: setattr(target,k,getattr(source,k))
+        elif isinstance(source[k],dict):
+            set_config_defaults(source[k],target[k])
 
 def interpret_scene_list(dict_values):
     scenes = []
