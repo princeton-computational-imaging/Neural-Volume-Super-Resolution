@@ -20,12 +20,12 @@ CONFIG_FILE = "config/planes.yml"
 # CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
-CONFIG_FILE = "config/planes_E2E.yml"
+# CONFIG_FILE = "config/planes_E2E.yml"
 # CONFIG_FILE = "config/DTU_E2E.yml"
 
 
-RESUME_TRAINING = 0
-# RESUME_TRAINING = None
+# RESUME_TRAINING = 0
+RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
 

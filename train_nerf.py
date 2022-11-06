@@ -74,6 +74,8 @@ def main():
     if "super_resolution" in cfg:
         SR_experiment = "model" if "model" in cfg.super_resolution.keys() else "refine"
     end2end_training = getattr(cfg.nerf.train,'train_end2end',False)
+    train_planes_only = getattr(cfg.nerf.train,'planes_only',False)
+    assert not (train_planes_only and end2end_training)
     assert end2end_training in ['HR_planes','LR_planes',False]
     rep_model_training = (not SR_experiment) or end2end_training
 
@@ -148,7 +150,7 @@ def main():
         CONSTRUCT_DATASET = True
         if CONSTRUCT_DATASET:
             dataset = BlenderDataset(config=cfg.dataset,scene_id_func=models.get_scene_id,add_val_scene_LR=sr_val_scenes_with_LR,
-            eval_mode=eval_mode,scene_norm_coords=cfg.nerf if not load_saved_models else None)#,eval_ratio=0.1,
+                eval_mode=eval_mode,scene_norm_coords=cfg.nerf if not load_saved_models else None)#,eval_ratio=0.1,
                 # existing_scenes2match=existing_LR_scenes,ds_factor_extraction_pattern=ds_factor_extraction_pattern)
             font_scale = 4/min(dataset.downsampling_factors)
             scene_ids = dataset.per_im_scene_id
@@ -287,7 +289,7 @@ def main():
             assert len(scene_coupler.downsample_couples)==0
             # assert all([sc not in scene_coupler.downsample_couples.values() for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
     else:
-        assert all([sc not in scene_coupler.downsample_couples.values() for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
+        assert train_planes_only or all([sc not in scene_coupler.downsample_couples.values() for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
     if SR_experiment=='model':
         if end2end_training=='HR_planes':
             for sc in scene_coupler.downsample_couples:
@@ -491,6 +493,9 @@ def main():
     trainable_parameters = []
     SR_model = None
     if SR_experiment=="model":
+        if train_planes_only:
+            SR_model_config = get_config(os.path.join(cfg.super_resolution.model.path,"config.yml"))
+            set_config_defaults(source=SR_model_config.super_resolution,target=cfg.super_resolution)
         sr_rendering_loss_w = getattr(cfg.super_resolution,'rendering_loss',1)
         plane_channels = getattr(cfg.models.coarse,'num_plane_channels',48)
         if not eval_mode:   saved_rgb_fine = dict(zip(evaluation_sequences,[{} for i in evaluation_sequences]))
@@ -512,7 +517,7 @@ def main():
         )
         print("SR model: %d parameters"%(num_parameters(SR_model)))
         SR_model.to(device)
-        if not eval_mode:   
+        if not (eval_mode or train_planes_only):   
             trainable_parameters.append({'params':[p for k,p in SR_model.named_parameters() if 'NON_LEARNED' not in k],'lr':getattr(cfg.super_resolution,'lr',cfg.optimizer.lr)})
     if rep_model_training:
         if not eval_mode:
@@ -554,15 +559,16 @@ def main():
             if not rep_model_training:
                 checkpoint = find_latest_checkpoint(cfg.models.path,sr=False)
                 print("Using LR model %s"%(checkpoint))
-            if SR_experiment=="model" and os.path.exists(configargs.load_checkpoint):
-                assert os.path.isdir(configargs.load_checkpoint)
+            if SR_experiment=="model" and (os.path.exists(configargs.load_checkpoint) or train_planes_only):
+                # assert os.path.isdir(configargs.load_checkpoint)
                 # SR_model_checkpoint = os.path.join(configargs.load_checkpoint,sorted([f for f in os.listdir(configargs.load_checkpoint) if "SR_checkpoint" in f and f[-5:]==".ckpt"],key=lambda x:int(x[len("SR_checkpoint"):-5]))[-1])
-                SR_model_checkpoint = find_latest_checkpoint(configargs.load_checkpoint,sr=True)
+                SR_checkpoint_path = cfg.super_resolution.model.path if train_planes_only else configargs.load_checkpoint
+                SR_model_checkpoint = find_latest_checkpoint(SR_checkpoint_path,sr=True)
                 start_i = int(SR_model_checkpoint.split('/')[-1][len('SR_checkpoint'):-len('.ckpt')])+1
                 if 'eval_counter' in torch.load(SR_model_checkpoint).keys(): eval_counter = torch.load(SR_model_checkpoint)['eval_counter']
                 if 'best_saved' in torch.load(SR_model_checkpoint).keys(): best_saved = torch.load(SR_model_checkpoint)['best_saved']
                 print(("Using" if eval_mode else "Resuming training of")+" SR model %s"%(SR_model_checkpoint))
-                saved_config_dict = get_config(os.path.join(configargs.load_checkpoint,"config.yml"))
+                saved_config_dict = get_config(os.path.join(SR_checkpoint_path,"config.yml"))
                 config_diffs = DeepDiff(saved_config_dict,cfg)
                 for diff in [config_diffs[ch_type] for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed'] if ch_type in config_diffs]:
                     print(diff)

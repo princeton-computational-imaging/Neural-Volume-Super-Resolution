@@ -126,6 +126,17 @@
             ]
         },
         {
+            "name": "Synt planes only",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/Synt_planes_only.yml"
+            ]
+        },
+        {
             "name": "train DTU SR",
             "type": "python",
             "request": "launch",
