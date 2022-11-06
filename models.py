@@ -660,7 +660,7 @@ class CoordProjector(nn.Module):
         if rot_mats is None:
             if N==3: #  For the basic case, conforming with the previous convention of the standard basis:
                 base_mat = torch.eye(3)
-                self.rot_mats_NON_LEARNED = nn.ParameterList([base_mat,base_mat[:,[1,0,2]],base_mat[:,[2,0,1]]])
+                self.rot_mats_NON_LEARNED = nn.ParameterList([torch.nn.Parameter(p) for p in  [base_mat,base_mat[:,[1,0,2]],base_mat[:,[2,0,1]]]])
             else:
                 plane_axes = np.random.uniform(low=-1,high=1,size=[N_RANDOM_TRIALS,N,3])
                 plane_axes /= np.sqrt(np.sum(plane_axes**2,2,keepdims=True))

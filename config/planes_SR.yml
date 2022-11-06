@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR16vs2Scenes_32B256C_LR4_planeNorm_SRrecField15
+  id: SR16vs2Scenes_32B128C_LR4_planeNorm_SRrecField15
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -96,7 +96,7 @@ nerf:
     # save_GPU_memory: True
     store_planes:
       # buffer_size:  1 #3 #5
-      steps_per_buffer: 1 #40
+      steps_per_buffer: 8 #40
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
@@ -148,7 +148,7 @@ super_resolution:
     # Number of layers in the model.
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
-    hidden_size: 256 #128 #256
+    hidden_size: 128 #256 #128 #256
     # Number of residual blocks (originally 32):
     n_blocks: 32
     # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:

@@ -14,8 +14,8 @@ from tqdm import trange
 
 # CONFIG_FILE = "config/lego_SR.yml"
 # CONFIG_FILE = "config/lego_ds.yml"
-# CONFIG_FILE = "config/planes.yml"
-CONFIG_FILE = "config/planes_SR.yml"
+CONFIG_FILE = "config/planes.yml"
+# CONFIG_FILE = "config/planes_SR.yml"
 # CONFIG_FILE = "config/planes_DTU.yml"
 # CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
@@ -29,16 +29,17 @@ RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
 
-# PARAM2SWEEP = (['optimizer','lr'],[1e-5*(2**i) for i in range(9)])
+PARAM2SWEEP = (['nerf','use_viewdirs'],[True,False])
 # PARAM2SWEEP = (['dataset','max_scenes'],[10*i for i in range(1,11)])
 # PARAM2SWEEP = (['models','coarse','num_planes'],[6,9])
 # PARAM2SWEEP = (['dataset','dir','val','2,800,32'],['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'])
-PARAM2SWEEP = None
+# PARAM2SWEEP = None
 
+della_not_tiger = 'della-' in socket.gethostname()
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 EVAL_FOLDER = "/tigress/yb6751/projects/NeuralMFSR/results"
-CONDA_ENV = "torch-env" if 'della-' in socket.gethostname() else "volumetric_enhance"
-RUN_TIME = 2 # 20 # 10 # Hours
+CONDA_ENV = "torch-env" if della_not_tiger else "volumetric_enhance"
+RUN_TIME = 5 # 20 # 10 # Hours
 
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True

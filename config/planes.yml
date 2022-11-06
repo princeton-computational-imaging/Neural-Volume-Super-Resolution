@@ -1,9 +1,9 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  # id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_SRperChanRecField15
+  id: Synt_Res16Sc800_32_400
   # id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_SR8L32CperChRecField15
-  id: Synt_Res266Sc200_32_LR100_400_SepValSceneTrain_fromE2E
+  # id: Synt_Res266Sc200_32_LR100_400_SepValSceneTrain_fromE2E
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -30,7 +30,8 @@ dataset:
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship',[0,251]]
+      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship',[0,251]]
+      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,51]]
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
@@ -63,7 +64,7 @@ dataset:
 # Model parameters.
 models:
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res66Sc200_64Sc800_32_LR100_400_SepValSceneTrain_0
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_264Sc800_32_LR100_400_SepValSceneTrain_0
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_264Sc800_32_LR100_400_SepValSceneTrain_0
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.
@@ -158,8 +159,8 @@ nerf:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
-      # buffer_size:  4
-      steps_per_buffer: 1
+      buffer_size:  4
+      steps_per_buffer: 8
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
