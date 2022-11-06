@@ -20,12 +20,12 @@ CONFIG_FILE = "config/planes.yml"
 # CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
-CONFIG_FILE = "config/planes_E2E.yml"
+# CONFIG_FILE = "config/planes_E2E.yml"
 # CONFIG_FILE = "config/DTU_E2E.yml"
 
 
-RESUME_TRAINING = 0
-# RESUME_TRAINING = None
+# RESUME_TRAINING = 0
+RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
 
@@ -39,7 +39,7 @@ della_not_tiger = 'della-' in socket.gethostname()
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 EVAL_FOLDER = "/tigress/yb6751/projects/NeuralMFSR/results"
 CONDA_ENV = "torch-env" if della_not_tiger else "volumetric_enhance"
-RUN_TIME = 5 # 20 # 10 # Hours
+RUN_TIME = 10 # 20 # 10 # Hours
 
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True

@@ -159,7 +159,7 @@ nerf:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
-      buffer_size:  4
+      # buffer_size:  4
       steps_per_buffer: 8
     # Whether or not to perturb the sampled depth values.
     perturb: True
