@@ -12,38 +12,35 @@ import socket
 from nerf_helpers import get_config,rsetattr
 from tqdm import trange
 
-# CONFIG_FILE = "config/lego_SR.yml"
-# CONFIG_FILE = "config/lego_ds.yml"
-CONFIG_FILE = "config/planes.yml"
+# CONFIG_FILE = "config/planes.yml"
 # CONFIG_FILE = "config/planes_SR.yml"
-# CONFIG_FILE = "config/planes_DTU.yml"
-# CONFIG_FILE = "config/planes_SR_DTU.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
-# CONFIG_FILE = "config/planes_E2E.yml"
-# CONFIG_FILE = "config/DTU_E2E.yml"
+CONFIG_FILE = "config/planes_E2E.yml"
+# CONFIG_FILE = "config/Synt_planes_only.yml"
+# CONFIG_FILE = "config/Real_planes_only.yml"
 
 
-# RESUME_TRAINING = 0
+# RESUME_TRAINING = 3
 RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
+EVAL_WHITE = False
 
-PARAM2SWEEP = (['nerf','use_viewdirs'],[True,False])
+# PARAM2SWEEP = (['nerf','use_viewdirs'],[True,False])
 # PARAM2SWEEP = (['dataset','max_scenes'],[10*i for i in range(1,11)])
 # PARAM2SWEEP = (['models','coarse','num_planes'],[6,9])
 # PARAM2SWEEP = (['dataset','dir','val','2,800,32'],['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'])
-# PARAM2SWEEP = None
+PARAM2SWEEP = None
+
+RUN_TIME = 48 # 20 # 10 # Hours
+OVERWRITE_RESUMED_CONFIG = False
+# OVERWRITE_RESUMED_CONFIG = True
 
 della_not_tiger = 'della-' in socket.gethostname()
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 EVAL_FOLDER = "/tigress/yb6751/projects/NeuralMFSR/results"
 CONDA_ENV = "torch-env" if della_not_tiger else "volumetric_enhance"
-RUN_TIME = 10 # 20 # 10 # Hours
-
-OVERWRITE_RESUMED_CONFIG = False
-# OVERWRITE_RESUMED_CONFIG = True
-
 
 assert EVAL is None or RESUME_TRAINING is None
 if EVAL is not None:    RESUME_TRAINING = EVAL
@@ -58,26 +55,27 @@ if PARAM2SWEEP is None:
 
 sweep_jobs = len(PARAM2SWEEP[0])>0
 sweep_suffix = '_'+''.join([w[0].upper()+w[1:].replace('_','').replace(',','_') for w in PARAM2SWEEP[0]]) if sweep_jobs else ''
-job_name += sweep_suffix
-existing_ids = [int(search("(?<="+job_name+"_)(\d)+(?=$)",f).group(0)) for f in os.listdir(LOGS_FOLDER) if search("^"+job_name+"_(\d)+$",f) is not None]
+job_name += sweep_suffix+'%s'
+run_suffix = lambda run_num: str(PARAM2SWEEP[1][run_num]).replace('.','_') if sweep_jobs else ''
+existing_ids = [int(search("(?<="+job_name%(run_suffix(0))+"_)(\d)+(?=$)",f).group(0)) for f in os.listdir(LOGS_FOLDER) if search("^"+job_name%(run_suffix(0))+"_(\d)+$",f) is not None]
 config_file = ''+CONFIG_FILE
 cfg = get_config(config_file)
 
-job_name += '%s'
+# job_name += '%s'
 for run_num in (trange(len(PARAM2SWEEP[1])) if len(PARAM2SWEEP[1])>1 else range(len(PARAM2SWEEP[1]))):
-    run_suffix = str(PARAM2SWEEP[1][run_num]).replace('.','_') if sweep_jobs else ''
+    # run_suffix = str(PARAM2SWEEP[1][run_num]).replace('.','_') if sweep_jobs else ''
     if RESUME_TRAINING is None:
-        job_identifier = job_name%(run_suffix)+"_%d"%(0 if len(existing_ids)==0 else max(existing_ids)+1)
+        job_identifier = job_name%(run_suffix(run_num))+"_%d"%(0 if len(existing_ids)==0 else max(existing_ids)+1)
         if run_num==0:
-            code_folder = os.path.join("slurm/code",job_identifier.replace(sweep_suffix+run_suffix,sweep_suffix+'_SWP') if sweep_jobs else job_identifier)
+            code_folder = os.path.join("slurm/code",job_identifier.replace(sweep_suffix+run_suffix(run_num),sweep_suffix+'_SWP') if sweep_jobs else job_identifier)
             if not os.path.exists(code_folder):
                 os.mkdir(code_folder)
         os.mkdir(os.path.join(LOGS_FOLDER,job_identifier))
         print("Starting to train a new job: %s"%(job_identifier))
     else:
-        job_identifier = job_name%(run_suffix)+"_%d"%(RESUME_TRAINING)
+        job_identifier = job_name%(run_suffix(run_num))+"_%d"%(RESUME_TRAINING)
         if run_num==0:
-            code_folder = os.path.join("slurm/code",job_identifier.replace(sweep_suffix+run_suffix,'_SWP') if sweep_jobs else job_identifier)
+            code_folder = os.path.join("slurm/code",job_identifier.replace(sweep_suffix+run_suffix(run_num),'_SWP') if sweep_jobs else job_identifier)
         saved_models_folder = os.path.join(LOGS_FOLDER,job_identifier)
         assert os.path.isdir(saved_models_folder),"Cannot resume training, since folder %s does not exist."%(saved_models_folder)
         # If a configuration file already exists, checking whether there are any differences with respect to the current confg used. It can happen that an old file does not exist if this is 
@@ -117,6 +115,8 @@ for run_num in (trange(len(PARAM2SWEEP[1])) if len(PARAM2SWEEP[1])>1 else range(
         if sweep_jobs:
             rsetattr(cfg, '.'.join(PARAM2SWEEP[0]), PARAM2SWEEP[1][run_num])
     setattr(cfg.experiment, 'id',job_identifier)
+    if EVAL_WHITE:
+        setattr(cfg.nerf.validation,'white_background',True)
     with open(os.path.join(code_folder,config_filename), "w") as f:
         f.write(cfg.dump())  # cfg, f, default_flow_style=False)
 
@@ -130,7 +130,7 @@ for run_num in (trange(len(PARAM2SWEEP[1])) if len(PARAM2SWEEP[1])>1 else range(
         f.write("#!/bin/bash\n")
         f.write("#SBATCH --nodes=1\n")
         f.write("#SBATCH --ntasks=1\n")
-        # f.write("#SBATCH --job-name=%s\n"%(eval_prefix+job_name%(run_suffix)))
+        # f.write("#SBATCH --job-name=%s\n"%(eval_prefix+job_name%(run_suffix(run_num))))
         f.write("#SBATCH --job-name=%s\n"%(eval_prefix+job_identifier))
         f.write("#SBATCH --cpus-per-task=10\n")
         # f.write("#SBATCH --mem=64G\n")

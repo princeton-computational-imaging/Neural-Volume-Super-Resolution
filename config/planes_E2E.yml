@@ -1,9 +1,11 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1
-  # id: E2E_Synt_Res266Sc200_264Sc800_32_LR100_400_SRrecField55_PZerMean1_0
-  # id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_SR8L32CperChRecField15
+  # id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_1
+  id: E2E_SyntAndReal_20vs4
+  # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32ship_0
+  # id: E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1
+  # id: E2E_Synt_Res266Sc100_258Sc800_32_LR100_800_SRrecField55_PZerMean1
   # id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
@@ -23,33 +25,44 @@ dataset:
   # Base directory of dataset.
   # type: DTU # DTU,synt
   # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
-  root: /scratch/gpfs/yb6751/datasets/Synthetic
+  synt: 
+    root: /scratch/gpfs/yb6751/datasets/Synthetic
+    # Near clip plane (clip all depth values closer than this threshold).
+    near: 2
+    # Far clip plane (clip all depth values farther than this threshold).
+    far:  6
+    no_ndc: True
+  llff: 
+    root: /scratch/gpfs/yb6751/datasets/LLFF
+    near: 0
+    far:  1
+    no_ndc: False
   max_scenes_eval:  9
   # auto_remove_val:  True
   dir:
     train:
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      4,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
+      1,800,32,'llff':   ['flower','fortress','horns','leaves','room','trex']
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship',[0,251]]
+      # 8,100,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship',[0,251]]
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,251]]
-      2,800,32:   ['bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,251]]
+      # 1,800,32:   ['bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,251]]
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
-      # 8,200,32:   ['chair','mic']
       # 8,200,32:   ['chair','mic',[0,50]]
-      # 2,800,32:   ['chair']
-      # 8,200,32:   ['mic','mic#1']
-      # 2,800,32:   ['mic']
+      # 8,200,32:   ['ship']
+      # 2,800,32:   ['ship']
     val:
-      # 2,800,32:   ['mic','ship']
-      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,800,32:   'bugatti'
+      2,800,32:   ['mic','ship']
+      1,800,32,'llff':   ['orchids','fern']
+    #   # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      # 2,800,32:   ['ship']
+    #   8,200,32:   ['chair','drums','ficus','ship']
       # 2,800,32:   ['mic#1']
-      # 2,800,32:   ['mic']
-      # 2,800,32: ['chair','drums',]
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -60,11 +73,12 @@ dataset:
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
-  no_ndc: True
-  # Near clip plane (clip all depth values closer than this threshold).
-  near: 2
-  # Far clip plane (clip all depth values farther than this threshold).
-  far: 6
+  # no_ndc: True
+  # # Near clip plane (clip all depth values closer than this threshold).
+  # near: 2
+  # # Far clip plane (clip all depth values farther than this threshold).
+  # far: 6
+  llffhold: 2 #4
 
 # Model parameters.
 models:
@@ -163,7 +177,7 @@ nerf:
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
       # buffer_size:  50
-      steps_per_buffer: 1
+      steps_per_buffer: 200
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
@@ -175,7 +189,7 @@ nerf:
     # Add Gaussian noise to points coordinates before projecting them to planes:
     # point_coords_noise: 0.1
     # Encourage per-channel 0 mean on the planes. This is meant to replace input normalization for SR in the end-2-end training scheme.
-    zero_mean_planes_w: 1 #0 #1
+    zero_mean_planes_w: 0 #0 #1
     # Standard deviation of noise to be added to the radiance field when
     # performing volume rendering.
     radiance_field_noise_std: 0.2
@@ -233,7 +247,7 @@ super_resolution:
     # n_blocks: 8 #32
     n_blocks: 32
     # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
-    receptive_field_bound:  55
+    # receptive_field_bound:  55
     # scale_factor: sqrt #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
     # single_plane: False

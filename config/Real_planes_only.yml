@@ -1,11 +1,9 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: Synt_Res16Sc800_32_400_NerfUseviewdirsFalse
-  # id: plane_resolution_RES100_400_1600
-  # id: planes_on_SR_Res800_32
-  # id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_SR8L32CperChRecField15
-  # id: Synt_Res266Sc200_32_LR100_400_SepValSceneTrain_fromE2E
+  # id: planes_only_blurrySTD2
+  # id: planes_only_258recovery
+  id: llff_all
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -22,34 +20,18 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  root: /scratch/gpfs/yb6751/datasets/Synthetic
-  # root: /scratch/gpfs/yb6751/datasets/EDSR_SR_Synthetic_trainedOn259
-  max_scenes_eval:  9
+  type: llff # DTU,synt,llff
+  root: /scratch/gpfs/yb6751/datasets/LLFF
+  # root: /scratch/gpfs/yb6751/datasets/Synthetic
+  max_scenes_eval:  4
+  # auto_remove_val:  True
   dir:
     train:
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      2,800,32:   ['ship','materials','bugatti','cola','holiday','motorbike','dragon']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship',[0,251]]
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,51]]
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,400,32:   ['chair','lego','materials','bugatti','donut','motorbike','teddy']
-      # 2,100,32:   ['chair','lego','materials','bugatti','donut','motorbike','teddy']
-      # 2,1600,32:   ['chair','lego','materials','bugatti','donut','motorbike','teddy']
-      # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
-      # 8,200,32:   ['chair','mic']
-      # 8,200,32:   ['chair','mic',[0,50]]
-      # 2,800,32:   ['chair']
-      # 8,200,32:   ['mic','mic#1']
-      # 2,800,32:   ['mic']
-    # val:
-      # 2,800,32:   ['mic','ship']
-      # 2,800,32:   ['mic']
-      # 2,800,32:   ['mic#1']
-      # 2,800,32: ['chair','drums',]
+      4,200,32:   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
+      # 4,200,32:   ['orchids']
+    val:
+      1,800,32:   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
+      # 1,800,32:   ['orchids']
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -60,66 +42,18 @@ dataset:
   testskip: 10
   # Do not use NDC (normalized device coordinates). Usually True for
   # synthetic (Blender) datasets.
-  no_ndc: True
+  no_ndc: False
   # Near clip plane (clip all depth values closer than this threshold).
-  near: 2
+  near: 0
   # Far clip plane (clip all depth values farther than this threshold).
-  far: 6
+  far: 1
+  llffhold: 4
 
 # Model parameters.
 models:
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res66Sc200_64Sc800_32_LR100_400_SepValSceneTrain_0
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_264Sc800_32_LR100_400_SepValSceneTrain_0
-  # Coarse model.
-  coarse:
-    # Name of the torch.nn.Module class that implements the model.
-    type: TwoDimPlanesModel
-    # Number of planes to project to (3 and up):
-    # num_planes: 9
-    # Plane side size. Integer or a list of integers to match different scenes.
-    # plane_resolutions: 200 #64 #32
-    # Plane side size for view-direction plane. Can be a list like plane_resolutions.
-    # viewdir_plane_resolution: 32
-    # Planes interpolation method (default to bilinear):
-    plane_interp: bilinear # bicubic # bilinear
-    # Number of layers in the density decoder.
-    dec_density_layers: 8
-    # Number of layers in the rgb decoder.
-    dec_rgb_layers: 8
-    # dec_channels: 64
-    # What is the input to the rgb decoder, apart from view directions (if used)
-    rgb_dec_input:  projections # projections, features
-    # How to combine projections from different planes:
-    proj_combination: concat #avg #concat
-    # How to combine projection from viewdir plane with the ones from position planes. Defaults to proj_combination:
-    # viewdir_proj_combination: concat
-    # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
-    align_corners: False
-    # Number of hidden units in each layer of the MLP (multi-layer
-    # perceptron).
-    # hidden_size: 256
-    # Add a skip connection once in a while. Note: This parameter
-    # won't take affect unless num_layers > skip_connect_every.
-    skip_connect_every: 3
-    # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
-    # interp_viewdirs: bilinear #'bilinear','bicubic',None
-    #### Plane coniguration: ####
-    # num_plane_channels: 12
-    # Limiting planes' rank by constructing them as a product of two matrices. The following parameter determines the ratio of the rank relative to the full rank:
-    # planes_rank_ratio:  0.005
-  fine:
-    # Name of the torch.nn.Module class that implements the model.
-    # type: use_same
-    type: TwoDimPlanesModel
-    # ensemble_size:  2
-    # Plane side size:
-    # plane_resolutions: 128
-    # # Number of layers in the density decoder.
-    # dec_density_layers: 2
-    # # Number of layers in the rgb decoder.
-    # dec_rgb_layers: 2
-    # Share the planes with the coarse model:
-    use_coarse_planes: True
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_1
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_0
+
 # Optimizer params.
 optimizer:
   # Name of the torch.optim class used for optimization.
@@ -140,6 +74,7 @@ nerf:
   # # Encoding function for ray direction (theta, phi).
   # encode_direction_fn: None
   train:
+    planes_only: True
     # End-to-end training of representation and SR models
     # train_end2end:  LR_planes # HR_planes #LR_planes
     # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes
@@ -147,7 +82,7 @@ nerf:
     # In the end-2-end training, learn decoder and sr model separately by not performing decoder steps during SR iterations
     # separate_decoder_sr:  True
     # In the end-2-end training, learn the LR planes corresponding to the validation scenes without affecting the decoder (almost as if learned afterwards.)
-    separate_decoder_val_scenes:  True
+    # separate_decoder_val_scenes:  True
     # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
     # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
     #  since HR images are not available for their training) (default: True):
@@ -164,8 +99,8 @@ nerf:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
-      # buffer_size:  4
-      steps_per_buffer: 8
+      # buffer_size:  Makes no sense to use a buffer here since there is no point in alternating between scenes in this experiment (as decoder and SR model are fixed)
+      steps_per_buffer: 1
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
@@ -177,7 +112,7 @@ nerf:
     # Add Gaussian noise to points coordinates before projecting them to planes:
     # point_coords_noise: 0.1
     # Encourage per-channel 0 mean on the planes. This is meant to replace input normalization for SR in the end-2-end training scheme.
-    zero_mean_planes_w: 0 #1
+    zero_mean_planes_w: 1 #0 #1
     # Standard deviation of noise to be added to the radiance field when
     # performing volume rendering.
     radiance_field_noise_std: 0.2
@@ -208,3 +143,23 @@ nerf:
     radiance_field_noise_std: 0.
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
+super_resolution:
+  # lr: 5.E-5
+  # training:
+  #   loss: fine # fine,coarse,both
+  apply_2_coarse: False #True # False
+  # Super-resolve view-directions plane as well, or only positional planes:
+  SR_viewdir: False
+  # input_normalization:  True
+  consistency_loss_w: 0 #1 #0.001
+  plane_loss_w:  0 #1
+  # Add Gaussian noise to SR input, with STD relative to the plane's STD:
+  # sr_input_noise: 0.1
+  # sr_output_noise:  1
+  # rendering_loss: 0
+  # plane_dropout:  0.5
+  # plane_resize_mode:  bicubic
+  model:
+    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_1
+    path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_0
+  

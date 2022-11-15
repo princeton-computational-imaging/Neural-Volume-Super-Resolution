@@ -739,9 +739,12 @@ class PlanesOptimizer(nn.Module):
                             for d in range(self.planes_per_scene)])
                         cn = coords_normalization[scene]
                     else:
-                        params = torch.load(self.param_path(model_name=model_name,scene=scene,save_location=copy_params_path))
+                        params = self.load_scene_planes(model_name=model_name,scene=scene,save_location=copy_params_path)
+                        # params = torch.load(self.param_path(model_name=model_name,scene=scene,save_location=copy_params_path))
                         cn = params['coords_normalization']
                         params = params['params']
+                    if not os.path.isdir(self.save_location.replace('/planes','')) or any(['.ckpt' in f for f in os.listdir(self.save_location.replace('/planes',''))]):
+                        assert not os.path.exists(self.param_path(model_name=model_name,scene=scene)),"Planes scene file %s already exists"%(self.param_path(model_name=model_name,scene=scene))
                     torch.save({'params':params,'coords_normalization':cn},self.param_path(model_name=model_name,scene=scene))
                     if model.viewdir_mapping:
                         model.viewdir_plane_coverage[get_plane_name(scene,model.num_density_planes)] = torch.zeros([res[1]+15,res[1]+15])
@@ -758,8 +761,11 @@ class PlanesOptimizer(nn.Module):
             # scenes_planes_name = scene if scene in self.scenes_with_planes else model.scene_coupler.scene_with_saved_plane(scene)
             scenes_planes_name = model.scene_coupler.scene2saved[scene]
             if model_name=='coarse' or not self.use_coarse_planes:
-                loaded_params = torch.load(self.param_path(model_name=model_name,scene=scenes_planes_name))
-                # model.scene_coupler.downsampled_planes = {}
+                loaded_params = self.load_scene_planes(model_name=model_name,scene=scenes_planes_name)
+                if not all([model.scene_coupler.scene2saved[scene] in k for k in loaded_params['params']]):
+                    print('!!! Warning: Applying patch designed for the pre-SR experiment !!!')
+                    assert(all([model.scene_coupler.scene2saved[scene].replace('_DS2_','_DS1_') in k for k in loaded_params['params']]))
+                    loaded_params['params'] = nn.ParameterDict([(k.replace('_DS1_','_DS2_'),v) for k,v in loaded_params['params'].items()])
             model.planes_ = loaded_params['params'].cuda()
             self.generated_planes.clear()
             self.downsampled_planes.clear()
@@ -790,7 +796,8 @@ class PlanesOptimizer(nn.Module):
         # for scene in tqdm(self.training_scenes,desc='Collecting plane statistics'):
         # for scene in tqdm(self.models[model_name].scene_coupler.downsample_couples.values(),desc='Collecting plane statistics'):
         for scene in tqdm(self.training_scenes,desc='Collecting plane statistics'):
-            loaded_params = torch.load(self.param_path(model_name=model_name,scene=self.models[model_name].scene_coupler.scene2saved[scene]))
+            loaded_params = self.load_scene_planes(model_name=model_name,scene=self.models[model_name].scene_coupler.scene2saved[scene])
+            # loaded_params = torch.load(self.param_path(model_name=model_name,scene=self.models[model_name].scene_coupler.scene2saved[scene]))
             for k,p in loaded_params['params'].items():
                 if not viewdir and get_plane_name(None,self.models[model_name].num_density_planes) in k:  continue
                 plane_means.append(torch.mean(p,(2,3)).squeeze(0))
@@ -800,16 +807,17 @@ class PlanesOptimizer(nn.Module):
         else:
             return {'mean':torch.cat(plane_means,0).reshape([len(self.training_scenes),-1]).mean(0),'std':torch.cat(plane_STDs,0).reshape([len(self.training_scenes),-1]).mean(0)}
 
-    def save_params(self,to_checkpoint=False):
+    def save_params(self,as_best=False):
         assert self.optimize,'Why would you want to save if not optimizing?'
         model_name = 'coarse'
         model = self.models[model_name]
-        scenes_list = self.scenes if to_checkpoint else self.cur_scenes
-        if to_checkpoint:
-            all_params,all_states = nn.ParameterDict(),[]
+        scenes_list = self.scenes if as_best else self.cur_scenes
+        # if to_checkpoint:
+        #     all_params,all_states = nn.ParameterDict(),[]
         scene_num = 0
         already_saved = []
-        for scene in scenes_list:
+        scenes2save = scenes_list if len(scenes_list)<20 else tqdm(scenes_list,desc='Saving scene planes')
+        for scene in scenes2save:
             scene = model.scene_coupler.scene_with_saved_plane(scene)
             if scene in already_saved: continue
             already_saved.append(scene)
@@ -817,28 +825,44 @@ class PlanesOptimizer(nn.Module):
                 # params = nn.ParameterDict([(get_plane_name(scene,d),model.raw_plane(get_plane_name(scene,d),downsample=False)) for d in range(self.planes_per_scene)])
                 params = nn.ParameterDict([(get_plane_name(scene,d),model.planes_[get_plane_name(scene,d)]) for d in range(self.planes_per_scene)])
                 opt_states = [self.optimizer.state_dict()['state'][i+scene_num*self.planes_per_scene] if (i+scene_num*self.planes_per_scene) in self.optimizer.state_dict()['state'] else None for i in range(self.planes_per_scene)]
+                coords_normalization = model.box_coords[scene]
                 scene_num += 1
             else:
-                loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
+                loaded_params = self.load_scene_planes(model_name=model_name,scene=scene)
+                # loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
                 params = loaded_params['params']
                 opt_states = loaded_params['opt_states'] if 'opt_states' in loaded_params else [None for p in params]
-            if to_checkpoint:
-                all_params.update(params)
-                all_states.extend(opt_states)
-            else:
-                param_file_name = self.param_path(model_name=model_name,scene=scene)
-                del_temp = False
-                if os.path.isfile(param_file_name):
-                    del_temp = True
-                    copyfile(param_file_name,param_file_name.replace('.par','.par_temp'))
-                torch.save({'params':params,'opt_states':opt_states,'coords_normalization':model.box_coords[scene]},param_file_name)
-                if del_temp:
-                    os.remove(param_file_name.replace('.par','.par_temp'))
+                coords_normalization = loaded_params['coords_normalization']
+            # if to_checkpoint:
+            #     all_params.update(params)
+            #     all_states.extend(opt_states)
+            # else:
+            param_file_name = self.param_path(model_name=model_name,scene=scene)
+            if as_best:
+                param_file_name = param_file_name.replace('.par','.par_best')
+            del_temp = False
+            if os.path.isfile(param_file_name):
+                del_temp = as_best
+                copyfile(param_file_name,param_file_name.replace('.par','.par_temp'))
+            torch.save({'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},param_file_name)
+            if del_temp:
+                os.remove(param_file_name.replace('.par','.par_temp'))
+        # if to_checkpoint:
+        #     return all_params,all_states
+        # else:
+        self.saving_needed = False
 
-        if to_checkpoint:
-            return all_params,all_states
-        else:
-            self.saving_needed = False
+    def load_scene_planes(self,model_name,scene,save_location=None):
+        file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location)
+        try:
+            loaded_params = torch.load(file2load)
+        except Exception as e:
+            copyfile(file2load,file2load.replace('.par','.par_corrupt'))
+            copyfile(file2load.replace('.par','.par_temp'),file2load)
+            print("!!!! WARNING: planes model seems to be currpted for scene %s. Loading their backup instead.:\n%s"%(scene,e))
+            loaded_params = torch.load(file2load)
+        return loaded_params
+
 
     def draw_scenes(self,assign_LR_planes=True):
         if self.saving_needed:
@@ -856,11 +880,12 @@ class PlanesOptimizer(nn.Module):
                     scene = model.scene_coupler.scene_with_saved_plane(scene)
                     if scene in already_loaded: continue
                     already_loaded.append(scene)
-                    try:
-                        loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
-                    except Exception as e:
-                        print("!!!! WARNING: planes model seems to be currpted for scene %s:\n%s"%(scene,e))
-                        raise e
+                    loaded_params = self.load_scene_planes(model_name=model_name,scene=scene)
+                    # try:
+                    #     loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
+                    # except Exception as e:
+                    #     print("!!!! WARNING: planes model seems to be currpted for scene %s:\n%s"%(scene,e))
+                    #     raise e
                         # res = [int(search('(?<=PlRes)(\d)+(?=_)',scene).group(0)),int(search('(?<=_)(\d)+(?=$)',scene).group(0))]
                         # params = nn.ParameterDict([
                         #     (get_plane_name(scene,d),
@@ -1169,36 +1194,37 @@ def extract_ds_and_res(scene_name):
     return ds,res
 
 class SceneCoupler:
-    def __init__(self,scenes_list,planes_res_level,num_pos_planes,viewdir_plane,training_scenes) -> None:
+    def __init__(self,scenes_list,planes_res_level,num_pos_planes,viewdir_plane,training_scenes,multi_im_res) -> None:
         num_planes = num_pos_planes+viewdir_plane
         name_pattern = lambda name: '^'+name.split('_DS')[0]+'_DS'+'(\d)+_PlRes(\d)+_'+name.split('_')[-1]
         ds_ratios,res_ratios = [],[]
         self.upsample_couples,self.downsample_couples,self.HR_planes_LR_ims_scenes = {},{},[]
         scenes_list = list(set(scenes_list+training_scenes))
-        for sc_num in range(len(scenes_list)):
-            matching_scenes = [sc for sc in [s for i,s in enumerate(scenes_list) if i!=sc_num] if search(name_pattern(scenes_list[sc_num]),sc)]
-            if len(matching_scenes)>0:
-                assert len(matching_scenes)==1 or planes_res_level!='HR_planes','Not supporting HR planes with multiple scene matches'
-                org_vals = extract_ds_and_res(scenes_list[sc_num])
-                for match in matching_scenes:
-                    found_vals = extract_ds_and_res(match)
-                    res_ratio = found_vals[1]/org_vals[1]
-                    if res_ratio==1:
-                        continue
-                    res_ratios.append(res_ratio)
-                    ds_ratios.append(found_vals[0]/org_vals[0])
-                    if ds_ratios[-1]==1 and res_ratio>1:
-                        self.HR_planes_LR_ims_scenes.append(match)
-                    # if ds_ratios[-1]>1:
-                    if res_ratios[-1]<1:
-                        if scenes_list[sc_num] in training_scenes:
-                            self.upsample_couples[match] = scenes_list[sc_num]
-                        self.downsample_couples[scenes_list[sc_num]] = match
-                    elif res_ratios[-1]>1:
-                        self.downsample_couples[match] = scenes_list[sc_num]
-                        if match in training_scenes:
-                            self.upsample_couples[scenes_list[sc_num]] = match
-        
+        if multi_im_res:
+            for sc_num in range(len(scenes_list)):
+                matching_scenes = [sc for sc in [s for i,s in enumerate(scenes_list) if i!=sc_num] if search(name_pattern(scenes_list[sc_num]),sc)]
+                if len(matching_scenes)>0:
+                    assert len(matching_scenes)==1 or planes_res_level!='HR_planes','Not supporting HR planes with multiple scene matches'
+                    org_vals = extract_ds_and_res(scenes_list[sc_num])
+                    for match in matching_scenes:
+                        found_vals = extract_ds_and_res(match)
+                        res_ratio = found_vals[1]/org_vals[1]
+                        if res_ratio==1:
+                            continue
+                        res_ratios.append(res_ratio)
+                        ds_ratios.append(found_vals[0]/org_vals[0])
+                        if ds_ratios[-1]==1 and res_ratio>1:
+                            self.HR_planes_LR_ims_scenes.append(match)
+                        # if ds_ratios[-1]>1:
+                        if res_ratios[-1]<1:
+                            if scenes_list[sc_num] in training_scenes:
+                                self.upsample_couples[match] = scenes_list[sc_num]
+                            self.downsample_couples[scenes_list[sc_num]] = match
+                        elif res_ratios[-1]>1:
+                            self.downsample_couples[match] = scenes_list[sc_num]
+                            if match in training_scenes:
+                                self.upsample_couples[scenes_list[sc_num]] = match
+            
         self.ds_factor = int(max(1/res_ratios[0],res_ratios[0])) if len(self.downsample_couples)>0 else 1
         for match_num in range(len(ds_ratios)):
             if res_ratios[match_num]!=1/ds_ratios[match_num]:

@@ -295,6 +295,7 @@ def run_one_iter_of_nerf(
     SR_model=None,
     ds_factor_or_id=1,
     spatial_margin=None,
+    scene_config={},
 ):
     if encode_position_fn is None:
         encode_position_fn = identity_encoding
@@ -310,7 +311,7 @@ def run_one_iter_of_nerf(
         viewdirs = viewdirs / viewdirs.norm(p=2, dim=-1).unsqueeze(-1)
         viewdirs = viewdirs.reshape((-1, 3))
     ray_shapes = ray_directions.shape  # Cache now, to restore later.
-    if options.dataset.no_ndc is False:
+    if scene_config.no_ndc is False:
         ro, rd = ndc_rays(H, W, focal, 1.0, ray_origins, ray_directions)
         ro = ro.reshape((-1, 3))
         rd = rd.reshape((-1, 3))
@@ -319,8 +320,8 @@ def run_one_iter_of_nerf(
         rd = ray_directions.reshape((-1, 3))
     # near = options.nerf.near * torch.ones_like(rd[..., :1])
     # far = options.nerf.far * torch.ones_like(rd[..., :1])
-    near = options.dataset.near * torch.ones_like(rd[..., :1])
-    far = options.dataset.far * torch.ones_like(rd[..., :1])
+    near = scene_config.near * torch.ones_like(rd[..., :1])
+    far = scene_config.far * torch.ones_like(rd[..., :1])
     rays = torch.cat((ro, rd, near, far), dim=-1)
     if options.nerf.use_viewdirs:
         rays = torch.cat((rays, viewdirs), dim=-1)
@@ -417,6 +418,7 @@ def eval_nerf(
     SR_model=None,
     ds_factor_or_id=1,
     spatial_margin=None,
+    scene_config={},
 ):
     r"""Evaluate a NeRF by synthesizing a full image (as opposed to train mode, where
     only a handful of rays/pixels are synthesized).
@@ -443,6 +445,7 @@ def eval_nerf(
         SR_model=None if isinstance(model_coarse,models.TwoDimPlanesModel) else SR_model,
         ds_factor_or_id=ds_factor_or_id,
         spatial_margin=spatial_margin,
+        scene_config=scene_config,
     )
     rgb_coarse = rgb_coarse.reshape([height,width,-1])
     if rgb_fine is not None:
@@ -454,7 +457,7 @@ def eval_nerf(
 
 def find_latest_checkpoint(ckpt_path,sr):
     if os.path.isdir(ckpt_path):
-        pattern = "(?<="+("SR_checkpoint" if sr else "^checkpoint")+")(\d)+(?=\.ckpt)"
+        pattern = "(?<="+("^SR_checkpoint" if sr else "^checkpoint")+")(\d)+(?=\.ckpt)"
         ckpt_path = os.path.join(ckpt_path,sorted([f for f in os.listdir(ckpt_path) if search(pattern,f) is not None],
             key=lambda x:int(search(pattern,x).group(0)))[-1])
     return ckpt_path

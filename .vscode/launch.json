@@ -12,6 +12,20 @@
             "console": "integratedTerminal",
         },
         {
+            "name": "perfomance table",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/performance_table.py",
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "convert filename",
+            "type": "python",
+            "request": "launch",
+            "program": "scripts/convert_image_names.py",
+            "console": "integratedTerminal",
+        },
+        {
             "name": "clean checkpoint",
             "type": "python",
             "request": "launch",
@@ -25,29 +39,29 @@
             "program": "models_comparison.py",
             "console": "integratedTerminal",
         },
-        {
-            "name": "end2end DTU train",
-            "type": "python",
-            "request": "launch",
-            "program": "train_nerf.py",
-            "console":"integratedTerminal",
-            // "console": "integratedTerminal",
-            // "justMyCode": false,
-            "args":["--config","config/DTU_E2E.yml"]
-        },
-        {
-            "name": "resume end2end DTU",
-            "type": "python",
-            "request": "launch",
-            "program": "train_nerf.py",
-            "console":"integratedTerminal",
-            // "console": "integratedTerminal",
-            // "justMyCode": false,
-            "args":[
-                "--config","config/DTU_E2E.yml",
-                "--load-checkpoint","resume",
-            ]
-        },
+        // {
+        //     "name": "end2end DTU train",
+        //     "type": "python",
+        //     "request": "launch",
+        //     "program": "train_nerf.py",
+        //     "console":"integratedTerminal",
+        //     // "console": "integratedTerminal",
+        //     // "justMyCode": false,
+        //     "args":["--config","config/DTU_E2E.yml"]
+        // },
+        // {
+        //     "name": "resume end2end DTU",
+        //     "type": "python",
+        //     "request": "launch",
+        //     "program": "train_nerf.py",
+        //     "console":"integratedTerminal",
+        //     // "console": "integratedTerminal",
+        //     // "justMyCode": false,
+        //     "args":[
+        //         "--config","config/DTU_E2E.yml",
+        //         "--load-checkpoint","resume",
+        //     ]
+        // },
         {
             "name": "end2end synt train",
             "type": "python",
@@ -81,27 +95,27 @@
             // "justMyCode": false,
             "args":["--config","config/planes.yml"]
         },
-        {
-            "name": "train planes on DTU",
-            "type": "python",
-            "request": "launch",
-            "program": "train_nerf.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args":["--config","config/planes_DTU.yml"]
-        },
-        {
-            "name": "resume planes DTU",
-            "type": "python",
-            "request": "launch",
-            "program": "train_nerf.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args":[
-                "--config","config/planes_DTU.yml",
-                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
-            ]
-        },
+        // {
+        //     "name": "train planes on DTU",
+        //     "type": "python",
+        //     "request": "launch",
+        //     "program": "train_nerf.py",
+        //     "console": "integratedTerminal",
+        //     "justMyCode": true,
+        //     "args":["--config","config/planes_DTU.yml"]
+        // },
+        // {
+        //     "name": "resume planes DTU",
+        //     "type": "python",
+        //     "request": "launch",
+        //     "program": "train_nerf.py",
+        //     "console": "integratedTerminal",
+        //     "justMyCode": true,
+        //     "args":[
+        //         "--config","config/planes_DTU.yml",
+        //         "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
+        //     ]
+        // },
         {
             "name": "resume planes model",
             "type": "python",
@@ -137,29 +151,52 @@
             ]
         },
         {
-            "name": "train DTU SR",
+            "name": "Real planes only",
             "type": "python",
             "request": "launch",
             "program": "train_nerf.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args":[
-                "--config","config/planes_SR_DTU.yml"
+                "--config","config/Real_planes_only.yml"
             ]
         },
         {
-            "name": "resume DTU SR",
+            "name": "resume planes only synt",
             "type": "python",
             "request": "launch",
             "program": "train_nerf.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args":
-            [
-                "--config","config/planes_SR_DTU.yml",
-                "--load-checkpoint","resume",
+            "args":[
+                "--config","config/Synt_planes_only.yml",
+                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
             ]
         },
+        // {
+        //     "name": "train DTU SR",
+        //     "type": "python",
+        //     "request": "launch",
+        //     "program": "train_nerf.py",
+        //     "console": "integratedTerminal",
+        //     "justMyCode": true,
+        //     "args":[
+        //         "--config","config/planes_SR_DTU.yml"
+        //     ]
+        // },
+        // {
+        //     "name": "resume DTU SR",
+        //     "type": "python",
+        //     "request": "launch",
+        //     "program": "train_nerf.py",
+        //     "console": "integratedTerminal",
+        //     "justMyCode": true,
+        //     "args":
+        //     [
+        //         "--config","config/planes_SR_DTU.yml",
+        //         "--load-checkpoint","resume",
+        //     ]
+        // },
         {
             "name": "planes internal SR",
             "type": "python",
@@ -212,7 +249,7 @@
             ]
         },
         {
-            "name": "Eval planes",
+            "name": "planes EVAL",
             "type": "python",
             "request": "launch",
             "program": "train_nerf.py",

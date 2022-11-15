@@ -1,4 +1,4 @@
-from collections import OrderedDict
+from collections import OrderedDict,deque,defaultdict
 from pickletools import uint8
 from typing import Optional
 import numpy as np
@@ -10,6 +10,7 @@ import cv2
 import torchvision
 from re import search
 import functools
+from imresize import imresize
 # import torchsearchsorted
 
 def rsetattr(obj, attr, val):
@@ -26,6 +27,8 @@ class null_with:
     def __exit__(self,a,b,c):
         pass
 
+def bicubic_interp(im,sf):
+    return cv2.resize(im, dsize=(im.shape[1]*sf,im.shape[0]*sf), interpolation=cv2.INTER_CUBIC)
 class Counter:
     def __init__(self) -> None:
         self.counter = 0
@@ -45,6 +48,28 @@ class Counter:
             self.flag = False
             return True
         return False
+
+class RunningMeanScores:
+    def __init__(self,per_scene_len,val_strings,running_mean_logs) -> None:
+        self.running_scores = defaultdict(dict)
+        for sc in per_scene_len:
+            self.running_scores[val_strings[sc]][sc] = dict(zip(running_mean_logs,[deque(maxlen=per_scene_len[sc]) for i in running_mean_logs]))
+        self.running_scores['train'] = dict(zip(running_mean_logs,[deque(maxlen=len([sc for sc in per_scene_len if '_train' in sc])) for i in running_mean_logs]))
+        # dict([(score,dict([(cat,deque(maxlen=len(training_scenes) if cat=='train' else val_ims_per_scene)) for cat in list(set(val_strings))+['train']])) for score in running_mean_logs])
+
+    def update(self,val_set,metric,scores_dict):
+        if val_set=='train':
+            self.running_scores['train'][metric].append(v)
+        else:
+            for k,v in scores_dict.items():
+                self.running_scores[val_set][k][metric].append(v)
+
+    def get(self,val_set,metric):
+        if val_set=='train':
+            return np.mean(self.running_scores['train'][metric])
+        else:
+            return np.mean([np.mean(self.running_scores[val_set][k][metric]) for k in self.running_scores[val_set]])
+
 
 def set_config_defaults(source,target):
     for k in source.keys():
@@ -168,9 +193,14 @@ def get_config(config_path):
         cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
         return CfgNode(cfg_dict)
 
-def im_resize(image,scale_factor):
+def im_resize(image,scale_factor,blur_kernel=None):
     assert all([v%scale_factor==0 for v in image.shape[:2]]),'Currently not supporting downscaling to an ambiguous size.'
-    return cv2.resize(image, dsize=(image.shape[1]//scale_factor, image.shape[0]//scale_factor), interpolation=cv2.INTER_AREA)
+    cv2_scale_factor = scale_factor if blur_kernel is None else blur_kernel['base_factor']
+    # output = cv2.resize(image, dsize=(image.shape[1]//scale_factor, image.shape[0]//scale_factor), interpolation=cv2.INTER_AREA)
+    output = cv2.resize(image, dsize=(image.shape[1]//cv2_scale_factor,image.shape[0]//cv2_scale_factor), interpolation=cv2.INTER_AREA)
+    if blur_kernel is not None and scale_factor>cv2_scale_factor:
+        output = np.clip(imresize(output,scale_factor=1/(scale_factor/cv2_scale_factor),kernel='blurry_cubic_%f'%(blur_kernel['STD']),),0,1).astype(output.dtype)
+    return output
 
 def arange_ims(ims_tensor_list,text,psnrs=[],fontScale=1):
     num_rows = lambda n_cols:   int(np.ceil(len(ims_tensor_list)/n_cols))
@@ -294,12 +324,16 @@ def get_focal(data,dim):
 def calc_scene_box(scene_geometry,including_dirs,full_az_range=True,adjust_elevation_range=False):
     # FULL_AZ_RANGE = True # Manually set azimuth range to be [-pi,pi]
     # if full_elev_range: full_elev_range = [-np.pi/2,np.pi/2]
+    EXHAUSTIVE_CHECK = True
+    def list2pix(end_pixels):
+        return range(end_pixels[0],end_pixels[1]) if EXHAUSTIVE_CHECK else end_pixels
+
     num_frames = len(scene_geometry['camera_poses'])
     box = [[np.finfo(np.float).max,np.finfo(np.float).min] for i in range(3+2*including_dirs)]
     for f_num in range(num_frames):
         origin = scene_geometry['camera_poses'][f_num][:3, -1]
-        for W in [0,scene_geometry['W'][f_num]-1]:
-            for H in [0,scene_geometry['H'][f_num]-1]:
+        for W in list2pix([0,scene_geometry['W'][f_num]-1]):
+            for H in list2pix([0,scene_geometry['H'][f_num]-1]):
                 coord = np.array([\
                     (W-scene_geometry['W'][f_num]/2)/get_focal(scene_geometry['f'][f_num],'W'),
                     -(H-scene_geometry['H'][f_num]/2)/get_focal(scene_geometry['f'][f_num],'H'),

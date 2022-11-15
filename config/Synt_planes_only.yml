@@ -1,7 +1,9 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: planes_only
+  # id: planes_only_blurrySTD2
+  # id: planes_only_258recovery
+  id: llff_orchids
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -18,35 +20,24 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  # type: DTU # DTU,synt
-  # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
+  # type: llff # DTU,synt,llff
+  # root: /scratch/gpfs/yb6751/datasets/LLFF
   root: /scratch/gpfs/yb6751/datasets/Synthetic
   max_scenes_eval:  9
   # auto_remove_val:  True
   dir:
     train:
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship',[0,251]]
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,251]]
-      # 2,800,32:   ['bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,251]]
-      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
-      # 8,200,32:   ['chair','mic']
-      # 8,200,32:   ['chair','mic',[0,50]]
-      # 2,800,32:   ['chair']
-      # 8,200,32:   ['mic','mic#1']
-      # 2,800,32:   ['mic']
+      # 8,200,32:   ['chair##Gauss2','drums##Gauss2','ficus##Gauss2','hotdog##Gauss2','lego##Gauss2','materials##Gauss2','mic##Gauss2','ship##Gauss2',]
+      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship',]
+      # 8,200,32:   ['mic##Gauss2','mic']
+      # 4,200,32:   ['orchids']
+      8,200,32:   ['guitar']
     val:
-      # 2,800,32:   ['mic','ship']
-      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,800,32:   'bugatti'
-      # 2,800,32:   ['mic#1']
-      # 2,800,32:   ['mic']
-      # 2,800,32: ['chair','drums',]
+      2,800,32:   ['guitar']
+      # 1,800,32:   ['orchids']
+      # 2,800,32:   ['chair##Gauss2','drums##Gauss2','ficus##Gauss2','hotdog##Gauss2','lego##Gauss2','materials##Gauss2','mic##Gauss2','ship##Gauss2',]
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship',]
+      # 2,800,32:   ['mic##Gauss2','mic']
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -65,7 +56,8 @@ dataset:
 
 # Model parameters.
 models:
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_0
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_1
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_1
 
 # Optimizer params.
 optimizer:
@@ -112,7 +104,7 @@ nerf:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
-      # buffer_size:  50
+      # buffer_size:  Makes no sense to use a buffer here since there is no point in alternating between scenes in this experiment (as decoder and SR model are fixed)
       steps_per_buffer: 1
     # Whether or not to perturb the sampled depth values.
     perturb: True
@@ -173,19 +165,6 @@ super_resolution:
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
   model:
-    path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_0
-    # Name of the torch.nn.Module class that implements the model.
-    # type: EDSR
-    # # Number of hidden units in each layer of the MLP (multi-layer
-    # # perceptron).
-    # # hidden_size: 32 #256 #128 #256
-    # hidden_size: 256 #128 #256
-    # # Number of residual blocks (originally 32):
-    # # n_blocks: 8 #32
-    # n_blocks: 32
-    # # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
-    # receptive_field_bound:  55
-    # scale_factor: sqrt #one #sqrt #linear
-    # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
-    # single_plane: False
-    # per_channel_sr: True
+    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_1
+    path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_1
+  
