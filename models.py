@@ -739,7 +739,7 @@ class PlanesOptimizer(nn.Module):
                             for d in range(self.planes_per_scene)])
                         cn = coords_normalization[scene]
                     else:
-                        params = self.load_scene_planes(model_name=model_name,scene=scene,save_location=copy_params_path)
+                        params = self.load_scene_planes(model_name=model_name,scene=scene,save_location=copy_params_path,prefer_best=True)
                         # params = torch.load(self.param_path(model_name=model_name,scene=scene,save_location=copy_params_path))
                         cn = params['coords_normalization']
                         params = params['params']
@@ -833,29 +833,38 @@ class PlanesOptimizer(nn.Module):
                 params = loaded_params['params']
                 opt_states = loaded_params['opt_states'] if 'opt_states' in loaded_params else [None for p in params]
                 coords_normalization = loaded_params['coords_normalization']
-            # if to_checkpoint:
-            #     all_params.update(params)
-            #     all_states.extend(opt_states)
-            # else:
             param_file_name = self.param_path(model_name=model_name,scene=scene)
             if as_best:
                 param_file_name = param_file_name.replace('.par','.par_best')
-            del_temp = False
+            # del_temp = False
+            # if os.path.isfile(param_file_name):
+            #     del_temp = as_best
+            #     copyfile(param_file_name,param_file_name.replace('.par','.par_temp'))
+            # torch.save({'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},param_file_name)
+            # if del_temp:
+            #     os.remove(param_file_name.replace('.par','.par_temp'))
+            torch.save({'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},param_file_name.replace('.par','.par_temp'))
+            del_bckp = False
             if os.path.isfile(param_file_name):
-                del_temp = as_best
-                copyfile(param_file_name,param_file_name.replace('.par','.par_temp'))
-            torch.save({'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},param_file_name)
-            if del_temp:
-                os.remove(param_file_name.replace('.par','.par_temp'))
-        # if to_checkpoint:
-        #     return all_params,all_states
-        # else:
-        self.saving_needed = False
+                del_bckp = True
+                os.rename(param_file_name,param_file_name.replace('.par','.par_bckp'))
+            os.rename(param_file_name.replace('.par','.par_temp'),param_file_name)
+            if del_bckp:
+                os.remove(param_file_name.replace('.par','.par_bckp'))
+        if not as_best: self.saving_needed = False
 
-    def load_scene_planes(self,model_name,scene,save_location=None):
+    def load_scene_planes(self,model_name,scene,save_location=None,prefer_best=False):
         file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location)
         try:
-            loaded_params = torch.load(file2load)
+            loaded = False
+            while not loaded:
+                try:
+                    loaded_params = torch.load(file2load.replace('.par','.par_best') if prefer_best else file2load)
+                    loaded = True
+                except Exception as e:
+                    if not prefer_best:
+                        raise e
+                    prefer_best = False
         except Exception as e:
             copyfile(file2load,file2load.replace('.par','.par_corrupt'))
             copyfile(file2load.replace('.par','.par_temp'),file2load)

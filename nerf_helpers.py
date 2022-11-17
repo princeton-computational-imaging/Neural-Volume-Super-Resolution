@@ -324,9 +324,12 @@ def get_focal(data,dim):
 def calc_scene_box(scene_geometry,including_dirs,full_az_range=True,adjust_elevation_range=False):
     # FULL_AZ_RANGE = True # Manually set azimuth range to be [-pi,pi]
     # if full_elev_range: full_elev_range = [-np.pi/2,np.pi/2]
-    EXHAUSTIVE_CHECK = True
+    EXHAUSTIVE_CHECK = 10
     def list2pix(end_pixels):
-        return range(end_pixels[0],end_pixels[1]) if EXHAUSTIVE_CHECK else end_pixels
+        if EXHAUSTIVE_CHECK:
+            return np.unique(np.round(np.linspace(end_pixels[0],end_pixels[1],2+EXHAUSTIVE_CHECK)).astype(int))
+        else:
+            return end_pixels
 
     num_frames = len(scene_geometry['camera_poses'])
     box = [[np.finfo(np.float).max,np.finfo(np.float).min] for i in range(3+2*including_dirs)]

@@ -282,7 +282,7 @@ def main():
             im_freq = len(i_train[id])//val_ims_per_scene
             if id in i_val.keys(): #Avoid evaluating training images for scenes which were discarded for evaluation due to max_scenes_eval
                 # i_val[id+'_train'] = [x for i,x in enumerate(i_train[id]) if (i+im_freq//2)%im_freq==0]
-                i_val[id+'_train'] = sorted([(i+im_freq//2)%len(i_train[id]) for i in  np.unique(np.round(np.linspace(0,len(i_train[id])-1,val_ims_per_scene)).astype(int))])
+                i_val[id+'_train'] = [i_train[id][i] for i in sorted([(i+im_freq//2)%len(i_train[id]) for i in  np.unique(np.round(np.linspace(0,len(i_train[id])-1,val_ims_per_scene)).astype(int))])]
     training_scenes = list(i_train.keys())
     # scene_coupler = None
     # if True or end2end_training:
@@ -347,6 +347,7 @@ def main():
     important_loss_terms = [tag for tag in val_strings if 'blind_validation' in tag]
     if len(important_loss_terms)==0:        important_loss_terms = [tag for tag in val_strings if ('validation' in tag and '_LR' not in tag)]
     if len(important_loss_terms)==0:        important_loss_terms = [tag for tag in val_strings if 'validation' in tag]
+    important_loss_terms = set(important_loss_terms)
     def print_scenes_list(title,scenes):
         print('\n%d %s scenes:'%(len(scenes),title))
         print(scenes)
@@ -550,6 +551,8 @@ def main():
                 [p for k,p in SR_model.named_parameters() if 'NON_LEARNED' not in k],
                 lr=getattr(cfg.super_resolution,'lr',cfg.optimizer.lr)
             )
+        else:
+            assert all([sc not in scene_coupler.downsample_couples.keys() for sc in training_scenes]),"Why train on SR scenes when training only the planes? Currently not assigning the SR model's LR planes during training."
             # trainable_parameters.append({'params':[p for k,p in SR_model.named_parameters() if 'NON_LEARNED' not in k],'lr':getattr(cfg.super_resolution,'lr',cfg.optimizer.lr)})
     if rep_model_training:
         if not eval_mode:
@@ -590,20 +593,24 @@ def main():
     best_saved,last_saved = (0,np.finfo(np.float32).max),dict(zip(models2save,[[] for i in models2save]))
     params_init_path = None
     if load_saved_models:
+        initialize_from_trained = configargs.load_checkpoint=='' and end2end_training
         if SR_experiment:
             if not (rep_model_training or train_planes_only) or (train_planes_only and init_new_scenes):
                 checkpoint = find_latest_checkpoint(cfg.models.path,sr=False)
                 print("Using LR model %s"%(checkpoint))
-            if SR_experiment=="model" and (os.path.exists(configargs.load_checkpoint) or train_planes_only):
-                SR_checkpoint_path = cfg.super_resolution.model.path if (train_planes_only and init_new_scenes) else configargs.load_checkpoint
+            if SR_experiment=="model" and (os.path.exists(configargs.load_checkpoint) or train_planes_only or initialize_from_trained):
+                if initialize_from_trained:
+                    SR_checkpoint_path = cfg.models.path
+                else:
+                    SR_checkpoint_path = cfg.super_resolution.model.path if (train_planes_only and init_new_scenes) else configargs.load_checkpoint
                 SR_model_checkpoint = find_latest_checkpoint(SR_checkpoint_path,sr=True)
-                if not init_new_scenes:
+                if not (init_new_scenes or initialize_from_trained):
                     start_i = int(SR_model_checkpoint.split('/')[-1][len('SR_checkpoint'):-len('.ckpt')])+1
                     if 'eval_counter' in torch.load(SR_model_checkpoint).keys(): eval_counter = torch.load(SR_model_checkpoint)['eval_counter']
                     if 'best_saved' in torch.load(SR_model_checkpoint).keys(): best_saved = torch.load(SR_model_checkpoint)['best_saved']
                 print(("Using" if eval_mode else "Resuming training of")+" SR model %s"%(SR_model_checkpoint))
                 saved_config_dict = get_config(os.path.join(SR_checkpoint_path,"config.yml"))
-                config_diffs = DeepDiff(saved_config_dict,cfg)
+                config_diffs = DeepDiff(saved_config_dict.super_resolution,cfg.super_resolution)
                 for diff in [config_diffs[ch_type] for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed'] if ch_type in config_diffs]:
                     print(diff)
                 SR_model_checkpoint = torch.load(SR_model_checkpoint)
@@ -898,13 +905,13 @@ def main():
                             SR_model.clear_SR_planes(all_planes=store_planes)
                             planes_opt.generated_planes.clear()
                             planes_opt.downsampled_planes.clear()
-                            # scene_coupler.downsampled_planes = {}
                 SAVE_COARSE_IMAGES = False
                 cur_val_sets = [val_strings[eval_cycle]] if eval_mode else set(val_strings)
                 for val_set in cur_val_sets:
                     sr_scene_inds = [i for i,im in enumerate(rgb_SR[val_set]) if im is not None]
                     if len(sr_scene_inds)>0: #SR_experiment and '_HRplanes' not in val_set:
-                        SR_psnr_gain = np.mean([psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in sr_scene_inds])
+                        # SR_psnr_gain = np.mean([psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in sr_scene_inds])
+                        SR_psnr_gain = [psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in sr_scene_inds]
                         if not eval_mode:
                             SR_psnr_gain = np.mean(SR_psnr_gain)
                         write_scalar("%s/SR_psnr_gain"%(val_set),SR_psnr_gain,iter)
@@ -1114,18 +1121,18 @@ def main():
         if last_v_batch_iter:
             if optimizer is not None:
                 decoder_step = True
-            if end2end_training:
-                if getattr(cfg.nerf.train,'separate_decoder_sr',False):
-                    decoder_step &= not sr_iter
-                if getattr(cfg.nerf.train,'separate_decoder_val_scenes',False):
-                    decoder_step &= cur_scene_id in [s for k in scene_coupler.upsample_couples.items() for s in k]
-                    # if decoder_step:
-                    #     optimizer.param_groups[1]['lr'] = cfg.optimizer.lr
-                    # else:
-                    #     optimizer.param_groups[1]['lr'] = 0
+                if end2end_training:
+                    if getattr(cfg.nerf.train,'separate_decoder_sr',False):
+                        decoder_step &= not sr_iter
+                    if getattr(cfg.nerf.train,'separate_decoder_val_scenes',False):
+                        decoder_step &= cur_scene_id in [s for k in scene_coupler.upsample_couples.items() for s in k]
+                        # if decoder_step:
+                        #     optimizer.param_groups[1]['lr'] = cfg.optimizer.lr
+                        # else:
+                        #     optimizer.param_groups[1]['lr'] = 0
 
-            if decoder_step:
-                optimizer.step()
+                if decoder_step:
+                    optimizer.step()
             if SR_optimizer is not None and sr_iter:
                 SR_optimizer.step()
             # If training an SR model operating on planes, discarding super-resolved planes after updating the model:

@@ -142,3 +142,4 @@ archived_logs
 src/ResizeRight4delete/*
 src/ResizeRight/__init__.py
 logs_archive/*
+train_nerf_copy.py

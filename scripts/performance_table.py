@@ -18,9 +18,11 @@ DEBUG_MODE = False #False #True
 HR_DS_FACTOR = 2
 SR_FACTOR = 4
 GT_AS_LR_INPUTS = False #True
-# SCENES = ['ship','mic','chair','lego'] #,'donut','cola','dragon']
+# SCENES = ['ship','mic','chair','lego'] # Table 1 in paper
 # SCENES = ['ship','motorbike','dragon','bugatti'] #,'donut','cola','dragon']
-SCENES = ['lego','motorbike','chair','bugatti'] #,'donut','cola','dragon']
+# SCENES = ['lego','motorbike','chair','bugatti'] #,'donut','cola','dragon']
+# SCENES = ['motorbike','bugatti','holiday','cola','dragon','materials','ship'] # 4th plane ablation study
+SCENES = ['motorbike','bugatti','chair','donut','lego','materials','teddy'] # Plane resolution ablation study
 SAVE_BICUBIC = '/tigress/yb6751/projects/NeuralMFSR/results/bicubic_ours'
 # SCENES=['mic']
 OUR_RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/ours'
@@ -76,11 +78,11 @@ def for_lpips(im):
 def bicubic_interp(im,sf):
     return cv2.resize(im, dsize=(im.shape[1]*sf,im.shape[0]*sf), interpolation=cv2.INTER_CUBIC)
 
-for scene in SCENES:
+for sc_num,scene in enumerate(SCENES):
     if SAVE_BICUBIC is not None and 'bicubic' in METHODS:
         if not os.path.isdir(os.path.join(SAVE_BICUBIC,scene)): os.mkdir(os.path.join(SAVE_BICUBIC,scene))
     # LR_ims,GT_ims,bicubic_ims = {},{},{}
-    for im_num,im_path in tqdm(im_paths['GT'][scene].items(),desc='Processing scene %s'%(scene)):
+    for im_num,im_path in tqdm(im_paths['GT'][scene].items(),desc='Processing scene %s (%d/%d)'%(scene,sc_num+1,len(SCENES))):
         if DEBUG_MODE and im_num>3:
             print("!!!!!!!!!!! DEBUG MODE !!!!!!!!!!!!!")
             break
@@ -132,7 +134,7 @@ scores = dict([(k,avergae_scores(v)) for k,v in scores.items()])
 # sys.exit(0)
 best_methods = dict([(k,[v[0] for v in sorted(scores[k].items(),key=lambda x:(x[1] if k=='LPIPS' else -x[1]))]) for k in scores])
 for score in scores:
-    print("%s %s:"%('Ascending' if score=='LPIPS' else 'Descending',score))
+    print("\n%s %s:"%('Ascending' if score=='LPIPS' else 'Descending',score))
     print("\t".join(["%s: %.3f"%(k,scores[score][k]) for k in best_methods[score]]))
 sys.exit(0)
 # number0 = best_methods[-1]
