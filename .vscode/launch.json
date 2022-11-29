@@ -230,7 +230,7 @@
             "args":[
                 "--config","config/planes_SR.yml",
                 "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
-                "--eval","video", //"images",
+                "--eval","images", //"video", //"images",
                 "--results_path","/tigress/yb6751/projects/NeuralMFSR/results"
             ]
         },
@@ -244,7 +244,7 @@
             "args":[
                 "--config","config/planes_E2E.yml",
                 "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
-                "--eval","video", //"images",
+                "--eval","images", //"video", //"images",
                 "--results_path","/tigress/yb6751/projects/NeuralMFSR/results"
             ]
         },
@@ -258,7 +258,7 @@
             "args":[
                 "--config","config/planes.yml",
                 "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
-                "--eval","video", //"images",
+                "--eval","images", //"video", //"images",
                 "--results_path","/tigress/yb6751/projects/NeuralMFSR/results"
             ]
         },

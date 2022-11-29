@@ -22,14 +22,16 @@ GT_AS_LR_INPUTS = False #True
 # SCENES = ['ship','motorbike','dragon','bugatti'] #,'donut','cola','dragon']
 # SCENES = ['lego','motorbike','chair','bugatti'] #,'donut','cola','dragon']
 # SCENES = ['motorbike','bugatti','holiday','cola','dragon','materials','ship'] # 4th plane ablation study
-SCENES = ['motorbike','bugatti','chair','donut','lego','materials','teddy'] # Plane resolution ablation study
+# SCENES = ['motorbike','bugatti','chair','donut','lego','materials','teddy'] # Plane resolution ablation study
+SCENES = ['mic','ship'] #,'leaves','horns' Real scenes
 SAVE_BICUBIC = '/tigress/yb6751/projects/NeuralMFSR/results/bicubic_ours'
 # SCENES=['mic']
 OUR_RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/ours'
 BSELINES_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/baselines'
 METHODS = {
-    'GT':{'p_im':'(?<=\/r_)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'/test/*','path':'/scratch/gpfs/yb6751/datasets/Synthetic',},
-    # 'LR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*fine/*'%(HR_DS_FACTOR*SR_FACTOR),'path':OUR_RESULTS_PATH,},
+    'GT_synt':{'p_im':'(?<=\/r_)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'/test/*','path':'/scratch/gpfs/yb6751/datasets/Synthetic',},
+    # 'GT_real':{'p_im':'(?<=\/image)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'/images_4/*','path':'/scratch/gpfs/yb6751/datasets/LLFF',},
+    'LR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*fine/*'%(HR_DS_FACTOR*SR_FACTOR),'path':OUR_RESULTS_PATH,},
     # 'ours':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
     # 'naive':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*fine/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
     # 'edsr':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BSELINES_PATH},
@@ -43,11 +45,14 @@ METHODS = {
     # 'preSR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/blind_fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/planes_on_SR_Res800_32_0'},
     # 'view':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/Synt_Res16Sc800_32_400_NerfUseviewdirsTrue_1'},
     # 'no_view':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/Synt_Res16Sc800_32_400_NerfUseviewdirsFalse_0'},
-    'PlRes100':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes100*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/plane_resolution_RES100_400_1600_0'},
-    'PlRes400':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes400*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/plane_resolution_RES100_400_1600_0'},
-    'PlRes1600':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes1600*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/plane_resolution_RES100_400_1600_0'},
+    # 'PlRes100':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes100*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/plane_resolution_RES100_400_1600_0'},
+    # 'PlRes400':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes400*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/plane_resolution_RES100_400_1600_0'},
+    # 'PlRes1600':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes1600*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/plane_resolution_RES100_400_1600_0'},
+    'no_PlMeanZero':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/*SR/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/E2E_SyntAndReal_20vs4_1'},
+    'PlMeanZero':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/*SR/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/E2E_SyntAndReal_20vs4_PZerMean1_1'},
     # 'bicubic':{},
 }
+GT_method = 'GT_synt' if 'GT_synt' in METHODS else 'GT_real'
 # METHODS_2_SHOW = ['edsr','bicubic','ours']
 SCORES_2_SHOW = ['PSNR','SSIM','LPIPS']
 # METHODS_2_SHOW = OrderedDict([(k,i) for i,k in enumerate(METHODS_2_SHOW)])
@@ -70,7 +75,7 @@ for scene in SCENES:
             assert len(im_paths[method][scene])>0
             assert len(im_paths[method][scene])==len(im_paths[methods_2_load[i_method-1]][scene])
 
-scores = ['PSNR','psnr_gain','SSIM','LPIPS']
+scores = ['PSNR','SSIM','LPIPS']+(['psnr_gain'] if 'bicubic' in METHODS else [])
 scores = dict(zip(scores,[defaultdict(lambda: defaultdict(list)) for s in scores]))
 # psnrs,psnr_gain,ssim,lpips_scores = defaultdict(lambda: defaultdict(list)),defaultdict(lambda: defaultdict(list)),defaultdict(lambda: defaultdict(list)),defaultdict(lambda: defaultdict(list))
 def for_lpips(im):
@@ -82,7 +87,7 @@ for sc_num,scene in enumerate(SCENES):
     if SAVE_BICUBIC is not None and 'bicubic' in METHODS:
         if not os.path.isdir(os.path.join(SAVE_BICUBIC,scene)): os.mkdir(os.path.join(SAVE_BICUBIC,scene))
     # LR_ims,GT_ims,bicubic_ims = {},{},{}
-    for im_num,im_path in tqdm(im_paths['GT'][scene].items(),desc='Processing scene %s (%d/%d)'%(scene,sc_num+1,len(SCENES))):
+    for im_num,im_path in tqdm(im_paths[GT_method][scene].items(),desc='Processing scene %s (%d/%d)'%(scene,sc_num+1,len(SCENES))):
         if DEBUG_MODE and im_num>3:
             print("!!!!!!!!!!! DEBUG MODE !!!!!!!!!!!!!")
             break
@@ -96,7 +101,7 @@ for sc_num,scene in enumerate(SCENES):
                 LR_im = load_im(im_paths['LR'][scene][im_num])
             bicubic_im = np.clip(bicubic_interp(LR_im,sf=SR_FACTOR),0,1)
         for i_method,method in enumerate(methods_2_load):
-            if method in ['GT','LR']:    continue
+            if method in [GT_method,'LR']:    continue
             method_im =  bicubic_im if method=='bicubic' else load_im(im_paths[method][scene][im_num])
             scores['PSNR'][method][scene].append(calc_psnr(GT_im,method_im))
             if method=='bicubic' and SAVE_BICUBIC is not None:
@@ -116,7 +121,7 @@ def avergae_scores(scores_dict,per_scene=False):
         return dict([(m,np.mean([np.mean(v) for v in scores_dict[m].values()])) for m in scores_dict])
 
 def find_leading(scores,metric,k):
-    methods_4_comparison = [meth for meth in METHODS if meth not in ['LR','GT','ours']]
+    methods_4_comparison = [meth for meth in METHODS if meth not in ['LR',GT_method,'ours']]
     for sc in scores[metric[0]]['ours']:
         STDs = [np.std([v for method in METHODS for v in scores[m][method][sc]]) for m in metric]
         mean_advantages = [np.mean(np.array([np.array(scores[m]['ours'][sc])-np.array(scores[m][method][sc]) for method in methods_4_comparison]),0) for m in metric]

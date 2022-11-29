@@ -46,7 +46,7 @@ class BlenderDataset(torch.utils.data.Dataset):
         super(BlenderDataset,self).__init__()
         if FIGURE_IMAGES_MODE:  assert eval_mode
         self.get_scene_id = scene_id_func
-        train_dirs = self.get_scene_configs(getattr(config.dir,'train',{}),add_val_scene_LR=add_val_scene_LR,excluded_scene_ids=val_ids if getattr(config,'auto_remove_val',False) else [])
+        train_dirs = self.get_scene_configs(getattr(config.dir,'train',{}),add_val_scene_LR=add_val_scene_LR)
         val_scenes_dict = getattr(config.dir,'val',{})
         if False and eval_mode:
             inferred_ds_factor = max(train_dirs[0])/min(train_dirs[0])
@@ -61,6 +61,7 @@ class BlenderDataset(torch.utils.data.Dataset):
         self.downsampling_factors += train_dirs[0]
         plane_resolutions += train_dirs[2]
         train_ids = train_dirs[3]
+        if getattr(config,'auto_remove_val',False): assert not any([id in train_ids for id in val_ids]),'Removed support to this option. Should re-enable.'
         scene_types += train_dirs[4]
         if len(set(train_ids+val_ids))!=len(train_ids+val_ids) and not eval_mode:
             raise Exception('I suspect an overlap between training and validation scenes. The following appear in both:\n%s'%([s for s in val_ids if s in train_ids]))
@@ -120,7 +121,6 @@ class BlenderDataset(torch.utils.data.Dataset):
                     scene_path,
                     factor=ds_factor,
                     load_imgs=not self.on_the_fly_load,
-                    # splits2use=splits2use,
                 )
                 cur_images = [im for im in cur_images]
                 cur_hwfDs = cur_poses[0, :3, -1]
@@ -128,18 +128,21 @@ class BlenderDataset(torch.utils.data.Dataset):
                 cur_hwfDs = [len(cur_images)*[v] for v in cur_hwfDs]
                 cur_poses = torch.cat([cur_poses[:, :3, :4],(torch.ones([cur_poses.shape[0],1,1])*torch.tensor([0,0,0,1]).reshape([1,1,-1])).type(cur_poses.type())],1)
                 EXCLUDE_VAL_FROM_TRAINING = False
-                if getattr(config,'llffhold',0)>0:
-                    cur_i_split = [i for i in np.unique(np.round(np.linspace(0,len(cur_images)-1,config.llffhold)).astype(int))]
+                if eval_mode:
+                    cur_i_split = [[],[],[i for i in range(len(cur_images))]]
                 else:
-                    cur_i_split = [cur_i_split]
-                if EXCLUDE_VAL_FROM_TRAINING:
-                    cur_i_split = [
-                        np.array([i for i in np.arange(len(cur_images)) if (i not in cur_i_split)]),cur_i_split,cur_i_split
-                    ]
-                else:
-                    cur_i_split = [
-                        np.array([i for i in np.arange(len(cur_images))]),cur_i_split,cur_i_split
-                    ]
+                    if getattr(config,'llffhold',0)>0:
+                        cur_i_split = [(i+len(cur_images)//(2*config.llffhold))%len(cur_images) for i in np.unique(np.round(np.linspace(0,len(cur_images)-1,config.llffhold+1)).astype(int))][:config.llffhold]
+                    else:
+                        cur_i_split = [cur_i_split]
+                    if EXCLUDE_VAL_FROM_TRAINING:
+                        cur_i_split = [
+                            np.array([i for i in np.arange(len(cur_images)) if (i not in cur_i_split)]),cur_i_split,cur_i_split
+                        ]
+                    else:
+                        cur_i_split = [
+                            np.array([i for i in np.arange(len(cur_images))]),cur_i_split,cur_i_split
+                        ]
             if scene_norm_coords is not None: # No need to calculate the per-scene normalization coefficients as those will be loaded with the saved model.
                 self.coords_normalization[scene_id] =\
                     calc_scene_box({'camera_poses':cur_poses.numpy()[:,:3,:4],'near':config[scene_type].near,'far':config[scene_type].far,'H':cur_hwfDs[0],'W':cur_hwfDs[1],'f':cur_hwfDs[2]},

@@ -11,7 +11,34 @@ import torchvision
 from re import search
 import functools
 from imresize import imresize
-# import torchsearchsorted
+import os
+
+def safe_saving(file_name,content,suffix,best=False):
+    if best:
+        file_name = file_name.replace('.%s'%(suffix),'.%s_best'%(suffix))
+    torch.save(content,file_name.replace('.%s'%(suffix),'.%s_temp'%(suffix)))
+    del_bckp = False
+    if os.path.isfile(file_name):
+        del_bckp = True
+        os.rename(file_name,file_name.replace('.%s'%(suffix),'.%s_bckp'%(suffix)))
+    os.rename(file_name.replace('.%s'%(suffix),'.%s_temp'%(suffix)),file_name)
+    if del_bckp:
+        os.remove(file_name.replace('.%s'%(suffix),'.%s_bckp'%(suffix)))
+
+def safe_loading(file_name,suffix,best=False):
+    if best:
+        file_name = file_name.replace('.%s'%(suffix),'.%s_best'%(suffix))
+    for version in ['','_temp','_bckp']:
+        try:
+            content = torch.load(file_name.replace('.%s'%(suffix),'.%s%s'%(suffix,version)))
+            break
+        except Exception as e:
+            if version=='_bckp':
+                raise e
+            else:
+                print("!!!! WARNING: saved file %s seems to be currpted. Loading their backup instead:\n%s"%\
+                    (file_name.replace('.%s'%(suffix),'.%s%s'%(suffix,version)),e))
+    return content
 
 def rsetattr(obj, attr, val):
     pre, _, post = attr.rpartition('.')

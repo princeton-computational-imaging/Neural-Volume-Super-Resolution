@@ -2,7 +2,7 @@ from collections import defaultdict,OrderedDict
 from distutils.log import debug
 import torch
 import torch.nn as nn
-from nerf_helpers import cart2az_el,rgetattr,rsetattr
+from nerf_helpers import cart2az_el,rgetattr,rsetattr,safe_saving,safe_loading
 import math
 import numpy as np
 from scipy.interpolate import griddata
@@ -753,7 +753,7 @@ class PlanesOptimizer(nn.Module):
         self.optimizer = None
         self.saving_needed = False
 
-    def load_scene(self,scene):
+    def load_scene(self,scene,load_best=False):
         if self.saving_needed:
             self.save_params()
         for model_name in ['coarse','fine']:
@@ -761,7 +761,7 @@ class PlanesOptimizer(nn.Module):
             # scenes_planes_name = scene if scene in self.scenes_with_planes else model.scene_coupler.scene_with_saved_plane(scene)
             scenes_planes_name = model.scene_coupler.scene2saved[scene]
             if model_name=='coarse' or not self.use_coarse_planes:
-                loaded_params = self.load_scene_planes(model_name=model_name,scene=scenes_planes_name)
+                loaded_params = self.load_scene_planes(model_name=model_name,scene=scenes_planes_name,prefer_best=load_best)
                 if not all([model.scene_coupler.scene2saved[scene] in k for k in loaded_params['params']]):
                     print('!!! Warning: Applying patch designed for the pre-SR experiment !!!')
                     assert(all([model.scene_coupler.scene2saved[scene].replace('_DS2_','_DS1_') in k for k in loaded_params['params']]))
@@ -812,8 +812,6 @@ class PlanesOptimizer(nn.Module):
         model_name = 'coarse'
         model = self.models[model_name]
         scenes_list = self.scenes if as_best else self.cur_scenes
-        # if to_checkpoint:
-        #     all_params,all_states = nn.ParameterDict(),[]
         scene_num = 0
         already_saved = []
         scenes2save = scenes_list if len(scenes_list)<20 else tqdm(scenes_list,desc='Saving scene planes')
@@ -822,54 +820,48 @@ class PlanesOptimizer(nn.Module):
             if scene in already_saved: continue
             already_saved.append(scene)
             if scene in self.cur_scenes:
-                # params = nn.ParameterDict([(get_plane_name(scene,d),model.raw_plane(get_plane_name(scene,d),downsample=False)) for d in range(self.planes_per_scene)])
                 params = nn.ParameterDict([(get_plane_name(scene,d),model.planes_[get_plane_name(scene,d)]) for d in range(self.planes_per_scene)])
                 opt_states = [self.optimizer.state_dict()['state'][i+scene_num*self.planes_per_scene] if (i+scene_num*self.planes_per_scene) in self.optimizer.state_dict()['state'] else None for i in range(self.planes_per_scene)]
                 coords_normalization = model.box_coords[scene]
                 scene_num += 1
             else:
                 loaded_params = self.load_scene_planes(model_name=model_name,scene=scene)
-                # loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
                 params = loaded_params['params']
                 opt_states = loaded_params['opt_states'] if 'opt_states' in loaded_params else [None for p in params]
                 coords_normalization = loaded_params['coords_normalization']
             param_file_name = self.param_path(model_name=model_name,scene=scene)
-            if as_best:
-                param_file_name = param_file_name.replace('.par','.par_best')
-            # del_temp = False
+            safe_saving(param_file_name,content={'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},
+                suffix='par',best=as_best)
+            # if as_best:
+            #     param_file_name = param_file_name.replace('.par','.par_best')
+            # torch.save({'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},param_file_name.replace('.par','.par_temp'))
+            # del_bckp = False
             # if os.path.isfile(param_file_name):
-            #     del_temp = as_best
-            #     copyfile(param_file_name,param_file_name.replace('.par','.par_temp'))
-            # torch.save({'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},param_file_name)
-            # if del_temp:
-            #     os.remove(param_file_name.replace('.par','.par_temp'))
-            torch.save({'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},param_file_name.replace('.par','.par_temp'))
-            del_bckp = False
-            if os.path.isfile(param_file_name):
-                del_bckp = True
-                os.rename(param_file_name,param_file_name.replace('.par','.par_bckp'))
-            os.rename(param_file_name.replace('.par','.par_temp'),param_file_name)
-            if del_bckp:
-                os.remove(param_file_name.replace('.par','.par_bckp'))
+            #     del_bckp = True
+            #     os.rename(param_file_name,param_file_name.replace('.par','.par_bckp'))
+            # os.rename(param_file_name.replace('.par','.par_temp'),param_file_name)
+            # if del_bckp:
+            #     os.remove(param_file_name.replace('.par','.par_bckp'))
         if not as_best: self.saving_needed = False
 
     def load_scene_planes(self,model_name,scene,save_location=None,prefer_best=False):
         file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location)
-        try:
-            loaded = False
-            while not loaded:
-                try:
-                    loaded_params = torch.load(file2load.replace('.par','.par_best') if prefer_best else file2load)
-                    loaded = True
-                except Exception as e:
-                    if not prefer_best:
-                        raise e
-                    prefer_best = False
-        except Exception as e:
-            copyfile(file2load,file2load.replace('.par','.par_corrupt'))
-            copyfile(file2load.replace('.par','.par_temp'),file2load)
-            print("!!!! WARNING: planes model seems to be currpted for scene %s. Loading their backup instead.:\n%s"%(scene,e))
-            loaded_params = torch.load(file2load)
+        loaded_params = safe_loading(file2load,suffix='par',best=prefer_best)
+        # try:
+        #     loaded = False
+        #     while not loaded:
+        #         try:
+        #             loaded_params = torch.load(file2load.replace('.par','.par_best') if prefer_best else file2load)
+        #             loaded = True
+        #         except Exception as e:
+        #             if not prefer_best:
+        #                 raise e
+        #             prefer_best = False
+        # except Exception as e:
+        #     copyfile(file2load,file2load.replace('.par','.par_corrupt'))
+        #     copyfile(file2load.replace('.par','.par_temp'),file2load)
+        #     print("!!!! WARNING: planes model seems to be currpted for scene %s. Loading their backup instead.:\n%s"%(scene,e))
+        #     loaded_params = torch.load(file2load)
         return loaded_params
 
 
@@ -890,20 +882,6 @@ class PlanesOptimizer(nn.Module):
                     if scene in already_loaded: continue
                     already_loaded.append(scene)
                     loaded_params = self.load_scene_planes(model_name=model_name,scene=scene)
-                    # try:
-                    #     loaded_params = torch.load(self.param_path(model_name=model_name,scene=scene))
-                    # except Exception as e:
-                    #     print("!!!! WARNING: planes model seems to be currpted for scene %s:\n%s"%(scene,e))
-                    #     raise e
-                        # res = [int(search('(?<=PlRes)(\d)+(?=_)',scene).group(0)),int(search('(?<=_)(\d)+(?=$)',scene).group(0))]
-                        # params = nn.ParameterDict([
-                        #     (get_plane_name(scene,d),
-                        #         create_plane(res[0] if d<model.num_density_planes else res[1],num_plane_channels=model.num_plane_channels,
-                        #         init_STD=STD_factor*model.fc_alpha['0'].weight.data.std().cpu())
-                        #     )
-                        #     for d in range(self.planes_per_scene)])
-                        # cn = coords_normalization[scene]
-                        # torch.save({'params':params,'coords_normalization':cn},self.param_path(model_name=model_name,scene=scene))
                     params_dict.update(loaded_params['params'])
                     box_coords.update(dict([(sc,loaded_params['coords_normalization']) for sc in [scene]+model.scene_coupler.coupled_scene(scene)]))
                     if self.optimize:

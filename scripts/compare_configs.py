@@ -4,13 +4,14 @@ sys.path.append('.')
 from nerf_helpers import get_config,rgetattr,rsetattr
 
 config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/planes_E2E.yml'
-config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_SyntAndReal_20vs4_1/config.yml'
+config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_halfPlanesLR_0/config.yml'
 
 def sort_scenes(config):
+    # return config
     for partition in ['train','val']:
         if partition in config.dataset.dir:
             for conf in getattr(config.dataset.dir,partition):
-                rsetattr(config.dataset.dir,'.'.join([partition,conf]),sorted(getattr(config.dataset.dir,partition)[conf]))
+                rsetattr(config.dataset.dir,'.'.join([partition,conf]),sorted([sc for sc in getattr(config.dataset.dir,partition)[conf] if not isinstance(sc,list)]))
     return config
 
 cfg_A = sort_scenes(get_config(config_A_file))

@@ -2,10 +2,11 @@
 experiment:
   # Unique experiment identifier
   # id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_1
-  id: E2E_SyntAndReal_20vs4 #_PZerMean1
-  # id: E2E_Real_6vs2_PZerMean1_1_hornsLeaves
+  # id: E2E_SyntAndReal_20vs4_1 #_PZerMean1
+  # id: E2E_Real_6vs2_PZerMean1
+  # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32materials
   # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32ship_0
-  # id: E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1
+  id: E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_2xPlanesLR
   # id: E2E_Synt_Res266Sc100_258Sc800_32_LR100_800_SRrecField55_PZerMean1
   # id: E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain
   # Experiment logs will be stored at "logdir"/"id"
@@ -42,13 +43,13 @@ dataset:
   # auto_remove_val:  True
   dir:
     train:
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      4,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
-      1,800,32,'llff':   ['orchids','fern','flower','fortress','room','trex']
+    #   # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+    #   # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+    #   4,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
+    #   1,800,32,'llff':   ['orchids','fern','flower','fortress','room','trex']
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      # 8,100,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship',[0,251]]
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,251]]
+      8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship',[0,251]]
+      2,800,32:   ['bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,251]]
       # 1,800,32:   ['bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,251]]
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
@@ -56,9 +57,11 @@ dataset:
       # 8,200,32:   ['mic']
       # 2,800,32:   ['mic']
     val:
-      # 2,800,32:   ['mic','ship']
-      1,800,32,'llff':   ['horns','leaves',]
-    #   # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+      # 8,200,32:   ['materials']
+      # 2,800,32:   ['materials']
+      # 4,200,32,'llff':   ['horns']
+      # 1,800,32,'llff':   ['horns']
+      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['ship']
     #   8,200,32:   ['chair','drums','ficus','ship']
       # 2,800,32:   ['mic#1']
@@ -81,7 +84,7 @@ dataset:
 
 # Model parameters.
 models:
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_1
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_3
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.
@@ -138,6 +141,7 @@ optimizer:
   type: Adam
   # Learning rate.
   lr: 5.E-4 #1.E-3 #5.0E-3
+  planes_lr: 1.E-3 #2.5E-4
 
 # NeRF parameters.
 nerf:
@@ -176,7 +180,7 @@ nerf:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
-      # buffer_size:  50
+      buffer_size:  50
       steps_per_buffer: 200
     # Whether or not to perturb the sampled depth values.
     perturb: True
@@ -221,7 +225,7 @@ nerf:
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
 super_resolution:
-  lr: 5.E-5
+  lr: 5.E-5 #2.5E-5 #
   training:
     loss: fine # fine,coarse,both
   apply_2_coarse: False #True # False
@@ -247,7 +251,7 @@ super_resolution:
     # n_blocks: 8 #32
     n_blocks: 32
     # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
-    # receptive_field_bound:  55
+    receptive_field_bound:  55
     # scale_factor: sqrt #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
     # single_plane: False

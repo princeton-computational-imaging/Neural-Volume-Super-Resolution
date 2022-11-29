@@ -267,11 +267,12 @@ def main():
         #     ds_factor_ratio = dataset.ds_factor_ratios
     if hasattr(cfg.dataset,'max_scenes_eval') and not eval_mode:
         i_val,val_only_scene_ids = subsample_dataset(scenes_dict=i_val,max_scenes=cfg.dataset.max_scenes_eval,val_only_scenes=val_only_scene_ids,max_val_only_scenes=cfg.dataset.max_scenes_eval)
-    # val_ims_per_scene = len(i_val[list(i_val.keys())[0]])
-    val_ims_per_scene = [len(v) for v in i_val.values()]
-    assert all([max(val_ims_per_scene)%v==0 for v in val_ims_per_scene]),"Need to be able to repeat scene eval sets to have the same number of eval images for all scnenes."
-    val_ims_per_scene = max(val_ims_per_scene)
-    i_val = OrderedDict([(k,val_ims_per_scene//len(v)*v) for k,v in i_val.items()])
+    if not eval_mode:
+        # val_ims_per_scene = len(i_val[list(i_val.keys())[0]])
+        val_ims_per_scene = [len(v) for v in i_val.values()]
+        assert all([max(val_ims_per_scene)%v==0 for v in val_ims_per_scene]),"Need to be able to repeat scene eval sets to have the same number of eval images for all scnenes."
+        val_ims_per_scene = max(val_ims_per_scene)
+        i_val = OrderedDict([(k,val_ims_per_scene//len(v)*v) for k,v in i_val.items()])
     eval_training_too = not eval_mode
     available_scenes = list(scenes_set)
     if eval_training_too:
@@ -357,11 +358,11 @@ def main():
         print_scenes_list('training',training_scenes)
         for cat in set(val_strings):
             print_scenes_list('"%s" evaluation'%(cat),[s for i,s in enumerate(evaluation_sequences) if val_strings[i]==cat])
-    assert all([val_ims_per_scene==len(i_val[id]) for id in evaluation_sequences]),'Assuming all scenes have the same number of evaluation images'
+        assert all([val_ims_per_scene==len(i_val[id]) for id in evaluation_sequences]),'Assuming all scenes have the same number of evaluation images'
+        running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','zero_mean_planes_loss','fine_loss','fine_psnr','loss','coarse_loss','inconsistency']
+        running_scores = dict([(score,dict([(cat,deque(maxlen=len(training_scenes) if cat=='train' else val_ims_per_scene)) for cat in list(set(val_strings))+['train']])) for score in running_mean_logs])
     i_train = [i for s in i_train.values() for i in s]
 
-    running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','zero_mean_planes_loss','fine_loss','fine_psnr','loss','coarse_loss','inconsistency']
-    running_scores = dict([(score,dict([(cat,deque(maxlen=len(training_scenes) if cat=='train' else val_ims_per_scene)) for cat in list(set(val_strings))+['train']])) for score in running_mean_logs])
 
     def write_scalar(name,new_value,iter):
         RUNNING_MEAN = True
@@ -596,40 +597,47 @@ def main():
         initialize_from_trained = configargs.load_checkpoint=='' and end2end_training
         if SR_experiment:
             if not (rep_model_training or train_planes_only) or (train_planes_only and init_new_scenes):
-                checkpoint = find_latest_checkpoint(cfg.models.path,sr=False)
+                checkpoint = find_latest_checkpoint(cfg.models.path,sr=False,find_best=eval_mode)
                 print("Using LR model %s"%(checkpoint))
             if SR_experiment=="model" and (os.path.exists(configargs.load_checkpoint) or train_planes_only or initialize_from_trained):
                 if initialize_from_trained:
                     SR_checkpoint_path = cfg.models.path
                 else:
                     SR_checkpoint_path = cfg.super_resolution.model.path if (train_planes_only and init_new_scenes) else configargs.load_checkpoint
-                SR_model_checkpoint = find_latest_checkpoint(SR_checkpoint_path,sr=True)
-                if not (init_new_scenes or initialize_from_trained):
-                    start_i = int(SR_model_checkpoint.split('/')[-1][len('SR_checkpoint'):-len('.ckpt')])+1
-                    if 'eval_counter' in torch.load(SR_model_checkpoint).keys(): eval_counter = torch.load(SR_model_checkpoint)['eval_counter']
-                    if 'best_saved' in torch.load(SR_model_checkpoint).keys(): best_saved = torch.load(SR_model_checkpoint)['best_saved']
+                SR_model_checkpoint = find_latest_checkpoint(SR_checkpoint_path,sr=True,find_best=eval_mode)
+                extracted_i = int(SR_model_checkpoint.split('/')[-1][len('SR_checkpoint'):-len('.ckpt')])
+                SR_model_checkpoint = safe_loading(SR_model_checkpoint,suffix='ckpt_best' if eval_mode else 'ckpt')
+                if not (init_new_scenes or initialize_from_trained or eval_mode):
+                    start_i = extracted_i+1
+                    eval_counter = SR_model_checkpoint['eval_counter']
+                    best_saved = SR_model_checkpoint['best_saved']
+                    # if 'eval_counter' in torch.load(SR_model_checkpoint).keys(): eval_counter = torch.load(SR_model_checkpoint)['eval_counter']
+                    # if 'best_saved' in torch.load(SR_model_checkpoint).keys(): best_saved = torch.load(SR_model_checkpoint)['best_saved']
                 print(("Using" if eval_mode else "Resuming training of")+" SR model %s"%(SR_model_checkpoint))
                 saved_config_dict = get_config(os.path.join(SR_checkpoint_path,"config.yml"))
                 config_diffs = DeepDiff(saved_config_dict.super_resolution,cfg.super_resolution)
                 for diff in [config_diffs[ch_type] for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed'] if ch_type in config_diffs]:
                     print(diff)
-                SR_model_checkpoint = torch.load(SR_model_checkpoint)
+                # SR_model_checkpoint = torch.load(SR_model_checkpoint)
                 SR_model.load_state_dict(SR_model_checkpoint["SR_model"])
                 if SR_optimizer is not None and "SR_optimizer" in SR_model_checkpoint:
                     SR_optimizer.load_state_dict(SR_model_checkpoint['SR_optimizer'])
                 del SR_model_checkpoint
         if rep_model_training or (train_planes_only and not init_new_scenes):
             if configargs.load_checkpoint=='': # Initializing a representation model with a pre-trained model
-                checkpoint = find_latest_checkpoint(cfg.models.path,sr=False)
+                checkpoint_filename = find_latest_checkpoint(cfg.models.path,sr=False,find_best=eval_mode)
                 params_init_path = os.path.join(cfg.models.path,'planes')
-                print("Initializing model training from model %s"%(checkpoint))
+                print("Initializing model training from model %s"%(checkpoint_filename))
+                checkpoint = safe_loading(checkpoint_filename,suffix='ckpt_best' if eval_mode else 'ckpt')
             else:
-                checkpoint = find_latest_checkpoint(configargs.load_checkpoint,sr=False)
-                start_i = int(checkpoint.split('/')[-1][len('checkpoint'):-len('.ckpt')])+1
-                if 'eval_counter' in torch.load(checkpoint).keys(): eval_counter = torch.load(checkpoint)['eval_counter']
-                if 'best_saved' in torch.load(checkpoint).keys(): best_saved = torch.load(checkpoint)['best_saved']
-                print("Resuming training on model %s"%(checkpoint))
-        checkpoint_config = get_config(os.path.join('/'.join(checkpoint.split('/')[:-1]),'config.yml'))
+                checkpoint_filename = find_latest_checkpoint(configargs.load_checkpoint,sr=False,find_best=eval_mode)
+                checkpoint = safe_loading(checkpoint_filename,suffix='ckpt_best' if eval_mode else 'ckpt')
+                if not eval_mode:
+                    start_i = int(checkpoint_filename.split('/')[-1][len('checkpoint'):-len('.ckpt')])+1
+                    eval_counter = checkpoint['eval_counter']
+                    best_saved = checkpoint['best_saved']
+                print("Resuming training on model %s"%(checkpoint_filename))
+        checkpoint_config = get_config(os.path.join('/'.join(checkpoint_filename.split('/')[:-1]),'config.yml'))
         config_diffs = DeepDiff(checkpoint_config.models,cfg.models)
         ok = True
         for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed','type_changes']:
@@ -642,7 +650,7 @@ def main():
                 print(ch_type,diff)
                 ok = False
         if not (ok or train_planes_only):  raise Exception('Inconsistent model config')
-        checkpoint = torch.load(checkpoint)
+        # checkpoint = torch.load(checkpoint)
 
         def load_saved_parameters(model,saved_params,reduced_set=False):
             if not all([search('density_dec\.(\d)+\.(\d)+\.',p) is not None for p in saved_params if 'density_dec' in p]):
@@ -822,7 +830,7 @@ def main():
                         cur_H, cur_W, cur_focal, pose_target,padding_size=spatial_padding_size,downsampling_offset=downsampling_offset(cur_ds_factor),
                     )
                     if store_planes and (not eval_mode or eval_num==0):
-                        planes_opt.load_scene(scene_ids[img_idx])
+                        planes_opt.load_scene(scene_ids[img_idx],load_best=eval_mode)
                     rgb_coarse_, _, _, rgb_fine_, _, _,rgb_SR_,_,_ = eval_nerf(
                         cur_H,
                         cur_W,
@@ -1258,17 +1266,19 @@ def main():
                         checkpoint_dict.update({"optimizer": optimizer.state_dict()})
 
                 ckpt_name = os.path.join(logdir, model_filename + str(iter).zfill(5) + ".ckpt")
-                torch.save(checkpoint_dict,ckpt_name,)
+                safe_saving(ckpt_name,content=checkpoint_dict,suffix='ckpt',best=False)
+                # torch.save(checkpoint_dict,ckpt_name,)
                 if len(last_saved[model2save])>0:
                     os.remove(last_saved[model2save].pop(0))
                 last_saved[model2save].append(ckpt_name)
                 if save_as_best:
-                    best_ckpt_name = os.path.join(logdir, model_filename+".best_ckpt")
-                    if os.path.exists(best_ckpt_name):
-                        copyfile(best_ckpt_name,best_ckpt_name.replace("_ckpt","_ckpt_old"))
-                    torch.save(checkpoint_dict,best_ckpt_name,)
-                    if os.path.exists(best_ckpt_name.replace("_ckpt","_ckpt_old")):
-                        os.remove(best_ckpt_name.replace("_ckpt","_ckpt_old"))
+                    safe_saving(ckpt_name,content=checkpoint_dict,suffix='ckpt',best=True)
+                    # best_ckpt_name = os.path.join(logdir, model_filename+".best_ckpt")
+                    # if os.path.exists(best_ckpt_name):
+                    #     copyfile(best_ckpt_name,best_ckpt_name.replace("_ckpt","_ckpt_old"))
+                    # torch.save(checkpoint_dict,best_ckpt_name,)
+                    # if os.path.exists(best_ckpt_name.replace("_ckpt","_ckpt_old")):
+                    #     os.remove(best_ckpt_name.replace("_ckpt","_ckpt_old"))
                 del checkpoint_dict
 
     print("Done!")
