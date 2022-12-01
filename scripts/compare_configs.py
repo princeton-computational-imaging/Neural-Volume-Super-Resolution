@@ -4,7 +4,7 @@ sys.path.append('.')
 from nerf_helpers import get_config,rgetattr,rsetattr
 
 config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/planes_E2E.yml'
-config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_halfPlanesLR_0/config.yml'
+config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_1/config.yml'
 
 def sort_scenes(config):
     # return config

@@ -67,14 +67,18 @@ def _minify(basedir, factors=[], resolutions=[]):
         print("Done")
 
 
-def _load_data(basedir, factor=None, width=None, height=None, load_imgs=True):
+def _load_data(basedir, factor=None,base_factor=1, width=None, height=None, load_imgs=True):
 
     poses_arr = np.load(os.path.join(basedir, "poses_bounds.npy"))
     poses = poses_arr[:, :-2].reshape([-1, 3, 5]).transpose([1, 2, 0])
     bds = poses_arr[:, -2:].transpose([1, 0])
-    images_subdir = "images_4"
-    factor *= 4
-    assert factor//int(images_subdir[-1])==factor/int(images_subdir[-1])
+    # actual_base_factor = 1*base_factor
+    # base_factor = 1*factor
+    while not os.path.isdir(os.path.join(basedir,"images%s"%('_%d'%(base_factor) if base_factor>1 else ''))):
+        base_factor //= 2
+    images_subdir = "images%s"%('_%d'%(base_factor) if base_factor>1 else '')
+    # factor *= base_factor
+    assert factor//base_factor==factor/base_factor
     img0 = [
         os.path.join(basedir, images_subdir, f)
         for f in sorted(os.listdir(os.path.join(basedir, images_subdir)))
@@ -83,23 +87,6 @@ def _load_data(basedir, factor=None, width=None, height=None, load_imgs=True):
     sh = imageio.imread(img0).shape
 
     sfx = ""
-    # if factor is not None:
-    #     sfx = "_{}".format(factor)
-    #     _minify(basedir, factors=[factor])
-    #     factor = factor
-    # elif height is not None:
-    #     factor = sh[0] / float(height)
-    #     width = int(sh[1] / factor)
-    #     _minify(basedir, resolutions=[[height, width]])
-    #     sfx = "_{}x{}".format(width, height)
-    # elif width is not None:
-    #     factor = sh[1] / float(width)
-    #     height = int(sh[0] / factor)
-    #     _minify(basedir, resolutions=[[height, width]])
-    #     sfx = "_{}x{}".format(width, height)
-    # else:
-    #     factor = 1
-
     imgdir = os.path.join(basedir, images_subdir + sfx)
     if not os.path.exists(imgdir):
         print(imgdir, "does not exist, returning")
@@ -119,7 +106,7 @@ def _load_data(basedir, factor=None, width=None, height=None, load_imgs=True):
         return
 
     sh = imageio.imread(imgfiles[0]).shape
-    sh = (sh[0]//(factor//int(images_subdir[-1])),sh[1]//(factor//int(images_subdir[-1])),sh[2])
+    sh = (sh[0]//(factor//base_factor),sh[1]//(factor//base_factor),sh[2])
     poses[:2, 4, :] = np.array(sh[:2]).reshape([2, 1])
     poses[2, 4, :] = poses[2, 4, :] * 1.0 / factor
 
@@ -134,8 +121,8 @@ def _load_data(basedir, factor=None, width=None, height=None, load_imgs=True):
                 return imageio.imread(f)
 
         imgs = imgs = [imread(f)[..., :3] / 255.0 for f in imgfiles]
-        if factor!=int(images_subdir[-1]):
-            imgs = [im_resize(im, scale_factor=factor//int(images_subdir[-1])) for im in imgs]
+        if factor!=base_factor:
+            imgs = [im_resize(im, scale_factor=factor//base_factor) for im in imgs]
         imgs = np.stack(imgs, -1)
     else:
         imgs = imgfiles
@@ -284,11 +271,11 @@ def spherify_poses(poses, bds):
 
 
 def load_llff_data(
-    basedir, factor=8, recenter=True, bd_factor=0.75, spherify=False, path_zflat=False,load_imgs=True,
+    basedir, factor=8,base_factor=1, recenter=True, bd_factor=0.75, spherify=False, path_zflat=False,load_imgs=True,
 ):
 
     poses, bds, imgs = _load_data(
-        basedir, factor=factor,load_imgs=load_imgs,
+        basedir, factor=factor,base_factor=base_factor,load_imgs=load_imgs,
     )  # factor=8 downsamples original imgs by 8x
     # print("Loaded", basedir, bds.min(), bds.max())
 

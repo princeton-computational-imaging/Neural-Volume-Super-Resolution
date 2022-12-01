@@ -462,7 +462,7 @@ def find_latest_checkpoint(ckpt_path,sr,find_best=False):
             pattern = ("^SR_checkpoint" if sr else "^checkpoint")+"\.ckpt_best"
             ckpt_path = os.path.join(ckpt_path,[f for f in os.listdir(ckpt_path) if search(pattern,f) is not None][0])
         else:
-            pattern = "(?<="+("^SR_checkpoint" if sr else "^checkpoint")+")(\d)+(?=\.ckpt)"
+            pattern = "(?<="+("^SR_checkpoint" if sr else "^checkpoint")+")(\d)+(?=\.ckpt$)"
             ckpt_path = os.path.join(ckpt_path,sorted([f for f in os.listdir(ckpt_path) if search(pattern,f) is not None],
                 key=lambda x:int(search(pattern,x).group(0)))[-1])
     return ckpt_path

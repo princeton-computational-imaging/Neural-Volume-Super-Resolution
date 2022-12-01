@@ -97,6 +97,22 @@ class RunningMeanScores:
         else:
             return np.mean([np.mean(self.running_scores[val_set][k][metric]) for k in self.running_scores[val_set]])
 
+class ImageSampler:
+    def __init__(self,scenes_dict,same_scene_probs=True) -> None:
+        self.scenes_dict = scenes_dict
+        assert same_scene_probs,'Unsupported yet.'
+
+    def update_active(self,active_scenes):
+        self.im_inds,self.im_probs = [],[]
+        for sc in active_scenes:
+            self.im_inds.extend(self.scenes_dict[sc])
+            self.im_probs.extend(len(self.scenes_dict[sc])*[1/len(self.scenes_dict[sc])])
+        self.im_probs = np.array(self.im_probs)
+        self.im_probs /= np.sum(self.im_probs)
+
+    def sample(self):
+        return np.random.choice(self.im_inds,size=1,p=self.im_probs)[0]
+    
 
 def set_config_defaults(source,target):
     for k in source.keys():
@@ -348,29 +364,39 @@ def get_focal(data,dim):
         return data
 
 
-def calc_scene_box(scene_geometry,including_dirs,full_az_range=True,adjust_elevation_range=False):
+def calc_scene_box(scene_geometry,including_dirs,no_ndc,full_az_range=True,adjust_elevation_range=False):
     # FULL_AZ_RANGE = True # Manually set azimuth range to be [-pi,pi]
     # if full_elev_range: full_elev_range = [-np.pi/2,np.pi/2]
     EXHAUSTIVE_CHECK = 10
     def list2pix(end_pixels):
         if EXHAUSTIVE_CHECK:
-            return np.unique(np.round(np.linspace(end_pixels[0],end_pixels[1],2+EXHAUSTIVE_CHECK)).astype(int))
+            if EXHAUSTIVE_CHECK==-1:
+                return [i for i in range(end_pixels[0],end_pixels[1])]
+            else:
+                return np.unique(np.round(np.linspace(end_pixels[0],end_pixels[1],2+EXHAUSTIVE_CHECK)).astype(int))
         else:
             return end_pixels
 
     num_frames = len(scene_geometry['camera_poses'])
     box = [[np.finfo(np.float).max,np.finfo(np.float).min] for i in range(3+2*including_dirs)]
     for f_num in range(num_frames):
-        origin = scene_geometry['camera_poses'][f_num][:3, -1]
-        for W in list2pix([0,scene_geometry['W'][f_num]-1]):
-            for H in list2pix([0,scene_geometry['H'][f_num]-1]):
+        origin_ = scene_geometry['camera_poses'][f_num][:3, -1]
+        for col in list2pix([0,scene_geometry['W'][f_num]-1]):
+            for row in list2pix([0,scene_geometry['H'][f_num]-1]):
                 coord = np.array([\
-                    (W-scene_geometry['W'][f_num]/2)/get_focal(scene_geometry['f'][f_num],'W'),
-                    -(H-scene_geometry['H'][f_num]/2)/get_focal(scene_geometry['f'][f_num],'H'),
+                    (col-scene_geometry['W'][f_num]/2)/get_focal(scene_geometry['f'][f_num],'W'),
+                    -(row-scene_geometry['H'][f_num]/2)/get_focal(scene_geometry['f'][f_num],'H'),
                     -1
                 ])
         # for corner in [np.array([i,j,1]) for i in [-1,1] for j in [-1,1]]:
                 dir = np.sum(coord * scene_geometry['camera_poses'][f_num][:3, :3], axis=-1)
+                if no_ndc:
+                    origin = 1*origin_
+                else:
+                    assert not isinstance(scene_geometry['f'][f_num],list),'Currently not supporting non-isotropic focal length with ndc'
+                    origin,dir = ndc_rays(scene_geometry['H'][f_num], scene_geometry['W'][f_num],\
+                        scene_geometry['f'][f_num], near=1., rays_o=torch.tensor(origin_),rays_d=torch.tensor(dir))
+                    origin,dir = origin.numpy(),dir.numpy()
                 for dist in [scene_geometry['near'],scene_geometry['far']]:
                     point = origin+dist*dir
                     for d in range(3):

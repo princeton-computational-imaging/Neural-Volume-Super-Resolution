@@ -20,6 +20,8 @@ from copy import deepcopy
 from shutil import copyfile
 import socket
 
+DEBUG_MODE = False #False #True
+
 def main():
     if 'della-' in socket.gethostname():    print('Adjusting memory settings to running on "Della" cluster.')
     parser = argparse.ArgumentParser()
@@ -150,6 +152,7 @@ def main():
     # assert dataset_type in['synt','DTU','llff']
 
     if getattr(cfg.nerf.train,'plane_dropout',0)>0: assert cfg.models.coarse.proj_combination=='avg' and cfg.models.coarse.num_planes>3
+    # assert not (getattr(cfg.nerf.train,'random_target_bg_color',False) and getattr(cfg.nerf.train,'mask_background',False))
 
     ds_factor_extraction_pattern = lambda name: '(?<='+name.split('_DS')[0]+'_DS'+')(\d)+(?=_PlRes'+name.split('_PlRes')[1]+')'
     sr_val_scenes_with_LR = getattr(cfg.nerf.train,'sr_val_scenes_with_LR',False)
@@ -285,8 +288,6 @@ def main():
                 # i_val[id+'_train'] = [x for i,x in enumerate(i_train[id]) if (i+im_freq//2)%im_freq==0]
                 i_val[id+'_train'] = [i_train[id][i] for i in sorted([(i+im_freq//2)%len(i_train[id]) for i in  np.unique(np.round(np.linspace(0,len(i_train[id])-1,val_ims_per_scene)).astype(int))])]
     training_scenes = list(i_train.keys())
-    # scene_coupler = None
-    # if True or end2end_training:
     planes_updating = rep_model_training or train_planes_only
     if not planes_updating:
         available_scenes = []
@@ -319,7 +320,8 @@ def main():
                     print("!!! Warning: Using val images to determine coord normalization on real images !!!")
                     coords_normalization[sc] = torch.stack([coords_normalization[sc],coords_normalization[scene_coupler.downsample_couples[sc]]],-1)
                     coords_normalization[sc] = torch.stack([torch.min(coords_normalization[sc][0],-1)[0],torch.max(coords_normalization[sc][1],-1)[0]],0)
-                    coords_normalization[sc][:,:3] = 2*(coords_normalization[sc][:,:3]-torch.mean(coords_normalization[sc][:,:3],dim=0,keepdims=True))+torch.mean(coords_normalization[sc][:,:3],dim=0,keepdims=True)
+                    # normalization_means = torch.mean(coords_normalization[sc][:,:3],dim=0,keepdims=True)
+                    # coords_normalization[sc][:,:3] = 2*(coords_normalization[sc][:,:3]-normalization_means)+normalization_means
                     coords_normalization[scene_coupler.downsample_couples[sc]] = 1*coords_normalization[sc]
                 else:
                     coords_normalization[sc] = 1*coords_normalization[scene_coupler.downsample_couples[sc]]
@@ -361,8 +363,8 @@ def main():
         assert all([val_ims_per_scene==len(i_val[id]) for id in evaluation_sequences]),'Assuming all scenes have the same number of evaluation images'
         running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','zero_mean_planes_loss','fine_loss','fine_psnr','loss','coarse_loss','inconsistency']
         running_scores = dict([(score,dict([(cat,deque(maxlen=len(training_scenes) if cat=='train' else val_ims_per_scene)) for cat in list(set(val_strings))+['train']])) for score in running_mean_logs])
-    i_train = [i for s in i_train.values() for i in s]
-
+    # i_train = [i for s in i_train.values() for i in s]
+    image_sampler = ImageSampler(i_train)
 
     def write_scalar(name,new_value,iter):
         RUNNING_MEAN = True
@@ -428,6 +430,8 @@ def main():
         encode_position_fn = None
         encode_direction_fn = None
     if planes_model:
+        PLANE_STATS = True and DEBUG_MODE
+        if PLANE_STATS: print("!!!!!!!! WARNING: Saving plane statistics !!!!!!!!")
         if getattr(cfg.nerf,'viewdir_mapping',False): assert getattr(cfg.nerf,'use_viewdirs',True)
         if hasattr(cfg.nerf.train,'viewdir_downsampling'):  assert hasattr(cfg.nerf.train,'max_plane_downsampling')
         assert not getattr(cfg.models.coarse,'force_planes_consistency',False),"Depricated"
@@ -454,6 +458,7 @@ def main():
             scene_coupler=scene_coupler,
             point_coords_noise=getattr(cfg.nerf.train,'point_coords_noise',0),
             zero_mean_planes_w=getattr(cfg.nerf.train,'zero_mean_planes_w',None),
+            plane_stats=PLANE_STATS,
         )
         
     else:
@@ -503,6 +508,7 @@ def main():
                     scene_coupler=scene_coupler,
                     point_coords_noise=getattr(cfg.nerf.train,'point_coords_noise',0),
                     ensemble_size=getattr(cfg.models.fine,'ensemble_size',1),
+                    plane_stats=PLANE_STATS,
                 )
             else:
                 model_fine = getattr(models, cfg.models.fine.type)(
@@ -782,6 +788,13 @@ def main():
         def downsample_rendered_pixels(pixels):
             return model_fine.downsample_plane(pixels.permute(1,0).reshape([1,3,patch_size,patch_size])).reshape([3,-1]).permute(1,0)
 
+    def mse_loss(x,y,weights=None):
+        if weights is None:
+            return torch.nn.functional.mse_loss(x,y)
+        else:
+            loss = torch.nn.functional.mse_loss(x,y,reduction='none').mean(1)
+            return (loss*weights).mean()
+
     def evaluate():
         tqdm.write("[VAL] =======> Iter: " + str(iter))
         model_coarse.eval()
@@ -991,10 +1004,11 @@ def main():
 
         rgb_coarse, rgb_fine = None, None
         target_ray_values = None
-        if store_planes:
-            img_idx = np.random.choice(available_train_inds)
-        else:
-            img_idx = np.random.choice(i_train)
+        # if store_planes:
+        # img_idx = np.random.choice(available_train_inds)
+        img_idx = image_sampler.sample()
+        # else:
+        #     img_idx = np.random.choice(i_train)
         cur_scene_id = scene_ids[img_idx]
         hr_planes_iter = len(scene_coupler.HR_planes)>0 and cur_scene_id in scene_coupler.downsample_couples and np.random.uniform()>=0.5
         # if len(scene_coupler.HR_planes)>0 and cur_scene_id in scene_coupler.downsample_couples:
@@ -1069,7 +1083,7 @@ def main():
                  else sorted(list(np.random.choice(range(model_fine.num_density_planes),size=np.random.randint(1,model_fine.num_density_planes-3),replace=False)))
             model_fine.planes2drop = planes2drop
             model_coarse.planes2drop = planes2drop
-        rgb_coarse, _, _, rgb_fine, _, _,rgb_SR,_,_ = run_one_iter_of_nerf(
+        rgb_coarse, _, acc_coarse, rgb_fine, _, acc_fine,rgb_SR,_,_ = run_one_iter_of_nerf(
             cur_H if not spatial_sampling else patch_size,
             cur_W if not spatial_sampling else patch_size,
             cur_focal,
@@ -1085,18 +1099,32 @@ def main():
             spatial_margin=spatial_margin,
             scene_config=cfg.dataset[dataset.scene_types[cur_scene_id]],
         )
+        coarse_loss_weights,fine_loss_weights = None,None
+        gt_background_pixels = target_s[...,3]==0 if target_s.shape[1]==4 else None
+        if getattr(cfg.nerf.train,'random_target_bg_color',False) and gt_background_pixels is not None:
+            target_s[gt_background_pixels] = torch.rand_like(target_s[gt_background_pixels])
+        if getattr(cfg.nerf.train,'mask_background',False) and gt_background_pixels is not None:
+            coarse_loss_weights,fine_loss_weights = torch.ones_like(acc_coarse),torch.ones_like(acc_coarse)
+            coarse_loss_weights[gt_background_pixels] = acc_coarse[gt_background_pixels]
+            coarse_loss_weights[torch.logical_not(gt_background_pixels)] = coarse_loss_weights[torch.logical_not(gt_background_pixels)]*\
+                (len(gt_background_pixels)-coarse_loss_weights[gt_background_pixels].sum())/(len(gt_background_pixels)-gt_background_pixels.sum())
+            fine_loss_weights[gt_background_pixels] = acc_fine[gt_background_pixels]
+            fine_loss_weights[torch.logical_not(gt_background_pixels)] = fine_loss_weights[torch.logical_not(gt_background_pixels)]*\
+                (len(gt_background_pixels)-fine_loss_weights[gt_background_pixels].sum())/(len(gt_background_pixels)-gt_background_pixels.sum())
         target_ray_values = target_s
         if HR_plane_LR_im:
             rgb_coarse,rgb_fine = downsample_rendered_pixels(rgb_coarse),downsample_rendered_pixels(rgb_fine)
         coarse_loss,fine_loss = None,None
         if sr_rendering_loss_w is not None:
             if rep_model_training or train_planes_only or getattr(cfg.super_resolution.training,'loss','both')!='fine':
-                coarse_loss = torch.nn.functional.mse_loss(
-                    rgb_coarse[..., :3], target_ray_values[..., :3]
+                coarse_loss = mse_loss(
+                # coarse_loss = torch.nn.functional.mse_loss(
+                    rgb_coarse, target_ray_values[..., :3],weights=coarse_loss_weights,
                 )
             if rgb_fine is not None and (rep_model_training or train_planes_only or getattr(cfg.super_resolution.training,'loss','both')!='coarse'):
-                fine_loss = torch.nn.functional.mse_loss(
-                    rgb_fine[..., :3], target_ray_values[..., :3]
+                fine_loss = mse_loss(
+                # fine_loss = torch.nn.functional.mse_loss(
+                    rgb_fine, target_ray_values[..., :3],weights=fine_loss_weights,
                 )
         rendering_loss = ((coarse_loss if coarse_loss is not None else 0.0) + (fine_loss if fine_loss is not None else 0.0))
         loss = sr_rendering_loss_w*rendering_loss
@@ -1172,13 +1200,15 @@ def main():
             evaluate_now = iter % cfg.experiment.validate_every == 0
         evaluate_now |= iter == cfg.experiment.train_iters - 1
         if iter>0:  evaluate_now &= not jump_start_phase
-        # print('!!!!!!!!!!WARNING!!!!!!!!!!!')
-        # evaluate_now = True
+        if True and DEBUG_MODE and evaluate_now:
+            print('!!!!!!!!!!WARNING!!!!!!!!!!!')
+            evaluate_now = False
+            planes_opt.draw_scenes(assign_LR_planes=not end2end_training)
+            image_sampler.update_active(planes_opt.cur_scenes)
         if evaluate_now:
             last_evaluated = 1*iter
             start_time = time.time()
             loss,psnr = evaluate()
-            # eval_loss_since_save.extend([v for v in loss['blind_validation' if ('blind_validation' in loss) else 'validation' if ('validation' in loss) else 'validation_LR']])
             eval_loss_since_save.extend([v for term in important_loss_terms for v in loss[term]])
             evaluation_time = time.time()-start_time
             if store_planes and not eval_mode:
@@ -1186,7 +1216,8 @@ def main():
                     planes_opt.draw_scenes(assign_LR_planes=not end2end_training)
                     new_drawn_scenes = planes_opt.cur_scenes
                     if jump_start_phase:    new_drawn_scenes = new_drawn_scenes[:n_jump_start_scenes]
-                    available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
+                    image_sampler.update_active(new_drawn_scenes)
+                    # available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
             training_time = 0
             eval_counter += 1
 
@@ -1195,7 +1226,8 @@ def main():
         start_time = time.time()
         loss,psnr,new_drawn_scenes = train()
         if new_drawn_scenes is not None:
-            available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
+            image_sampler.update_active(new_drawn_scenes)
+            # available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
 
         print_cycle_loss.append(loss)
         print_cycle_psnr.append(psnr)
@@ -1206,7 +1238,9 @@ def main():
                 if np.mean(print_cycle_loss)<=cfg.nerf.train.jump_start[1]:
                     jump_start_phase = False
                     new_drawn_scenes = planes_opt.jump_start(on=False)
-                    available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
+                    # available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
+                    image_sampler.update_active(new_drawn_scenes)
+
             tqdm.write(
                 "[TRAIN] Iter: "
                 + str(iter)
