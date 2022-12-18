@@ -458,8 +458,8 @@ def eval_nerf(
 def find_latest_checkpoint(ckpt_path,sr,find_best=False):
     if os.path.isdir(ckpt_path):
         if find_best:
-            # pattern = ("^SR_checkpoint" if sr else "^checkpoint")+"\.best_ckpt"
-            pattern = ("^SR_checkpoint" if sr else "^checkpoint")+"\.ckpt_best"
+            # pattern = ("^SR_checkpoint" if sr else "^checkpoint")+"\.ckpt_best"
+            pattern = ("^SR_checkpoint" if sr else "^checkpoint")+"(\d)*\.ckpt_best"
             ckpt_path = os.path.join(ckpt_path,[f for f in os.listdir(ckpt_path) if search(pattern,f) is not None][0])
         else:
             pattern = "(?<="+("^SR_checkpoint" if sr else "^checkpoint")+")(\d)+(?=\.ckpt$)"

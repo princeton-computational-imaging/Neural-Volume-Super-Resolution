@@ -3,7 +3,7 @@ experiment:
   # Unique experiment identifier
   # id: planes_only_blurrySTD2
   # id: planes_only_258recovery
-  id: SyntAndReal_4SyntModel_planesOnly
+  id: E2E_Synt_OnVanilla_0_planesOnly
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -37,9 +37,10 @@ dataset:
   # auto_remove_val:  True
   dir:
     train:
-      8,200,32:   ['guitar']
+      # 8,200,32:   ['ship##1']
+      8,200,32:   ['mic','ship']
       # 2,800,32:   ['guitar']
-      4,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
+      # 4,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
       # 1,800,32,'llff':   ['flower','fortress','horns','leaves','room','trex']
       # 8,200,32:   ['chair##Gauss2','drums##Gauss2','ficus##Gauss2','hotdog##Gauss2','lego##Gauss2','materials##Gauss2','mic##Gauss2','ship##Gauss2',]
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship',]
@@ -47,12 +48,12 @@ dataset:
       # 4,200,32:   ['orchids']
       # 8,200,32:   ['guitar']
     val:
-      1,800,32,'llff':   ['orchids','fern']
-      # 2,800,32:   ['guitar']
+      # 1,800,32,'llff':   ['orchids','fern']
+      # 2,800,32:   ['ship##1']
       # 1,800,32:   ['orchids']
       # 2,800,32:   ['chair##Gauss2','drums##Gauss2','ficus##Gauss2','hotdog##Gauss2','lego##Gauss2','materials##Gauss2','mic##Gauss2','ship##Gauss2',]
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship',]
-      # 2,800,32:   ['mic##Gauss2','mic']
+      2,800,32:   ['mic','ship']
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -72,8 +73,7 @@ dataset:
 
 # Model parameters.
 models:
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_1
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_1
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_Vanilla_0
 
 # Optimizer params.
 optimizer:
@@ -133,7 +133,7 @@ nerf:
     # Add Gaussian noise to points coordinates before projecting them to planes:
     # point_coords_noise: 0.1
     # Encourage per-channel 0 mean on the planes. This is meant to replace input normalization for SR in the end-2-end training scheme.
-    zero_mean_planes_w: 1 #0 #1
+    zero_mean_planes_w: 0 #0 #1
     # Standard deviation of noise to be added to the radiance field when
     # performing volume rendering.
     radiance_field_noise_std: 0.2
@@ -180,7 +180,7 @@ super_resolution:
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
-  model:
-    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_1
-    path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_1
+  # model:
+  #   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_1
+  #   path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_1
   

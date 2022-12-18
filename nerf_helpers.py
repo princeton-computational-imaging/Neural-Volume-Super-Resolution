@@ -239,7 +239,6 @@ def get_config(config_path):
 def im_resize(image,scale_factor,blur_kernel=None):
     assert all([v%scale_factor==0 for v in image.shape[:2]]),'Currently not supporting downscaling to an ambiguous size.'
     cv2_scale_factor = scale_factor if blur_kernel is None else blur_kernel['base_factor']
-    # output = cv2.resize(image, dsize=(image.shape[1]//scale_factor, image.shape[0]//scale_factor), interpolation=cv2.INTER_AREA)
     output = cv2.resize(image, dsize=(image.shape[1]//cv2_scale_factor,image.shape[0]//cv2_scale_factor), interpolation=cv2.INTER_AREA)
     if blur_kernel is not None and scale_factor>cv2_scale_factor:
         output = np.clip(imresize(output,scale_factor=1/(scale_factor/cv2_scale_factor),kernel='blurry_cubic_%f'%(blur_kernel['STD']),),0,1).astype(output.dtype)
@@ -364,7 +363,7 @@ def get_focal(data,dim):
         return data
 
 
-def calc_scene_box(scene_geometry,including_dirs,no_ndc,full_az_range=True,adjust_elevation_range=False):
+def calc_scene_box(scene_geometry,including_dirs,no_ndc,adjust_az_range=False,adjust_elevation_range=False):
     # FULL_AZ_RANGE = True # Manually set azimuth range to be [-pi,pi]
     # if full_elev_range: full_elev_range = [-np.pi/2,np.pi/2]
     EXHAUSTIVE_CHECK = 10
@@ -390,6 +389,7 @@ def calc_scene_box(scene_geometry,including_dirs,no_ndc,full_az_range=True,adjus
                 ])
         # for corner in [np.array([i,j,1]) for i in [-1,1] for j in [-1,1]]:
                 dir = np.sum(coord * scene_geometry['camera_poses'][f_num][:3, :3], axis=-1)
+                normed_dir = dir/np.linalg.norm(dir)
                 if no_ndc:
                     origin = 1*origin_
                 else:
@@ -402,13 +402,13 @@ def calc_scene_box(scene_geometry,including_dirs,no_ndc,full_az_range=True,adjus
                     for d in range(3):
                         box[d][0] = min(box[d][0],point[d])
                         box[d][1] = max(box[d][1],point[d])
-                if including_dirs and not (full_az_range and adjust_elevation_range==0):
-                    az_el = cart2az_el(torch.tensor(dir)).numpy()
-                    for d in range(int(full_az_range),2):
+                if including_dirs and (adjust_az_range or adjust_elevation_range):
+                    az_el = cart2az_el(torch.tensor(normed_dir)).numpy()
+                    for d in range(int(not adjust_az_range),2):
                         box[3+d][0] = min(box[3+d][0],az_el[d])
                         box[3+d][1] = max(box[3+d][1],az_el[d])
     if including_dirs:
-        if full_az_range:   box[3] = [-np.pi,np.pi]
+        if not adjust_az_range:   box[3] = [-np.pi,np.pi]
         if not adjust_elevation_range:
             box[4] = [-np.pi/2,np.pi/2]
         else:
@@ -417,6 +417,7 @@ def calc_scene_box(scene_geometry,including_dirs,no_ndc,full_az_range=True,adjus
 
 def cart2az_el(dirs):
     el = torch.atan2(dirs[...,2],torch.sqrt(torch.sum(dirs[...,:2]**2,-1)))
+    # el = torch.atan2(torch.sqrt(torch.sum(dirs[...,:2]**2,-1)),dirs[...,2])
     az = torch.atan2(dirs[...,1],dirs[...,0])
     return torch.stack([az,el],-1)
 

@@ -76,23 +76,6 @@ class BlenderDataset(torch.utils.data.Dataset):
         self.ds_kernels = {}
         self.scene_types = {}
         self.on_the_fly_load = len(self.all_scenes)>ON_THE_FLY_SCENES_THRESHOLD
-        # for sc_num in range(len(self.downsampling_factors)):
-        #     ds_factor = self.downsampling_factors[sc_num]
-        #     if isinstance(ds_factor,float):
-        #         relevant_scenes = [i for i,sc in enumerate(self.all_scenes) if sc==self.all_scenes[sc_num]]
-        #         assert len(relevant_scenes) in [1,2]
-        #         relevant_factors = [self.downsampling_factors[i] for i in relevant_scenes]
-        #         for rel_sc in relevant_scenes:
-        #             assert isinstance(self.downsampling_factors[rel_sc],float) and isinstance(plane_resolutions[rel_sc][0],float) and scene_types[rel_sc] in ['llff','nerfstudio']
-        #         scene_path = os.path.join(config[scene_types[sc_num]].root,self.all_scenes[sc_num])
-        #         first_im = sorted([f for f in glob(os.path.join(scene_path,'images','*')) if any([suffix in f for suffix in ['.png','.jpg','.JPG']])])[0]
-        #         im_dims = [int(v) for v in search('(\d+( )?)x(( )?\d+)', from_file(first_im)).groups() if v is not None]
-        #         min_ds_factor = int(max(1,min([np.round(im_dims[0]/ds) for ds in relevant_factors])))
-        #         if len(relevant_scenes)>1:
-        #         else:
-        #             self.downsampling_factors[sc_num] = min_ds_factor
-        #             plane_resolutions[rel_sc][0] = 
-        #         ds_fact_ratio = max(relevant_factors[1]/relevant_factors[0],relevant_factors[0]/relevant_factors[1])
         for basedir,ds_factor,plane_res,scene_type in zip(tqdm(self.all_scenes,desc='Loading scenes'),self.downsampling_factors,plane_resolutions,scene_types):
             scene_path = os.path.join(config[scene_type].root,basedir)
             scene_id = self.get_scene_id(basedir,ds_factor,plane_res)
@@ -117,15 +100,9 @@ class BlenderDataset(torch.utils.data.Dataset):
                 if search('##(\d)+',basedir) is not None:
                     scene_path = scene_path.replace(search('##(\d)+',basedir).group(0),'')
                 elif search('##Gauss(\d)+(\.)?(\d)*',basedir) is not None:
-                    assert ds_factor>1
-                    assert not self.on_the_fly_load,"Blurring each image every time would be very slow (consider upgrading to PyTorch Dataloader if necessary)"
+                    # assert not self.on_the_fly_load,"Blurring each image every time would be very slow (consider upgrading to PyTorch Dataloader if necessary)"
                     scene_path = scene_path.replace(search('##Gauss(\d)+(\.)?(\d)*',basedir).group(0),'')
                     self.ds_kernels[scene_id] = {'base_factor':min(self.downsampling_factors),'STD':float(search('(?<=##Gauss)(\d)+(\.)?(\d)*(?=$)',basedir).group(0))}
-                # elif search('##/(\d)+',basedir) is not None:
-                #     assert scene_type in ['llff','nerfstudio']
-                #     base_ds_factor = int(search('(?<=##/)(\d)+',basedir).group(0))
-                #     scene_path = scene_path.replace(search('##/(\d)+',basedir).group(0),'')
-            # if getattr(config,'type','synt')=='synt':
             self.scene_types[scene_id] = scene_type
             if scene_type=='synt':
                 cur_images, cur_poses, cur_render_poses, cur_hwfDs, cur_i_split = load_blender_data(
@@ -139,12 +116,14 @@ class BlenderDataset(torch.utils.data.Dataset):
                 )
             elif scene_type=='llff':
                 assert scene_id not in self.ds_kernels,'Unsupported'
-                cur_images, cur_poses, _, _, cur_i_split = load_llff.load_llff_data(
+                cur_images, cur_poses, _, _, cur_i_split,base_factor = load_llff.load_llff_data(
                     scene_path,
                     factor=ds_factor,
                     base_factor=min(self.downsampling_factors),
+                    max_factor=max(self.downsampling_factors),
                     load_imgs=not self.on_the_fly_load,
                 )
+                if self.on_the_fly_load:    self.base_factor = base_factor
                 cur_images = [im for im in cur_images]
                 cur_hwfDs = cur_poses[0, :3, -1]
                 cur_hwfDs = [int(cur_hwfDs[0]),int(cur_hwfDs[1]),cur_hwfDs[2].item(),ds_factor]
@@ -169,7 +148,8 @@ class BlenderDataset(torch.utils.data.Dataset):
             if scene_norm_coords is not None: # No need to calculate the per-scene normalization coefficients as those will be loaded with the saved model.
                 self.coords_normalization[scene_id] =\
                     calc_scene_box({'camera_poses':cur_poses.numpy()[:,:3,:4],'near':config[scene_type].near,'far':config[scene_type].far,'H':cur_hwfDs[0],'W':cur_hwfDs[1],'f':cur_hwfDs[2]},
-                        including_dirs=scene_norm_coords.use_viewdirs,no_ndc=config[scene_type].no_ndc,adjust_elevation_range=getattr(scene_norm_coords,'adjust_elevation_range',False))
+                        including_dirs=scene_norm_coords.use_viewdirs,no_ndc=config[scene_type].no_ndc,adjust_az_range=getattr(scene_norm_coords,'adjust_azimuth_range',False),
+                        adjust_elevation_range=getattr(scene_norm_coords,'adjust_elevation_range',False))
             if eval_mode:
                 self.i_val[scene_id] = [v+len(self.images) for v in cur_i_split[2]]
             else:
@@ -178,9 +158,6 @@ class BlenderDataset(torch.utils.data.Dataset):
                 self.i_train[scene_id] = [v+len(self.images) for v in cur_i_split[0]]
             self.images += cur_images
             self.poses = torch.cat((self.poses,cur_poses),0)
-            # for i in range(len(self.hwfDs)):
-            #     self.hwfDs[i] += cur_hwfDs[i]
-            # for i in range(len(cur_hwfDs)):
             self.hwfDs += [(cur_hwfDs[0][i],cur_hwfDs[1][i],cur_hwfDs[2][i],cur_hwfDs[3][i]) for i in range(len(cur_hwfDs[0]))]
             self.per_im_scene_id += [scene_id for i in cur_images]
     
@@ -188,6 +165,8 @@ class BlenderDataset(torch.utils.data.Dataset):
         cur_H,cur_W,cur_focal,cur_ds_factor = self.hwfDs[index]
         if self.on_the_fly_load:
             img_target = (imageio.imread(self.images[index])/ 255.0).astype(np.float32)
+            if hasattr(self,'base_factor'): #LLFF
+                cur_ds_factor //= self.base_factor
             if cur_ds_factor>1:
                 img_target = im_resize(img_target, scale_factor=cur_ds_factor,
                     blur_kernel=self.ds_kernels[self.per_im_scene_id[index]] if self.per_im_scene_id[index] in self.ds_kernels else None)

@@ -224,17 +224,49 @@ def get_plane_name(scene_id,dimension):
         return "_D%d"%(dimension)    
     return "sc%s_D%d"%(scene_id,dimension)
 
+class DSS(nn.Module):
+    def __init__(self,n_layers,n_channels,num_features,combine):
+        super(DSS,self).__init__()
+        assert combine in ['sum','avg']
+        self.combine = combine
+        assert n_layers>=2
+        self.per_plane_layers,self.planes_avg_layers = nn.ModuleList(),nn.ModuleList()
+        self.per_plane_layers.append(nn.Linear(num_features,n_channels))
+        self.planes_avg_layers.append(nn.Linear(num_features,n_channels))
+        for layer_num in range(n_layers-2):
+            self.per_plane_layers.append(nn.Linear(n_channels,n_channels))
+            self.planes_avg_layers.append(nn.Linear(n_channels,n_channels))
+        self.per_plane_layers.append(nn.Linear(n_channels,num_features))
+        self.planes_avg_layers.append(nn.Linear(n_channels,num_features))
+        self.relu = nn.functional.relu
+
+    def forward(self,features):
+        # features = [feat.squeeze(0).squeeze(-1).permute(1,0) for feat in features]
+        for layer_num in range(len(self.per_plane_layers)):
+            per_plane = []
+            for plane in features:
+                per_plane.append(self.per_plane_layers[layer_num](plane))
+            planes_avg = torch.stack(features,0)
+            planes_avg = planes_avg.sum(0) if self.combine=='sum' else planes_avg.mean(0)
+            planes_avg = self.planes_avg_layers[layer_num](planes_avg)
+            features = [self.relu((plane+planes_avg) if self.combine=='sum' else (plane+planes_avg)/2) for plane in per_plane]
+        features = torch.stack(features,0)
+        features = features.sum(0) if self.combine=='sum' else features.mean(0)
+        # return features.permute(1,0).unsqueeze(0).unsqueeze(-1)
+        return features        
+
+
 class TwoDimPlanesModel(nn.Module):
     def __init__(
         self,
         use_viewdirs,
-        scene_id_plane_resolution,
         coords_normalization,
         dec_density_layers=4,
         dec_rgb_layers=4,
         dec_channels=128,
         skip_connect_every=None,
         num_plane_channels=48,
+        num_viewdir_plane_channels=None,
         rgb_dec_input='projections',
         proj_combination='sum',
         planes=None,
@@ -251,6 +283,7 @@ class TwoDimPlanesModel(nn.Module):
         point_coords_noise=0,
         zero_mean_planes_w=None,
         ensemble_size=1,
+        dec_dss_layers=None,
     ):
         self.num_density_planes = num_planes_or_rot_mats if isinstance(num_planes_or_rot_mats,int) else len(num_planes_or_rot_mats)
         # self.PLANES_2_INFER = [self.num_density_planes]
@@ -258,8 +291,12 @@ class TwoDimPlanesModel(nn.Module):
         super(TwoDimPlanesModel, self).__init__()
         self.box_coords = coords_normalization
         self.use_viewdirs = use_viewdirs
+        assert use_viewdirs or (viewdir_proj_combination is None and num_viewdir_plane_channels is None)
         self.point_coords_noise = point_coords_noise
         self.num_plane_channels = num_plane_channels
+        if num_viewdir_plane_channels is None:
+            num_viewdir_plane_channels = num_plane_channels if use_viewdirs else 0
+        self.num_viewdir_plane_channels = num_viewdir_plane_channels
         self.plane_stats = plane_stats
         assert interp_viewdirs in ['bilinear','bicubic',None]
         assert interp_viewdirs is None,'Depricated'
@@ -269,9 +306,10 @@ class TwoDimPlanesModel(nn.Module):
         assert rgb_dec_input in ['projections','features','projections_features']
         self.rgb_dec_input = rgb_dec_input
         assert proj_combination in ['sum','concat','avg']
-        assert use_viewdirs or viewdir_proj_combination is None
         if viewdir_proj_combination is None:    viewdir_proj_combination = proj_combination
-        assert viewdir_proj_combination in ['sum','concat','avg','mult']
+        assert viewdir_proj_combination in ['sum','concat','avg','mult','concat_pos']
+        if num_viewdir_plane_channels!=num_plane_channels:
+            assert 'concat' in viewdir_proj_combination
         self.proj_combination = proj_combination
         self.viewdir_proj_combination = viewdir_proj_combination
         self.plane_interp = plane_interp
@@ -292,6 +330,9 @@ class TwoDimPlanesModel(nn.Module):
         if self.zero_mean_planes_w is not None:
             self.zero_mean_planes_loss = {}
 
+        # DSS module:
+        self.dss_module = None if dec_dss_layers is None else DSS(n_layers=dec_dss_layers,n_channels=dec_channels,num_features=num_plane_channels,combine=proj_combination)
+        if dec_dss_layers is not None:  assert ensemble_size==1,'Unsupported'
         # Density (alpha) decoder:
         self.density_dec = nn.ModuleDict([(str(i),nn.ModuleList()) for i in range(ensemble_size)])
         # self.density_dec = nn.ModuleList()
@@ -307,47 +348,23 @@ class TwoDimPlanesModel(nn.Module):
         self.fc_alpha = nn.ModuleDict([(str(i),nn.Linear(dec_channels,1)) for i in range(ensemble_size)])
         if 'features' in self.rgb_dec_input:
             self.fc_feat = nn.ModuleDict([(str(i),nn.Linear(dec_channels,num_plane_channels)) for i in range(ensemble_size)])
-        # self.fc_alpha = nn.Linear(dec_channels,1)
-        # if 'features' in self.rgb_dec_input:
-        #     self.fc_feat = nn.Linear(dec_channels,num_plane_channels)
 
         # RGB decoder:
-        # self.rgb_dec = nn.ModuleList()
         self.rgb_dec = nn.ModuleDict([(str(i),nn.ModuleList()) for i in range(ensemble_size)])
-        plane_C_mult = 1
-        if proj_combination=='concat':  plane_C_mult += self.num_density_planes-1
-        if use_viewdirs and viewdir_proj_combination=='concat':  plane_C_mult +=1
+        plane_C_mult = 0
+        if proj_combination=='concat' or viewdir_proj_combination=='concat_pos':  plane_C_mult += self.num_density_planes
+        # if use_viewdirs and viewdir_proj_combination=='concat':  plane_C_mult +=1
 
         for i in range(ensemble_size):
-            self.rgb_dec[str(i)].append(nn.Linear(num_plane_channels*plane_C_mult,dec_channels))
+            self.rgb_dec[str(i)].append(nn.Linear(num_viewdir_plane_channels+num_plane_channels*plane_C_mult,dec_channels))
             for layer_num in range(dec_rgb_layers-1):
                 if self.is_skip_layer(layer_num=layer_num):
-                    self.rgb_dec[str(i)].append(nn.Linear(num_plane_channels*plane_C_mult + dec_channels, dec_channels))
+                    self.rgb_dec[str(i)].append(nn.Linear(num_viewdir_plane_channels+num_plane_channels*plane_C_mult + dec_channels, dec_channels))
                 else:
                     self.rgb_dec[str(i)].append(nn.Linear(dec_channels,dec_channels))
-        # self.fc_rgb = nn.Linear(dec_channels,3)
         self.fc_rgb = nn.ModuleDict([(str(i),nn.Linear(dec_channels,3)) for i in range(ensemble_size)])
 
         self.relu = nn.functional.relu
-
-        if scene_id_plane_resolution is not None: #If not using the store_panes configuration
-            raise Exception('Depricated')
-            if planes is None:
-                self.planes_ = nn.ParameterDict([
-                    (get_plane_name(id,d),
-                        create_plane(res[0] if d<self.num_density_planes else res[1],num_plane_channels=num_plane_channels,init_STD=0.1*self.fc_alpha.weight.data.std())
-                    )
-                    for id,res in scene_id_plane_resolution.items() for d in range(self.num_density_planes+use_viewdirs)])
-                if self.interp_from_learned:
-                    self.copy_planes()
-                    assert not align_corners,'The following corresponding grid assumes -1 and 1 correspond to array corners (rather than the center of its corner pixels)'
-                    self.corresponding_grid = OrderedDict()
-                    for k,v in self.planes_copy.items():
-                        res = list(v.shape[2:])
-                        # Dimensions of self.corresponding_grid[k] are resolution X resolution X 2, where the last dimension corresponds to indecis [x,y] (column,row):
-                        self.corresponding_grid[k] = np.stack(np.meshgrid(np.linspace(-1+1/res[1],1-1/res[1],res[1]),np.linspace(-1+1/res[0],1-1/res[0],res[0])),-1)
-            else:
-                self.planes_ = planes
 
     def planes2cpu(self):
         for p in self.planes_.values():
@@ -495,8 +512,9 @@ class TwoDimPlanesModel(nn.Module):
                     align_corners=self.align_corners,
                     padding_mode='border',
                 ))
-        projections = self.combine_pos_planes(projections)
-        return projections.squeeze(0).squeeze(-1).permute(1,0)
+        # return projections
+        # projections = self.combine_pos_planes(projections)
+        return [p.squeeze(0).squeeze(-1).permute(1,0) for p in projections]
 
     def project_viewdir(self,dirs):
         grid = dirs.reshape([1,dirs.shape[0],1,2])
@@ -504,24 +522,8 @@ class TwoDimPlanesModel(nn.Module):
         # Stopped supporting viewdir-planes SR:
         super_resolve = False and hasattr(self,'SR_model') and not self.skip_SR_ and plane_name in self.SR_model.LR_planes and self.num_density_planes not in self.SR_planes2drop
         assert not super_resolve,'Unexpected'
-        # if hasattr(self,'viewdir_plane_coverage') and self.training:
         if self.plane_stats and self.training:
             self.plane_coverage(grid,self.num_density_planes)
-            # plane_res = self.raw_plane(get_plane_name(self.cur_id,self.num_density_planes)).shape[3]
-            # logging_res = self.viewdir_plane_coverage[get_plane_name(self.cur_id,self.num_density_planes)].shape[0]
-            # covered_points = (grid/2*plane_res).squeeze()+logging_res/2
-            # floor_int = lambda x:torch.floor(x).type(torch.LongTensor)
-            # ceil_int = lambda x:torch.ceil(x).type(torch.LongTensor)
-            # for row_f in [floor_int,ceil_int]:
-            #     for col_f in [floor_int,ceil_int]:
-            #         for p in covered_points[::64]:
-            #             self.viewdir_plane_coverage[get_plane_name(self.cur_id,self.num_density_planes)][row_f(p[0]),col_f(p[1])] += 1
-            # import matplotlib.pyplot as plt
-            # plt.imsave('viewdir_coverage_%s.png'%(self.cur_id),np.log(self.viewdir_plane_coverage[get_plane_name(self.cur_id,self.num_density_planes)].cpu().numpy()+1))
-            # plt.clf()
-            # plt.plot(self.viewdir_plane_coverage[get_plane_name(self.cur_id,self.num_density_planes)].mean(0))
-            # plt.plot(self.viewdir_plane_coverage[get_plane_name(self.cur_id,self.num_density_planes)].mean(1))
-            # plt.savefig('%s_coverage.png'%(get_plane_name(self.cur_id,self.num_density_planes)))
         return nn.functional.grid_sample(
                 input=self.planes(self.num_density_planes,super_resolve=super_resolve,grid=grid),
                 grid=grid,
@@ -558,7 +560,9 @@ class TwoDimPlanesModel(nn.Module):
 
 
     def combine_pos_planes(self,tensors):
-        if self.proj_combination=='sum':
+        if self.dss_module is not None:
+            return self.dss_module(tensors)
+        elif self.proj_combination=='sum':
             return torch.stack(tensors,0).sum(0)  
         elif self.proj_combination=='avg':
             return torch.stack([t for i,t in enumerate(tensors) if i not in self.planes2drop],0).mean(0)
@@ -566,10 +570,12 @@ class TwoDimPlanesModel(nn.Module):
             return torch.cat(tensors,1)
 
     def combine_all_planes(self,pos_planes,viewdir_planes):
-        pos_planes_shape = pos_planes.shape
-        if self.viewdir_proj_combination!='concat' and pos_planes_shape[1]>viewdir_planes.shape[1]:
-            pos_planes = pos_planes.reshape([pos_planes_shape[0],viewdir_planes.shape[1],-1])
-            viewdir_planes = viewdir_planes.unsqueeze(-1)
+        if self.viewdir_proj_combination!='concat_pos':
+            pos_planes = self.combine_pos_planes(pos_planes)
+            pos_planes_shape = pos_planes.shape
+            if self.viewdir_proj_combination!='concat' and pos_planes_shape[1]>viewdir_planes.shape[1]:
+                pos_planes = pos_planes.reshape([pos_planes_shape[0],viewdir_planes.shape[1],-1])
+                viewdir_planes = viewdir_planes.unsqueeze(-1)
         if self.viewdir_proj_combination=='sum':
             return torch.reshape(pos_planes+viewdir_planes,pos_planes_shape)
         elif self.viewdir_proj_combination=='avg':
@@ -578,6 +584,8 @@ class TwoDimPlanesModel(nn.Module):
             return torch.reshape(pos_planes*(1+viewdir_planes),pos_planes_shape)
         elif self.viewdir_proj_combination=='concat':
             return torch.cat([pos_planes,viewdir_planes],1)
+        elif self.viewdir_proj_combination=='concat_pos':
+            return torch.cat(pos_planes+[viewdir_planes],1)
 
     def forward(self, x):
         if self.use_viewdirs:
@@ -585,7 +593,10 @@ class TwoDimPlanesModel(nn.Module):
         else:
             x = x[..., : 3]
         x = self.normalize_coords(x)
-        projected_xyz = self.project_xyz(x[..., : 3])
+        pos_projections = self.project_xyz(x[..., : 3])
+        projected_xyz = self.combine_pos_planes(pos_projections)
+        # projected_xyz = projected_xyz.squeeze(0).squeeze(-1).permute(1,0)
+
         if self.use_viewdirs:
             projected_views = self.project_viewdir(x[...,3:])
 
@@ -602,9 +613,10 @@ class TwoDimPlanesModel(nn.Module):
             x_rgb = self.fc_feat[model_num](x)
 
         if self.rgb_dec_input=='projections_features':
+            raise Exception('Depricated')
             x_rgb = self.combine_pos_planes([x_rgb,projected_xyz])
         elif self.rgb_dec_input=='projections':
-            x_rgb = 1*projected_xyz
+            x_rgb = 1*pos_projections
 
         if self.use_viewdirs:
             x_rgb = self.combine_all_planes(pos_planes=x_rgb,viewdir_planes=projected_views)
@@ -761,17 +773,18 @@ class PlanesOptimizer(nn.Module):
                     if init_params:
                         params = nn.ParameterDict([
                             (get_plane_name(scene,d),
-                                create_plane(res[0] if d<model.num_density_planes else res[1],num_plane_channels=model.num_plane_channels,
+                                create_plane(res[0] if d<model.num_density_planes else res[1],
+                                num_plane_channels=model.num_viewdir_plane_channels if d==model.num_density_planes else model.num_plane_channels,
                                 init_STD=STD_factor*model.fc_alpha['0'].weight.data.std().cpu())
                                 if plane_rank_dict is None or d>=model.num_density_planes else
-                                create_plane([res[0],2*plane_rank_dict[get_plane_name(scene,d)]] ,num_plane_channels=model.num_plane_channels,
+                                create_plane([res[0],2*plane_rank_dict[get_plane_name(scene,d)]],
+                                num_plane_channels=model.num_viewdir_plane_channels if d==model.num_density_planes else model.num_plane_channels,
                                 init_STD=np.sqrt(STD_factor*model.fc_alpha.weight.data.std().cpu()))
                             )
                             for d in range(self.planes_per_scene)])
                         cn = coords_normalization[scene]
                     else:
                         params = self.load_scene_planes(model_name=model_name,scene=scene,save_location=copy_params_path,prefer_best=True)
-                        # params = torch.load(self.param_path(model_name=model_name,scene=scene,save_location=copy_params_path))
                         cn = params['coords_normalization']
                         params = params['params']
                     if not os.path.isdir(self.save_location.replace('/planes','')) or any(['.ckpt' in f for f in os.listdir(self.save_location.replace('/planes',''))]):
