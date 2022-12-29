@@ -262,6 +262,7 @@ def main():
         if id in val_only_scene_ids:    tags.append('blind_validation')
         elif '_train' in id:    tags.append('train_imgs')
         else:   tags.append('validation')
+        if '##Gauss' in bare_id:    tags.append('Gauss')
         if bare_id in scene_coupler.downsample_couples.values() or ASSUME_LR_IF_NO_COUPLES: tags.append('LR')
         elif bare_id in scene_coupler.HR_planes_LR_ims_scenes:  tags.append('downscaled')
         elif '_HRplane' in id:  tags.append('HRplanes')

@@ -1,8 +1,8 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  # id: E2E_Real_Res8Sc200_7Sc800_32_LR100_400_Vanilla_LR8_fern
-  id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_VanillaAndGauss #_PZerMean1
+  # id: E2E_Real_Res8Sc200_7Sc800_64_LR100_400_dirAdjust_fern
+  id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss #_PZerMean1
   # id: E2E_Real_6vs2_PZerMean1
   # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32materials
   # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32ship_0
@@ -50,8 +50,8 @@ dataset:
     train:
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'ship##Gauss2','mic##Gauss2'
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steam_train','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'ship##Gauss2','mic##Gauss2'
-      2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steam_train','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship','ship##Gauss2','mic##Gauss2']
+      2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
       # 32,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
       # 8,800,32,'llff':   ['orchids','flower','fortress','horns','leaves','room','trex'] #,'fern'
       # 16,200,128,'llff':   ['horns','leaves']
@@ -113,13 +113,13 @@ models:
     dec_density_layers: 8 #8
     # Number of layers in the rgb decoder.
     dec_rgb_layers: 8
-    # dec_channels: 64
+    dec_channels: 256
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
     # How to combine projections from different planes:
-    proj_combination: concat #avg #concat #sum
+    proj_combination: avg #avg #concat #sum
     # How to combine projection from viewdir plane with the ones from position planes. Defaults to proj_combination:
-    # viewdir_proj_combination: concat_pos
+    viewdir_proj_combination: concat_pos
     # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
     align_corners: False
     # Number of hidden units in each layer of the MLP (multi-layer
@@ -214,7 +214,7 @@ nerf:
     # Add Gaussian noise to points coordinates before projecting them to planes:
     # point_coords_noise: 0.1
     # Encourage per-channel 0 mean on the planes. This is meant to replace input normalization for SR in the end-2-end training scheme.
-    zero_mean_planes_w: 0 #0 #1
+    # zero_mean_planes_w: 0 #0 #1
     # Standard deviation of noise to be added to the radiance field when
     # performing volume rendering.
     radiance_field_noise_std: 0.2
@@ -253,8 +253,8 @@ super_resolution:
   # Super-resolve view-directions plane as well, or only positional planes:
   SR_viewdir: False
   # input_normalization:  True
-  consistency_loss_w: 0 #1 #0.001
-  plane_loss_w:  0 #1
+  # consistency_loss_w: 0 #1 #0.001
+  # plane_loss_w:  0 #1
   # Add Gaussian noise to SR input, with STD relative to the plane's STD:
   # sr_input_noise: 0.1
   # sr_output_noise:  1
