@@ -823,13 +823,13 @@ class PlanesOptimizer(nn.Module):
 
         self.cur_scenes = [scene]
 
-    def load_from_checkpoint(self,checkpoint):
-        model_name = 'coarse'
-        param2num = dict([(k,i) for i,k in enumerate(checkpoint['plane_parameters'])])
-        for scene in self.scenes:
-            params = nn.ParameterDict([(get_plane_name(scene,d),checkpoint['plane_parameters'][get_plane_name(scene,d)]) for d in range(self.planes_per_scene)])
-            opt_states = [checkpoint['plane_optimizer_states'][param2num[get_plane_name(scene,d)]] for d in range(self.planes_per_scene)]
-            torch.save({'params':params,'opt_states':opt_states},self.param_path(model_name=model_name,scene=scene))
+    # def load_from_checkpoint(self,checkpoint):
+    #     model_name = 'coarse'
+    #     param2num = dict([(k,i) for i,k in enumerate(checkpoint['plane_parameters'])])
+    #     for scene in self.scenes:
+    #         params = nn.ParameterDict([(get_plane_name(scene,d),checkpoint['plane_parameters'][get_plane_name(scene,d)]) for d in range(self.planes_per_scene)])
+    #         opt_states = [checkpoint['plane_optimizer_states'][param2num[get_plane_name(scene,d)]] for d in range(self.planes_per_scene)]
+    #         torch.save({'params':params,'opt_states':opt_states},self.param_path(model_name=model_name,scene=scene))
 
     def param_path(self,model_name,scene,save_location=None):
         if save_location is None:
@@ -878,36 +878,11 @@ class PlanesOptimizer(nn.Module):
             param_file_name = self.param_path(model_name=model_name,scene=scene)
             safe_saving(param_file_name,content={'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},
                 suffix='par',best=as_best)
-            # if as_best:
-            #     param_file_name = param_file_name.replace('.par','.par_best')
-            # torch.save({'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},param_file_name.replace('.par','.par_temp'))
-            # del_bckp = False
-            # if os.path.isfile(param_file_name):
-            #     del_bckp = True
-            #     os.rename(param_file_name,param_file_name.replace('.par','.par_bckp'))
-            # os.rename(param_file_name.replace('.par','.par_temp'),param_file_name)
-            # if del_bckp:
-            #     os.remove(param_file_name.replace('.par','.par_bckp'))
         if not as_best: self.saving_needed = False
 
     def load_scene_planes(self,model_name,scene,save_location=None,prefer_best=False):
         file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location)
         loaded_params = safe_loading(file2load,suffix='par',best=prefer_best)
-        # try:
-        #     loaded = False
-        #     while not loaded:
-        #         try:
-        #             loaded_params = torch.load(file2load.replace('.par','.par_best') if prefer_best else file2load)
-        #             loaded = True
-        #         except Exception as e:
-        #             if not prefer_best:
-        #                 raise e
-        #             prefer_best = False
-        # except Exception as e:
-        #     copyfile(file2load,file2load.replace('.par','.par_corrupt'))
-        #     copyfile(file2load.replace('.par','.par_temp'),file2load)
-        #     print("!!!! WARNING: planes model seems to be currpted for scene %s. Loading their backup instead.:\n%s"%(scene,e))
-        #     loaded_params = torch.load(file2load)
         return loaded_params
 
 

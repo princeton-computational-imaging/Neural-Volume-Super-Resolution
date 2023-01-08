@@ -53,7 +53,7 @@ SCRIPT = [
     # (0.2,('effect','unhalf')),
 ]
 SCRIPT = [
-    (0,('left_view','edsr')),
+    (0,('left_view','ours')),
     # (0,('right_view','preSR')),
     (0,('scene','lego')),
     # (0.1,('effect','half')),
@@ -268,5 +268,5 @@ for f_num in trange(total_frames):
 
 vid_path = os.path.join(OUTPUT_PATH,'%s_B%s_FPS%d%s.mp4'%('_'.join(sorted(scenes)),'_'.join(sorted(included_baselines)),FPS,'gif_like' if GIF_LIKE_SAVING is not None else ''))
 if GIF_LIKE_SAVING is not None:
-    frames = frames[GIF_LIKE_SAVING[0]:GIF_LIKE_SAVING[1]+1]+frames[GIF_LIKE_SAVING[1]-1:GIF_LIKE_SAVING[0]:-1]
+    frames = frames[GIF_LIKE_SAVING[0]:GIF_LIKE_SAVING[1]+1]+frames[GIF_LIKE_SAVING[1]-1:GIF_LIKE_SAVING[0]-1:-1]
 imageio.mimwrite(vid_path, frames, fps = FPS, macro_block_size = 8)  # pip install imageio-ffmpeg

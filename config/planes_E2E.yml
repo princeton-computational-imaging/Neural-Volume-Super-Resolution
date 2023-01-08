@@ -2,8 +2,8 @@
 experiment:
   # Unique experiment identifier
   # id: E2E_Real_Res8Sc200_7Sc800_64_LR100_400_dirAdjust_fern
-  id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss #_PZerMean1
-  # id: E2E_Real_6vs2_PZerMean1
+  # id: E2E_Synt_Res29Sc200_27Sc1600_32_LR100_800_posFeatCatDecCh256_chairLego #_micShip #_PZerMean1
+  id: E2E_Synt_Res29Sc200_27Sc1600_32_LR100_800_posFeatCatDecCh256_chairLego
   # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32materials
   # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32ship_0
   # id: E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_2xPlanesLR
@@ -16,7 +16,7 @@ experiment:
   # Number of training iterations.
   train_iters: 750000
   # Number of training iterations after which to validate.
-  validate_every: [0.1,1000] #50
+  validate_every: [0.1,5000] #50
   # Number of training iterations after which to checkpoint.
   save_every: 10.0 #5000
   # Number of training iterations after which to print progress.
@@ -48,10 +48,12 @@ dataset:
   # auto_remove_val:  True
   dir:
     train:
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'ship##Gauss2','mic##Gauss2'
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship','ship##Gauss2','mic##Gauss2']
-      2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+    #   # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'ship##Gauss2','mic##Gauss2'
+    #   # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      # 8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'ship##Gauss2','mic##Gauss2'
+      # 1,1600,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'chair##Gauss2','lego##Gauss2'
+      1,1600,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
       # 32,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
       # 8,800,32,'llff':   ['orchids','flower','fortress','horns','leaves','room','trex'] #,'fern'
       # 16,200,128,'llff':   ['horns','leaves']
@@ -73,7 +75,10 @@ dataset:
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 4,800,32,'llff':   ['orchids','fern']
       # 2,800,32:   ['ship','mic'] #,'ship##Gauss2','mic##Gauss2'
-      2,800,32:   ['ship','mic','ship##Gauss2','mic##Gauss2']
+      # 8,200,32:   ['ship','mic','ship##Gauss2','mic##Gauss2']
+      # 1,1600,32:   ['ship','mic'] #,'ship##Gauss2','mic##Gauss2'
+      # 8,200,32:   ['chair','lego','chair##Gauss2','lego##Gauss2']
+      1,1600,32:   ['chair','lego'] #,'chair##Gauss2','lego##Gauss2']
       # 2,800,32:   ['ship']
     #   8,200,32:   ['chair','drums','ficus','ship']
       # 2,800,32:   ['mic#1']
@@ -156,7 +161,7 @@ optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 5.E-4 #1.E-3 #5.0E-3
+  lr: 5.E-4 #1.E-3 #5.0E-3 2.5E-4 #
   # planes_lr: 1.E-3 #2.5E-4
 
 # NeRF parameters.
