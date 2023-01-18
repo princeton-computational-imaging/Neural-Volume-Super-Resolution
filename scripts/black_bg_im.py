@@ -2,7 +2,7 @@ import imageio
 import cv2
 
 IM_PATH = '/scratch/gpfs/yb6751/datasets/Synthetic/%s/train/r_%d.png'
-SCENE = 'lego'
+SCENE = 'hotdog'
 HR_SF = 2
 LR_SF = 8
 

@@ -192,10 +192,14 @@ class BlenderDataset(torch.utils.data.Dataset):
             config_dict.update({','.join([conf_LR_planes.split(',')[0],conf_HR_planes.split(',')[1],conf_LR_planes.split(',')[2]]):
                 [sc for sc in config_dict[conf_LR_planes] if sc not in config_dict[conf_HR_planes]]})
         for conf,scenes in config_dict.items():
-            conf = eval(conf)
+            conf = list(eval(conf))
+            if len(conf)<2: conf.append(None)
+            if len(conf)<3: conf.append(conf[1])
+            if len(conf)<4: conf.append('synt')
+            conf = tuple(conf)
             if not isinstance(scenes,list): scenes = [scenes]
             for s in interpret_scene_list(scenes):
-                cur_factor,cur_dir,cur_res,cur_type = conf[0],s,(conf[1],conf[2] if len(conf)>2 else conf[1]),conf[3] if len(conf)>3 else 'synt'
+                cur_factor,cur_dir,cur_res,cur_type = conf[0],s,(conf[1],conf[2]),conf[3]
                 cur_id = self.get_scene_id(cur_dir,cur_factor,cur_res)
                 if cur_id in excluded_scene_ids:
                     continue

@@ -3,8 +3,8 @@ experiment:
   # Unique experiment identifier
   # id: E2E_Real_Res8Sc200_7Sc800_64_LR100_400_dirAdjust_fern
   # id: E2E_Synt_Res29Sc200_27Sc1600_32_LR100_800_posFeatCatDecCh256_chairLego #_micShip #_PZerMean1
-  id: E2E_Synt_Res29Sc200_27Sc1600_32_LR100_800_posFeatCatDecCh256_chairLego
-  # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32materials
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_800_posFeatCatDecCh256_micShip
+  id: E2E_Synt_Res27Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NOmicShip_0
   # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32ship_0
   # id: E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_2xPlanesLR
   # id: E2E_Synt_Res266Sc100_258Sc800_32_LR100_800_SRrecField55_PZerMean1
@@ -44,16 +44,16 @@ dataset:
   #   near: 0
   #   far:  1
   #   no_ndc: False
-  max_scenes_eval:  9
+  max_scenes_eval:  4
   # auto_remove_val:  True
   dir:
     train:
     #   # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'ship##Gauss2','mic##Gauss2'
     #   # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      # 8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'ship##Gauss2','mic##Gauss2'
-      # 1,1600,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'chair##Gauss2','lego##Gauss2'
-      1,1600,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] #,'mic','ship'] #,'ship##Gauss2','mic##Gauss2'
+      2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      # 8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'chair##Gauss2','lego##Gauss2'
+      # 1,1600,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
       # 32,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
       # 8,800,32,'llff':   ['orchids','flower','fortress','horns','leaves','room','trex'] #,'fern'
       # 16,200,128,'llff':   ['horns','leaves']
@@ -63,22 +63,24 @@ dataset:
       # 8,200,32:   ['chair','mic',[0,50]]
       # 8,200,32:   ['mic','ship']
       # 2,800,32:   ['mic']
-    val:
-      # 8,200,32:   ['materials']
-      # 2,800,32:   ['materials']
-      # 4,200,32,'llff':   ['horns']
-      # 800.,1.,32,'llff':   ['horns']
-      # 16,200,32,'llff':   ['horns']
-      # 4,800,128,'llff':   ['horns']
-      # 8,800,32,'llff':   ['fern',]
-      # 1,800,32,'nerfstudio':   ['vegetation']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 4,800,32,'llff':   ['orchids','fern']
-      # 2,800,32:   ['ship','mic'] #,'ship##Gauss2','mic##Gauss2'
-      # 8,200,32:   ['ship','mic','ship##Gauss2','mic##Gauss2']
-      # 1,1600,32:   ['ship','mic'] #,'ship##Gauss2','mic##Gauss2'
+    # val:
+    #   # 8,200,32:   ['materials']
+    #   # 2,800,32:   ['materials']
+    #   # 4,200,32,'llff':   ['horns']
+    #   # 800.,1.,32,'llff':   ['horns']
+    #   # 16,200,32,'llff':   ['horns']
+    #   # 4,800,128,'llff':   ['horns']
+    #   # 8,800,32,'llff':   ['fern',]
+    #   # 1,800,32,'nerfstudio':   ['vegetation']
+    #   # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
+    #   # 4,800,32,'llff':   ['orchids','fern']
+    #   # 2,800,32:   ['ship','mic'] #,'ship##Gauss2','mic##Gauss2'
+    #   # 8,200,32:   ['ship','mic','ship##Gauss2','mic##Gauss2']
+    #   1,1600,32:   ['ship','mic'] #,'ship##Gauss2','mic##Gauss2'
       # 8,200,32:   ['chair','lego','chair##Gauss2','lego##Gauss2']
-      1,1600,32:   ['chair','lego'] #,'chair##Gauss2','lego##Gauss2']
+      # 1,1600,32:   ['chair','lego'] #,'chair##Gauss2','lego##Gauss2']
+      # 2,800,32:   ['hotdog']
+      # 8,200,32:   ['hotdog']
       # 2,800,32:   ['ship']
     #   8,200,32:   ['chair','drums','ficus','ship']
       # 2,800,32:   ['mic#1']
@@ -278,7 +280,7 @@ super_resolution:
     n_blocks: 32
     # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
     # receptive_field_bound:  55
-    # scale_factor: sqrt #one #sqrt #linear
+    # scale_factor: 4 #sqrt #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
     # single_plane: False
     # per_channel_sr: True

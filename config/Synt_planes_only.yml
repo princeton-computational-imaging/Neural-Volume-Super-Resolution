@@ -3,7 +3,7 @@ experiment:
   # Unique experiment identifier
   # id: planes_only_blurrySTD2
   # id: planes_only_258recovery
-  id: E2E_Synt_OnVanilla_0_planesOnly
+  id: E2E_Synt_micShip_planesOnly_Scheduler5K0_5
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -11,7 +11,7 @@ experiment:
   # Number of training iterations.
   train_iters: 750000
   # Number of training iterations after which to validate.
-  validate_every: [0.1,1000] #50
+  validate_every: [0.1,5000] #50
   # Number of training iterations after which to checkpoint.
   save_every: 10.0 #5000
   # Number of training iterations after which to print progress.
@@ -33,7 +33,7 @@ dataset:
     near: 0
     far:  1
     no_ndc: False
-  max_scenes_eval:  9
+  max_scenes_eval:  4
   # auto_remove_val:  True
   dir:
     train:
@@ -73,7 +73,7 @@ dataset:
 
 # Model parameters.
 models:
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_Vanilla_0
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res27Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NOmicShip_0
 
 # Optimizer params.
 optimizer:
@@ -81,6 +81,9 @@ optimizer:
   type: Adam
   # Learning rate.
   lr: 5.E-4 #1.E-3 #5.0E-3
+  lr_scheduler:
+    patience: 5000
+    factor: 0.5
 
 # NeRF parameters.
 nerf:
@@ -124,6 +127,7 @@ nerf:
       steps_per_buffer: 1
     # Whether or not to perturb the sampled depth values.
     perturb: True
+    STD_factor: 0.34
     # Number of depth samples per ray for the coarse network.
     num_coarse: 64
     # Number of depth samples per ray for the fine network.
@@ -133,7 +137,7 @@ nerf:
     # Add Gaussian noise to points coordinates before projecting them to planes:
     # point_coords_noise: 0.1
     # Encourage per-channel 0 mean on the planes. This is meant to replace input normalization for SR in the end-2-end training scheme.
-    zero_mean_planes_w: 0 #0 #1
+    # zero_mean_planes_w: 0 #0 #1
     # Standard deviation of noise to be added to the radiance field when
     # performing volume rendering.
     radiance_field_noise_std: 0.2
@@ -172,8 +176,8 @@ super_resolution:
   # Super-resolve view-directions plane as well, or only positional planes:
   SR_viewdir: False
   # input_normalization:  True
-  consistency_loss_w: 0 #1 #0.001
-  plane_loss_w:  0 #1
+  # consistency_loss_w: 0 #1 #0.001
+  # plane_loss_w:  0 #1
   # Add Gaussian noise to SR input, with STD relative to the plane's STD:
   # sr_input_noise: 0.1
   # sr_output_noise:  1
