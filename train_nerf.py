@@ -64,14 +64,14 @@ def main():
     cfg = get_config(config_file)
     if eval_mode:
         import imageio
-        dataset_config4eval = cfg.dataset
+        dataset_config4eval = cfg.dataset.dir.val
         config_file = os.path.join(cfg.experiment.logdir, cfg.experiment.id,"config.yml")
         results_dir = os.path.join(configargs.results_path, cfg.experiment.id)
         white_bg = getattr(cfg.nerf.validation,'white_background',False)
         if not os.path.isdir(results_dir):  os.mkdir(results_dir)
         print('Evaluation outputs will be saved into %s'%(results_dir))
         cfg = get_config(config_file)
-        cfg.dataset = dataset_config4eval
+        cfg.dataset.dir.val = dataset_config4eval
         cfg.nerf.train.pop('zero_mean_planes_w',None)
         if hasattr(cfg,'super_resolution'): 
             cfg.super_resolution.pop('consistency_loss_w',None)
@@ -219,13 +219,15 @@ def main():
                 available_scenes.append(models.get_scene_id(sc,conf[0],(conf[1],conf[2] if len(conf)>2 else conf[1])))
 
     scene_coupler = models.SceneCoupler(list(set(available_scenes+val_only_scene_ids)),planes_res_level=end2end_training,
-        num_pos_planes=getattr(cfg.models.coarse,'num_planes',3),viewdir_plane=cfg.nerf.use_viewdirs,training_scenes=training_scenes,multi_im_res=SR_experiment=='model')
-    if rep_model_training:
-        if not end2end_training:
-            assert len(scene_coupler.downsample_couples)==0
-            # assert all([sc not in scene_coupler.downsample_couples.values() for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
-    else:
-        assert train_planes_only or all([sc not in scene_coupler.downsample_couples.values() for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
+        num_pos_planes=getattr(cfg.models.coarse,'num_planes',3) if planes_model else 0,viewdir_plane=cfg.nerf.use_viewdirs,training_scenes=training_scenes,
+        multi_im_res=SR_experiment=='model' or not planes_model)
+    if planes_model:
+        if rep_model_training:
+            if not end2end_training:
+                assert len(scene_coupler.downsample_couples)==0
+                # assert all([sc not in scene_coupler.downsample_couples.values() for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
+        else:
+            assert train_planes_only or all([sc not in scene_coupler.downsample_couples.values() for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
     if SR_experiment=='model':
         if end2end_training=='HR_planes':
             for sc in scene_coupler.downsample_couples:
@@ -262,6 +264,7 @@ def main():
         if id in val_only_scene_ids:    tags.append('blind_validation')
         elif '_train' in id:    tags.append('train_imgs')
         else:   tags.append('validation')
+        if '##Gauss' in bare_id:    tags.append('Gauss')
         if bare_id in scene_coupler.downsample_couples.values() or ASSUME_LR_IF_NO_COUPLES: tags.append('LR')
         elif bare_id in scene_coupler.HR_planes_LR_ims_scenes:  tags.append('downscaled')
         elif '_HRplane' in id:  tags.append('HRplanes')
@@ -383,6 +386,7 @@ def main():
         )
         
     else:
+        store_planes = False
         # Initialize a coarse-resolution model.
         assert not (cfg.nerf.encode_position_fn=="mip" and cfg.models.coarse.include_input_xyz),"Mip-NeRF does not use the input xyz"
         assert cfg.models.coarse.include_input_xyz==cfg.models.fine.include_input_xyz,"Assuming they are the same"
@@ -461,13 +465,15 @@ def main():
         plane_channels = getattr(cfg.models.coarse,'num_plane_channels',48)
         if not eval_mode:   saved_rgb_fine = dict(zip(evaluation_sequences,[{} for i in evaluation_sequences]))
         sf_config = getattr(cfg.super_resolution.model,'scale_factor','linear')
-        assert sf_config in ['linear','sqrt','one']
+        assert sf_config in ['linear','sqrt','one'] or isinstance(sf_config,int)
         if sf_config=='one':
             SR_factor = 1
         elif sf_config=='linear':
             SR_factor = int(scene_coupler.ds_factor)
-        else:
+        elif sf_config=='sqrt':
             SR_factor = int(np.sqrt(scene_coupler.ds_factor))
+        else:
+            SR_factor = sf_config
         SR_model = getattr(models, cfg.super_resolution.model.type)(
             scale_factor=SR_factor,
             in_channels=plane_channels*(1 if getattr(cfg.super_resolution.model,'single_plane',True) else model_fine.num_density_planes),
@@ -540,7 +546,7 @@ def main():
                 SR_checkpoint_path = find_latest_checkpoint(SR_checkpoint_path,sr=True,find_best=load_best)
                 # extracted_i = int(SR_checkpoint_path.split('/')[-1][len('SR_checkpoint'):-len('.ckpt')])
                 SR_model_checkpoint = safe_loading(SR_checkpoint_path,suffix='ckpt_best' if load_best else 'ckpt')
-                if not (init_new_scenes or initialize_from_trained or eval_mode):
+                if not (init_new_scenes or initialize_from_trained or load_best):
                     start_i = int(SR_checkpoint_path.split('/')[-1][len('SR_checkpoint'):-len('.ckpt')])+1
                     eval_counter = SR_model_checkpoint['eval_counter']
                     best_saved = SR_model_checkpoint['best_saved']
@@ -597,7 +603,8 @@ def main():
             if planes_model and not store_planes:
                 model.box_coords = checkpoint["coords_normalization"]
 
-        checkpoint["model_coarse_state_dict"] = model_coarse.rot_mat_backward_support(checkpoint["model_coarse_state_dict"])
+        if planes_model:
+            checkpoint["model_coarse_state_dict"] = model_coarse.rot_mat_backward_support(checkpoint["model_coarse_state_dict"])
         load_saved_parameters(model_coarse,checkpoint["model_coarse_state_dict"])
         if checkpoint["model_fine_state_dict"]:
             load_saved_parameters(model_fine,checkpoint["model_fine_state_dict"],reduced_set=True)
@@ -632,6 +639,7 @@ def main():
         model_fine.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,save_interpolated=not save_RAM_memory,
             set_planes=not store_planes,plane_dropout=getattr(cfg.super_resolution,'plane_dropout',0),
             single_plane=getattr(cfg.super_resolution.model,'single_plane',True))
+    run_time_signature = time.time()
     if store_planes:
         planes_folder = os.path.join(LR_model_folder if not (rep_model_training or train_planes_only) else logdir,'planes')
         if eval_mode: assert os.path.isdir(planes_folder)
@@ -687,6 +695,9 @@ def main():
             os.mkdir(planes_folder)
         scenes_cycle_counter = Counter()
         optimize_planes = (train_planes_only or rep_model_training) and not eval_mode
+        lr_scheduler = getattr(cfg.optimizer,'lr_scheduler',None)
+        if lr_scheduler is not None:
+            lr_scheduler['patience'] = int(np.ceil(lr_scheduler['patience']/cfg.experiment.print_every))
         planes_opt = models.PlanesOptimizer(optimizer_type=cfg.optimizer.type,
             scene_id_plane_resolution=scene_id_plane_resolution,options=cfg.nerf.train.store_planes,save_location=planes_folder,
             lr=getattr(cfg.optimizer,'planes_lr',cfg.optimizer.lr),model_coarse=model_coarse,model_fine=model_fine,
@@ -696,7 +707,8 @@ def main():
             do_when_reshuffling=lambda:scenes_cycle_counter.step(print_str='Number of scene cycles performed: '),
             STD_factor=getattr(cfg.nerf.train,'STD_factor',0.1),
             available_scenes=available_scenes,planes_rank_ratio=getattr(cfg.models.coarse,'planes_rank_ratio',None),
-            copy_params_path=params_init_path,
+            copy_params_path=params_init_path,run_time_signature=run_time_signature,
+            lr_scheduler=lr_scheduler,
         )
 
     if planes_model:    assert not (hasattr(cfg.models.coarse,'plane_resolutions') or hasattr(cfg.models.coarse,'viewdir_plane_resolution')),'Depricated.'
@@ -784,14 +796,16 @@ def main():
                         encode_position_fn=encode_position_fn,
                         encode_direction_fn=encode_direction_fn,
                         SR_model=SR_model,
-                        ds_factor_or_id=scene_ids[img_idx] if planes_model else ds_factor[img_idx],
+                        ds_factor_or_id=scene_ids[img_idx],
+                        # ds_factor_or_id=scene_ids[img_idx] if planes_model else ds_factor[img_idx],
                         spatial_margin=spatial_margin,
                         scene_config=cfg.dataset[dataset.scene_types[scene_ids[img_idx]]],
                     )
                     target_ray_values[val_strings[scene_num]].append(img_target[...,:3])
-                    zero_mean_planes_loss_ = model_coarse.return_zero_mean_planes_loss()
-                    if zero_mean_planes_loss_ is not None:
-                        zero_mean_planes_loss[val_strings[scene_num]].append(zero_mean_planes_loss_.item())
+                    if planes_model:
+                        zero_mean_planes_loss_ = model_coarse.return_zero_mean_planes_loss()
+                        if zero_mean_planes_loss_ is not None:
+                            zero_mean_planes_loss[val_strings[scene_num]].append(zero_mean_planes_loss_.item())
                     if sr_scene:
                         if SR_experiment=="refine" or planes_model:
                             rgb_SR_ = 1*rgb_fine_
@@ -815,7 +829,8 @@ def main():
                                     encode_position_fn=encode_position_fn,
                                     encode_direction_fn=encode_direction_fn,
                                     SR_model=SR_model,
-                                    ds_factor_or_id=scene_ids[img_idx] if planes_model else ds_factor[img_idx],
+                                    ds_factor_or_id=scene_ids[img_idx],
+                                    # ds_factor_or_id=scene_ids[img_idx] if planes_model else ds_factor[img_idx],
                                     scene_config=cfg.dataset[dataset.scene_types[scene_ids[img_idx]]],
                                 )
                                 model_coarse.skip_SR(False)
@@ -1022,7 +1037,8 @@ def main():
             encode_position_fn=encode_position_fn,
             encode_direction_fn=encode_direction_fn,
             SR_model=None if planes_model else SR_model,
-            ds_factor_or_id=cur_scene_id if planes_model else ds_factor[img_idx],
+            ds_factor_or_id=scene_ids[img_idx],
+            # ds_factor_or_id=cur_scene_id if planes_model else ds_factor[img_idx],
             spatial_margin=spatial_margin,
             scene_config=cfg.dataset[dataset.scene_types[cur_scene_id]],
         )
@@ -1105,7 +1121,6 @@ def main():
     jump_start_phase = isinstance(getattr(cfg.nerf.train,'jump_start',False),list) and start_i==0
     if jump_start_phase:
         n_jump_start_scenes = planes_opt.jump_start(config=cfg.nerf.train.jump_start)
-
     for iter in trange(start_i,cfg.experiment.train_iters):
         # Validation
         if isinstance(cfg.experiment.validate_every,list):
@@ -1132,6 +1147,8 @@ def main():
                     if jump_start_phase:    new_drawn_scenes = new_drawn_scenes[:n_jump_start_scenes]
                     image_sampler.update_active(new_drawn_scenes)
                     # available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
+            elif not store_planes:
+                image_sampler.update_active(training_scenes)
             training_time = 0
             eval_counter += 1
 
@@ -1164,6 +1181,7 @@ def main():
                 + " PSNR: "
                 + str(np.mean(print_cycle_psnr))
             )
+            planes_opt.lr_scheduler_step(np.mean(print_cycle_loss))
             print_cycle_loss,print_cycle_psnr = [],[]
         save_now = scenes_cycle_counter.check_and_reset() if (store_planes and rep_model_training) else False
         save_now |= iter % cfg.experiment.save_every == 0 if isinstance(cfg.experiment.save_every,int) else (time.time()-recently_saved)/60>cfg.experiment.save_every
@@ -1212,12 +1230,12 @@ def main():
 
                 # ckpt_name = os.path.join(logdir, model_filename + str(iter).zfill(5) + ".ckpt")
                 ckpt_name = os.path.join(logdir, model_filename + "%s.ckpt")
-                safe_saving(ckpt_name%(str(iter).zfill(5)),content=checkpoint_dict,suffix='ckpt',best=False)
+                safe_saving(ckpt_name%(str(iter).zfill(5)),content=checkpoint_dict,suffix='ckpt',best=False,run_time_signature=run_time_signature)
                 if len(last_saved[model2save])>0:
                     os.remove(last_saved[model2save].pop(0))
                 last_saved[model2save].append(ckpt_name%(str(iter).zfill(5)))
                 if save_as_best:
-                    safe_saving(ckpt_name%(''),content=checkpoint_dict,suffix='ckpt',best=True)
+                    safe_saving(ckpt_name%(''),content=checkpoint_dict,suffix='ckpt',best=True,run_time_signature=run_time_signature)
                 del checkpoint_dict
 
     print("Done!")

@@ -730,10 +730,12 @@ class PlanesOptimizer(nn.Module):
             lr:float,model_coarse:TwoDimPlanesModel,model_fine:TwoDimPlanesModel,use_coarse_planes:bool,
             init_params:bool,optimize:bool,training_scenes:list=None,coords_normalization:dict=None,
             do_when_reshuffling=lambda:None,STD_factor:float=0.1,
-            available_scenes:list=[],planes_rank_ratio:float=None,copy_params_path=None,
+            available_scenes:list=[],planes_rank_ratio:float=None,copy_params_path=None,run_time_signature:float=np.nan,
+            lr_scheduler=None
             ) -> None:
         super(PlanesOptimizer,self).__init__()
         self.scenes = available_scenes
+        self.run_time_signature = run_time_signature
         if training_scenes is None:
             training_scenes = 1*self.scenes
         self.training_scenes = training_scenes
@@ -797,7 +799,12 @@ class PlanesOptimizer(nn.Module):
 
         self.optimize = optimize
         self.optimizer = None
+        self.lr_scheduler = lr_scheduler if lr_scheduler else None
         self.saving_needed = False
+
+    def lr_scheduler_step(self,loss):
+        if self.optimizer is not None and self.lr_scheduler is not None:
+            self.lr_scheduler.step(loss)
 
     def load_scene(self,scene,load_best=False):
         if self.saving_needed:
@@ -822,14 +829,6 @@ class PlanesOptimizer(nn.Module):
                     model.assign_LR_planes()
 
         self.cur_scenes = [scene]
-
-    def load_from_checkpoint(self,checkpoint):
-        model_name = 'coarse'
-        param2num = dict([(k,i) for i,k in enumerate(checkpoint['plane_parameters'])])
-        for scene in self.scenes:
-            params = nn.ParameterDict([(get_plane_name(scene,d),checkpoint['plane_parameters'][get_plane_name(scene,d)]) for d in range(self.planes_per_scene)])
-            opt_states = [checkpoint['plane_optimizer_states'][param2num[get_plane_name(scene,d)]] for d in range(self.planes_per_scene)]
-            torch.save({'params':params,'opt_states':opt_states},self.param_path(model_name=model_name,scene=scene))
 
     def param_path(self,model_name,scene,save_location=None):
         if save_location is None:
@@ -877,37 +876,12 @@ class PlanesOptimizer(nn.Module):
                 coords_normalization = loaded_params['coords_normalization']
             param_file_name = self.param_path(model_name=model_name,scene=scene)
             safe_saving(param_file_name,content={'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},
-                suffix='par',best=as_best)
-            # if as_best:
-            #     param_file_name = param_file_name.replace('.par','.par_best')
-            # torch.save({'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},param_file_name.replace('.par','.par_temp'))
-            # del_bckp = False
-            # if os.path.isfile(param_file_name):
-            #     del_bckp = True
-            #     os.rename(param_file_name,param_file_name.replace('.par','.par_bckp'))
-            # os.rename(param_file_name.replace('.par','.par_temp'),param_file_name)
-            # if del_bckp:
-            #     os.remove(param_file_name.replace('.par','.par_bckp'))
+                suffix='par',best=as_best,run_time_signature=self.run_time_signature)
         if not as_best: self.saving_needed = False
 
     def load_scene_planes(self,model_name,scene,save_location=None,prefer_best=False):
         file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location)
         loaded_params = safe_loading(file2load,suffix='par',best=prefer_best)
-        # try:
-        #     loaded = False
-        #     while not loaded:
-        #         try:
-        #             loaded_params = torch.load(file2load.replace('.par','.par_best') if prefer_best else file2load)
-        #             loaded = True
-        #         except Exception as e:
-        #             if not prefer_best:
-        #                 raise e
-        #             prefer_best = False
-        # except Exception as e:
-        #     copyfile(file2load,file2load.replace('.par','.par_corrupt'))
-        #     copyfile(file2load.replace('.par','.par_temp'),file2load)
-        #     print("!!!! WARNING: planes model seems to be currpted for scene %s. Loading their backup instead.:\n%s"%(scene,e))
-        #     loaded_params = torch.load(file2load)
         return loaded_params
 
 
@@ -949,6 +923,8 @@ class PlanesOptimizer(nn.Module):
                 params = list(params_dict.values())
                 if self.optimizer is None: # First call to this function:
                     self.optimizer = torch.optim.Adam(params, lr=self.lr)
+                    if self.lr_scheduler is not None:
+                        self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer,patience=self.lr_scheduler['patience'],factor=self.lr_scheduler['factor'],verbose=True)
                 else:
                     self.optimizer.param_groups[0]['params'] = params
                 self.optimizer.state = defaultdict(dict,[(params[i],v) for i,v in enumerate(optimizer_states) if v is not None])
@@ -1196,17 +1172,19 @@ class EDSR(nn.Module):
         return self.conv_output(out)
 
 def get_scene_id(basedir,ds_factor,plane_res):
-    return '%s_DS%d_PlRes%s'%(basedir,ds_factor,'' if plane_res[0] is None else '%d_%d'%(plane_res))
+    return '%s_DS%d%s'%(basedir,ds_factor,'' if plane_res[0] is None else '_PlRes%d_%d'%(plane_res))
 
 def extract_ds_and_res(scene_name):
-    ds = int(search('(?<=_DS)(\d)+(?=_PlRes)',scene_name).group(0))
-    res = int(search('(?<=_PlRes)(\d)+(?=_)',scene_name).group(0))
+    # ds = int(search('(?<=_DS)(\d)+(?=_PlRes)',scene_name).group(0))
+    ds = int(search('(?<=_DS)(\d)+',scene_name).group(0))
+    res = int(search('(?<=_PlRes)(\d)+(?=_)',scene_name).group(0)) if '_PlRes' in scene_name else None
     return ds,res
 
 class SceneCoupler:
     def __init__(self,scenes_list,planes_res_level,num_pos_planes,viewdir_plane,training_scenes,multi_im_res) -> None:
         num_planes = num_pos_planes+viewdir_plane
-        name_pattern = lambda name: '^'+name.split('_DS')[0]+'_DS'+'(\d)+_PlRes(\d)+_'+name.split('_')[-1]
+        planes_model = num_pos_planes>0
+        name_pattern = lambda name: '^'+name.split('_DS')[0]+'_DS'+ ('(\d)+_PlRes(\d)+_'+name.split('_')[-1] if planes_model else '')
         ds_ratios,res_ratios = [],[]
         self.upsample_couples,self.downsample_couples,self.HR_planes_LR_ims_scenes = {},{},[]
         scenes_list = list(set(scenes_list+training_scenes))
@@ -1218,7 +1196,7 @@ class SceneCoupler:
                     org_vals = extract_ds_and_res(scenes_list[sc_num])
                     for match in matching_scenes:
                         found_vals = extract_ds_and_res(match)
-                        res_ratio = found_vals[1]/org_vals[1]
+                        res_ratio = found_vals[1]/org_vals[1] if planes_model else None
                         if res_ratio==1:
                             continue
                         res_ratios.append(res_ratio)
@@ -1226,20 +1204,24 @@ class SceneCoupler:
                         if ds_ratios[-1]==1 and res_ratio>1:
                             self.HR_planes_LR_ims_scenes.append(match)
                         # if ds_ratios[-1]>1:
-                        if res_ratios[-1]<1:
+                        determining_ratio = res_ratios[-1] if planes_model else 1/ds_ratios[-1]
+                        if determining_ratio<1:
                             if scenes_list[sc_num] in training_scenes:
                                 self.upsample_couples[match] = scenes_list[sc_num]
                             self.downsample_couples[scenes_list[sc_num]] = match
-                        elif res_ratios[-1]>1:
+                        elif determining_ratio>1:
                             self.downsample_couples[match] = scenes_list[sc_num]
                             if match in training_scenes:
                                 self.upsample_couples[scenes_list[sc_num]] = match
-            
-        self.ds_factor = int(max(1/res_ratios[0],res_ratios[0])) if len(self.downsample_couples)>0 else 1
-        for match_num in range(len(ds_ratios)):
-            if res_ratios[match_num]!=1/ds_ratios[match_num]:
-                assert ds_ratios[match_num]==1,"I expect to have the downsampling factor match the plane resolution ratio."
-            assert res_ratios[match_num] in [self.ds_factor,1/self.ds_factor],"Not all plane resolution ratios/downsampling factors are the same"
+        if len(self.downsample_couples)==0:
+            self.ds_factor = 1
+        else:    
+            self.ds_factor = int(max(1/res_ratios[0],res_ratios[0])) if planes_model else int(max(1/ds_ratios[0],ds_ratios[0]))
+        if planes_model:
+            for match_num in range(len(ds_ratios)):
+                if res_ratios[match_num]!=1/ds_ratios[match_num]:
+                    assert ds_ratios[match_num]==1,"I expect to have the downsampling factor match the plane resolution ratio."
+                assert res_ratios[match_num] in [self.ds_factor,1/self.ds_factor],"Not all plane resolution ratios/downsampling factors are the same"
         self.use_HR_planes = False
         if planes_res_level=='HR_planes':
             # self.downsampled_planes = {}

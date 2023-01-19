@@ -12,8 +12,24 @@ from re import search
 import functools
 from imresize import imresize
 import os
+import sys
 
-def safe_saving(file_name,content,suffix,best=False):
+def safe_saving(file_name,content,suffix,best=False,run_time_signature=0):
+    if run_time_signature:
+        run_folder = os.path.dirname(file_name).replace('/planes','')
+        run_signature_file = os.path.join(run_folder,'time_sig.txt')
+        if os.path.exists(run_signature_file):
+            with open(run_signature_file,'r') as f:
+                saved_signature = float(f.read())
+            if saved_signature<run_time_signature:
+                with open(run_signature_file,'w') as f:
+                    f.write(str(run_time_signature))
+            elif saved_signature>run_time_signature:
+                sys.exit('Exiting run %f since a newer run %f has started.'%(run_time_signature,saved_signature))
+        else:
+            with open(run_signature_file,'w') as f:
+                f.write(str(run_time_signature))
+
     if best:
         file_name = file_name.replace('.%s'%(suffix),'.%s_best'%(suffix))
     torch.save(content,file_name.replace('.%s'%(suffix),'.%s_temp'%(suffix)))

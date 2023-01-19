@@ -263,6 +263,29 @@
             ]
         },
         {
+            "name": "NeRF LR",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":["--config","config/NeRF_LR.yml"]
+        },
+        {
+            "name": "NeRF LR EVAL",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/NeRF_LR.yml",
+                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
+                "--eval","images", //"video", //"images",
+                "--results_path","/tigress/yb6751/projects/NeuralMFSR/results"
+            ]
+        },
+        {
             "name": "train NeRF",
             "type": "python",
             "request": "launch",

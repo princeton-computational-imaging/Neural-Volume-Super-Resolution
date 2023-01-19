@@ -16,13 +16,13 @@ from tqdm import trange
 # CONFIG_FILE = "config/planes_SR.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
-CONFIG_FILE = "config/planes_E2E.yml"
-# CONFIG_FILE = "config/Synt_planes_only.yml"
+# CONFIG_FILE = "config/planes_E2E.yml"
+CONFIG_FILE = "config/Synt_planes_only.yml"
 # CONFIG_FILE = "config/Real_planes_only.yml"
 
 
-RESUME_TRAINING = 0
-# RESUME_TRAINING = None
+# RESUME_TRAINING = 0
+RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
 EVAL_WHITE = False
@@ -33,14 +33,14 @@ EVAL_WHITE = False
 # PARAM2SWEEP = (['dataset','dir','val','2,800,32'],['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'])
 PARAM2SWEEP = None
 
-RUN_TIME = 14 # 20 # 10 # Hours
+RUN_TIME = 10 # 20 # 10 # Hours
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True
 
 della_not_tiger = 'della-' in socket.gethostname()
 LOGS_FOLDER = "/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs"
 EVAL_FOLDER = "/tigress/yb6751/projects/NeuralMFSR/results"
-CONDA_ENV = "torch-env" if della_not_tiger else "volumetric_enhance"
+CONDA_ENV = "NVSR" if della_not_tiger else "volumetric_enhance"
 
 assert EVAL is None or RESUME_TRAINING is None
 if EVAL is not None:    RESUME_TRAINING = EVAL

@@ -37,21 +37,66 @@ SCRIPT = [
     (1,('scene','motorbike')),
     # (1,('scene','cola')),
     (0.75,('effect','unhalf')),
-
+]
+SCRIPT = [
+    # (0,('left_view','ours')),
+    # (0,('right_view','edsr')),
+    # (0,('scene','dragon')),
+    # (0.1,('effect','half')),
+    # (0.1,('zoom',1.5)),
+    # (0.4,('right_view','swin')),
+    # (0.5,('right_view','srgan')),
+    # (0,('scene','lego')),
+    # (0.4,('right_view','rstt')),
+    # (0.1,('zoom',1.)),
+    (0,('left_view','ours')),
+    (0,('right_view','edsr')),
+    (0,('scene','dragon')),
+    (0.1,('effect','half')),
+    (0.1,('zoom',1.5)),
+    (0.8,('right_view','swin')),
+    (0.5,('scene','lego')),
+    (0.1,('zoom',1.)),
+    (0.5,('right_view','srgan')),
+    (0.5,('scene','ship')),
+    (0.5,('right_view','rstt')),
+    (0.7,('effect','unhalf')),
+]
+SCRIPT = [
+    (0,('left_view','LR')),
+    (0,('right_view','ours2')),
+    (0,('scene','ship')),
+    (0.1,('effect','half')),
+    # (0.1,('zoom',1.5)),
+    # (0.5,('right_view','preSR')),
+    (0.65,('scene','chair')),
+    # (1,('scene','ship')),
+    # (1,('scene','chair')),
+    # (0.4,('right_view','rstt')),
+    # (0.1,('zoom',1.)),
+    (0.,('effect','unhalf')),
 ]
 FPS = 20
-ZOOMIN_FACTOR = 1.5
 TRANSITION_TIMES = {'zoom':1,'fade':0.5,'half':1}
 
 HR_DS_FACTOR = 2
-SR_FACTOR = 4
+SR_FACTOR = 4 # On top of HR_DS_FACTOR
+HIGH_RES_OUTPUT = False
+EXCLUDE_TITLE = False #False #
+FRAME_NUM = False
+# GIF_LIKE_SAVING = [36,67]
+GIF_LIKE_SAVING = None
+
 OUR_RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/ours'
+OUR2_RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0'
+# OUR_RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0'
 BSELINES_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/baselines'
 OUTPUT_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/comparisons'
 SOURCES = {
     'GT':{'p_im':'(?<=\/r_)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'/test/*','path':'/scratch/gpfs/yb6751/datasets/Synthetic',},
     'LR':{'title':'Low-res.','p_im':'(?<=\/)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*LR/*'%(HR_DS_FACTOR*SR_FACTOR),'path':OUR_RESULTS_PATH,},
     'ours':{'title':'Ours','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
+    'ours2':{'title':'Ours','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR2_RESULTS_PATH},
     'naive':{'title':'Naive','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*fine/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
     'edsr':{'title':'EDSR','p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BSELINES_PATH},
     'edsr_pre':{'title':'EDSR (Data)','p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BSELINES_PATH},
@@ -61,7 +106,7 @@ SOURCES = {
     'rstt_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_RSTT_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BSELINES_PATH},
     'swin':{'title':'SwinIR','p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SWIN_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BSELINES_PATH},
     'swin_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SWIN_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BSELINES_PATH},
-    'preSR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/blind_fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/planes_on_SR_Res800_32_0'},
+    'preSR':{'title':'Pre-SR','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/blind_fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/planes_on_SR_Res800_32_0'},
     'view':{'title':'4 planes','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/Synt_Res16Sc800_32_400_NerfUseviewdirsTrue_1'},
     'no_view':{'title':'3 planes','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/Synt_Res16Sc800_32_400_NerfUseviewdirsFalse_0'},
     'PlRes100':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes100*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/plane_resolution_RES100_400_1600_0'},
@@ -83,9 +128,13 @@ for sc in SCRIPT:
         cur_left = sc[1][1]
     if 'right_view'==sc[1][0]:
         cur_right = sc[1][1]
-if cur_scene is not None and cur_left is not None and sc[1][0]=='scene':
+# if cur_scene is not None and cur_left is not None and sc[1][0]=='scene':
+#     method_scene_pairs.append((cur_left,cur_scene))
+# if cur_scene is not None and cur_right is not None and sc[1][0]=='scene':
+#     method_scene_pairs.append((cur_right,cur_scene))
+if cur_scene is not None and cur_left is not None and sc[1][0] in ['scene','left_view']:
     method_scene_pairs.append((cur_left,cur_scene))
-if cur_scene is not None and cur_right is not None and sc[1][0]=='scene':
+if cur_scene is not None and cur_right is not None and sc[1][0] in ['scene','right_view']:
     method_scene_pairs.append((cur_right,cur_scene))
 
 
@@ -138,7 +187,10 @@ for sc in SCRIPT:
     else:
         raise Exception
     n_frames += sc[0]*num_frames
-total_frames = int(scene2show[-1][0]+num_frames)
+# total_frames = int(scene2show[-1][0]+num_frames)
+if sc[1][0]=='scene':
+    n_frames += sc[0]*num_frames
+total_frames = int(max(1,np.ceil(n_frames/num_frames))*num_frames)
 frames = []
 def read_image(path):
     return imageio.imread(path)
@@ -149,7 +201,6 @@ SEPARATOR_WIDTH = 2
 FONT_SCALE = 2
 THICKNESS = 2
 TEXT_Y = 30
-HIGH_RES_OUTPUT = True
 if HIGH_RES_OUTPUT:
     TEXT_Y = int(1080/frame_shape[1]*TEXT_Y)
     FONT_SCALE = int(0.6*1080/frame_shape[1]*FONT_SCALE)
@@ -170,15 +221,18 @@ for f_num in trange(total_frames):
     if len(halfing)>0 and f_num>=halfing[0][0]:
         cur_half = halfing.pop(0)[1]
     left = read_image(im_paths[cur_left][cur_scene][f_num%num_frames])
+    if cur_left=='GT' and HR_DS_FACTOR>1:
+        left = cv2.resize(left, dsize=(0,0),fx=1/HR_DS_FACTOR,fy=1/HR_DS_FACTOR, interpolation=cv2.INTER_AREA)
     if cur_zoom>1:
         left = cv2.resize(left, dsize=(0,0),fx=cur_zoom,fy=cur_zoom, interpolation=cv2.INTER_AREA)
         leftovers = np.array(left.shape)[:2]-frame_shape
         left = left[leftovers[0]//2:-(leftovers[0]-leftovers[0]//2),leftovers[1]//2:-(leftovers[1]-leftovers[1]//2),:]
     if HIGH_RES_OUTPUT:
         left = cv2.resize(left, dsize=(1080,1080),interpolation=cv2.INTER_AREA)
+    title = '' if EXCLUDE_TITLE else SOURCES[cur_left]['title']+(', %d'%(f_num) if FRAME_NUM else '')
     left = cv2.putText(
         left,
-        SOURCES[cur_left]['title'],
+        title,
         (0,TEXT_Y),
         cv2.FONT_HERSHEY_PLAIN,
         fontScale=FONT_SCALE,
@@ -189,6 +243,8 @@ for f_num in trange(total_frames):
     if cur_half>0:
         separator = 255*np.ones([1080 if HIGH_RES_OUTPUT else frame_shape[0],SEPARATOR_WIDTH,3])
         right = read_image(im_paths[cur_right][cur_scene][f_num%num_frames])
+        if cur_left=='GT' and HR_DS_FACTOR>1:
+            right = cv2.resize(right, dsize=(0,0),fx=1/HR_DS_FACTOR,fy=1/HR_DS_FACTOR, interpolation=cv2.INTER_AREA)
         if cur_zoom>1:
             right = cv2.resize(right, dsize=(0,0),fx=cur_zoom,fy=cur_zoom, interpolation=cv2.INTER_AREA)
             leftovers = np.array(right.shape)[:2]-frame_shape
@@ -196,10 +252,11 @@ for f_num in trange(total_frames):
         if HIGH_RES_OUTPUT:
             right = cv2.resize(right, dsize=(1080,1080),interpolation=cv2.INTER_AREA)
         if cur_half==1:
+            title = '' if EXCLUDE_TITLE else SOURCES[cur_right]['title']+(', %d'%(f_num) if FRAME_NUM else '')
             right = cv2.putText(
                 right,
-                SOURCES[cur_right]['title'],
-                (output_width-cv2.getTextSize(SOURCES[cur_right]['title'], cv2.FONT_HERSHEY_PLAIN, FONT_SCALE,THICKNESS)[0][0],TEXT_Y),
+                title,
+                (output_width-cv2.getTextSize(title, cv2.FONT_HERSHEY_PLAIN, FONT_SCALE,THICKNESS)[0][0],TEXT_Y),
                 cv2.FONT_HERSHEY_PLAIN,
                 fontScale=FONT_SCALE,
                 color=[255,255,255],
@@ -230,6 +287,7 @@ for f_num in trange(total_frames):
 
 
 
-vid_path = os.path.join(OUTPUT_PATH,'%s_B%s_FPS%d.mp4'%('_'.join(sorted(scenes)),'_'.join(sorted(included_baselines)),FPS,))
-# imageio.mimwrite(vid_path, [np.array(255*torch.clamp(im,0,1).cpu()).astype(np.uint8) for im in images], fps = FPS, macro_block_size = 8)  # pip install imageio-ffmpeg
+vid_path = os.path.join(OUTPUT_PATH,'%s_B%s_FPS%d%s.mp4'%('_'.join(sorted(scenes)),'_'.join(sorted(included_baselines)),FPS,'gif_like' if GIF_LIKE_SAVING is not None else ''))
+if GIF_LIKE_SAVING is not None:
+    frames = frames[GIF_LIKE_SAVING[0]:GIF_LIKE_SAVING[1]+1]+frames[GIF_LIKE_SAVING[1]-1:GIF_LIKE_SAVING[0]-1:-1]
 imageio.mimwrite(vid_path, frames, fps = FPS, macro_block_size = 8)  # pip install imageio-ffmpeg
