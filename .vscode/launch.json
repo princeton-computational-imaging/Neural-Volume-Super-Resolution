@@ -304,13 +304,13 @@
             "args":["--config","config/lego_ds.yml"]
         },
         {
-            "name": "train SR",
+            "name": "end2end DTU train",
             "type": "python",
             "request": "launch",
             "program": "train_nerf.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args":["--config","config/lego_dev.yml"]
+            "args":["--config","config/DTU_E2E.yml"]
         },
         {
             "name": "resume SR",

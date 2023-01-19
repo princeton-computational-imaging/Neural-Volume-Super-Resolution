@@ -9,7 +9,7 @@ experiment:
   # Number of training iterations.
   train_iters: 750000
   # Number of training iterations after which to validate.
-  validate_every: [0.1,1000] #50
+  validate_every: [0.1,5000] #50
   # Number of training iterations after which to checkpoint.
   save_every: 10.0 #5000
   # Number of training iterations after which to print progress.
@@ -18,15 +18,24 @@ experiment:
 # Dataset parameters.
 dataset:
   # Base directory of dataset.
-  type: DTU # DTU,synt
+  # type: DTU # DTU,synt
   # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
-  root: /scratch/gpfs/yb6751/datasets/rs_dtu_4/DTU
+  DTU:
+    root: /scratch/gpfs/yb6751/datasets/rs_dtu_4/DTU
+    # Do not use NDC (normalized device coordinates). Usually True for
+    # synthetic (Blender) datasets.
+    no_ndc: True
+    # Near clip plane (clip all depth values closer than this threshold).
+    near: 0.1
+    # Far clip plane (clip all depth values farther than this threshold).
+    far: 5
+
   dir:
     train:
-      4,200,32: 'all_train.lst'
-      1,800,32: 'new_train.lst'
+      4,200,32,'DTU': 'all_train.lst'
+      1,800,32,'DTU': 'new_train.lst'
     val:
-      1,800,32: 'new_val.lst'
+      1,800,32,'DTU': 'new_val.lst'
   # excluded_scenes:  ['scan4']
   # Load only some of the scenes in the dataset:
   # max_scenes: 6
@@ -37,13 +46,6 @@ dataset:
   # half_res: True
   # Stride (include one per "testskip" images in the dataset).
   testskip: 10
-  # Do not use NDC (normalized device coordinates). Usually True for
-  # synthetic (Blender) datasets.
-  no_ndc: True
-  # Near clip plane (clip all depth values closer than this threshold).
-  near: 0.1
-  # Far clip plane (clip all depth values farther than this threshold).
-  far: 5
 
 # Model parameters.
 models:
@@ -62,15 +64,14 @@ models:
     # Number of layers in the density decoder.
     dec_density_layers: 8 #4
     # Number of layers in the rgb decoder.
-    dec_rgb_layers: 8 #4
-    # dec_channels: 256
-    # num_plane_channels: 3
+    dec_rgb_layers: 8
+    dec_channels: 256
     # What is the input to the rgb decoder, apart from view directions (if used)
     rgb_dec_input:  projections # projections, features
     # How to combine projections from different planes:
-    proj_combination: concat #avg #concat
+    proj_combination: avg #avg #concat #sum
     # How to combine projection from viewdir plane with the ones from position planes. Defaults to proj_combination:
-    # viewdir_proj_combination: concat
+    viewdir_proj_combination: concat_pos
     # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
     align_corners: False
     # Number of hidden units in each layer of the MLP (multi-layer
@@ -98,8 +99,8 @@ optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 5.0E-3
-  # planes_lr:  1.0E-2
+  lr: 5.E-4 #1.E-3 #5.0E-3 2.5E-4 #
+  # planes_lr: 1.E-3 #2.5E-4
 
 # NeRF parameters.
 nerf:
@@ -115,8 +116,19 @@ nerf:
   # encode_direction_fn: None
   train:
     # End-to-end training of representation and SR models
-    train_end2end:  HR_planes # LR_planes
-    # detach_LR_planes: False # Default is True
+    train_end2end:  LR_planes # HR_planes #LR_planes
+    # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes
+    # sr_val_scenes_with_LR:  True
+    # In the end-2-end training, learn decoder and sr model separately by not performing decoder steps during SR iterations
+    # separate_decoder_sr:  True
+    # In the end-2-end training, learn the LR planes corresponding to the validation scenes without affecting the decoder (almost as if learned afterwards.)
+    # separate_decoder_val_scenes:  True
+    # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
+    # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
+    #  since HR images are not available for their training) (default: True):
+    # detach_LR_planes: False
+    # # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
+    # spatial_sampling: 1.
     # Number of random rays to retain from each image.
     # These sampled rays are used for training, and the others are discarded.
     num_random_rays: 4096  # 32 * 32 * 4
@@ -129,8 +141,8 @@ nerf:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
-      buffer_size:  1 #5
-      steps_per_buffer: 1 #40
+      buffer_size:  10
+      steps_per_buffer: 200
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
@@ -170,14 +182,18 @@ nerf:
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
 super_resolution:
-  lr: 5.E-5
+  lr: 5.E-5 #2.5E-5 #
   training:
     loss: fine # fine,coarse,both
   apply_2_coarse: False #True # False
   # Super-resolve view-directions plane as well, or only positional planes:
   SR_viewdir: False
   # input_normalization:  True
-  consistency_loss_w: 1 #0.001
+  # consistency_loss_w: 0 #1 #0.001
+  # plane_loss_w:  0 #1
+  # Add Gaussian noise to SR input, with STD relative to the plane's STD:
+  # sr_input_noise: 0.1
+  # sr_output_noise:  1
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
