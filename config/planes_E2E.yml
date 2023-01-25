@@ -4,7 +4,7 @@ experiment:
   # id: E2E_Real_Res8Sc200_7Sc800_64_LR100_400_dirAdjust_fern
   # id: E2E_Synt_Res29Sc200_27Sc1600_32_LR100_800_posFeatCatDecCh256_chairLego #_micShip #_PZerMean1
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_800_posFeatCatDecCh256_micShip
-  id: E2E_Synt_Res27Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NOmicShip_0
+  id: E2E_Synt_Res27Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NOmicShip
   # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32ship_0
   # id: E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_2xPlanesLR
   # id: E2E_Synt_Res266Sc100_258Sc800_32_LR100_800_SRrecField55_PZerMean1
@@ -181,7 +181,8 @@ nerf:
   # encode_direction_fn: None
   train:
     # End-to-end training of representation and SR models
-    train_end2end:  LR_planes # HR_planes #LR_planes
+    what: ['LR_planes','decoder','SR']
+    # train_end2end:  LR_planes # HR_planes #LR_planes
     # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes
     # sr_val_scenes_with_LR:  True
     # In the end-2-end training, learn decoder and sr model separately by not performing decoder steps during SR iterations

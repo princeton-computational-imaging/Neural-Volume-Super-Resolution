@@ -114,15 +114,17 @@ class RunningMeanScores:
             return np.mean([np.mean(self.running_scores[val_set][k][metric]) for k in self.running_scores[val_set]])
 
 class ImageSampler:
-    def __init__(self,scenes_dict,same_scene_probs=True) -> None:
+    def __init__(self,scenes_dict:dict,scene_probs:list=[]) -> None:
         self.scenes_dict = scenes_dict
-        assert same_scene_probs,'Unsupported yet.'
+        self.scene_probs = scene_probs
+        # assert same_scene_probs,'Unsupported yet.'
 
     def update_active(self,active_scenes):
         self.im_inds,self.im_probs = [],[]
         for sc in active_scenes:
             self.im_inds.extend(self.scenes_dict[sc])
-            self.im_probs.extend(len(self.scenes_dict[sc])*[1/len(self.scenes_dict[sc])])
+            self.im_probs.extend(len(self.scenes_dict[sc])*[self.scene_probs[sc]/len(self.scenes_dict[sc])])
+            # self.im_probs.extend(len(self.scenes_dict[sc])*[1/len(self.scenes_dict[sc])])
         self.im_probs = np.array(self.im_probs)
         self.im_probs /= np.sum(self.im_probs)
 

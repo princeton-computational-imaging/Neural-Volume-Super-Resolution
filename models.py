@@ -224,6 +224,9 @@ def get_plane_name(scene_id,dimension):
         return "_D%d"%(dimension)    
     return "sc%s_D%d"%(scene_id,dimension)
 
+def plane_name2scene(plane_name):
+    return search('(?<=sc).*(?=_D)',plane_name).group(0)
+
 class DSS(nn.Module):
     def __init__(self,n_layers,n_channels,num_features,combine):
         super(DSS,self).__init__()
@@ -642,14 +645,11 @@ class TwoDimPlanesModel(nn.Module):
 
     def assign_LR_planes(self,scene=None):
         for k in self.planes_:
-        # for k,v in self.planes_.items():
             if scene is not None and self.scene_coupler.scene2saved[scene] not in k:    continue
             if not self.SR_model.SR_viewdir and get_plane_name(None,self.num_density_planes) in k:  continue
             if self.scene_coupler.should_downsample(k,for_LR_loading=True):
-                # LR_plane = self.downsample_plane(v)
                 LR_plane = self.downsample_plane(self.raw_plane(k))
             else:
-                # LR_plane = v
                 LR_plane = self.raw_plane(k)
             if self.SR_model.detach_LR_planes: LR_plane = LR_plane.detach()
             self.SR_model.set_LR_plane(LR_plane,id=k,save_interpolated=False)
@@ -668,8 +668,9 @@ def create_plane(resolution,num_plane_channels,init_STD):
     return nn.Parameter(init_STD*torch.randn(size=[1,num_plane_channels,resolution[0],resolution[1]]))
 
 class SceneSampler:
-    def __init__(self,scenes:list,do_when_reshuffling=lambda:None) -> None:
+    def __init__(self,scenes:list,do_when_reshuffling=lambda:None,frozen_scenes:list=[]) -> None:
         self.scenes = scenes
+        self.frozen_scenes = frozen_scenes
         self.do_when_reshuffling = lambda:None
         self.shuffle()
         self.do_when_reshuffling = do_when_reshuffling
@@ -687,13 +688,21 @@ class SceneSampler:
             sampled = [self.sample_from.pop() for i in range(len(self.sample_from))]
         else:
             while len(sampled)<n:
-                if len(self.sample_from)==0:
+                # if len(self.sample_from)==0:
+                if cursor>=len(self.sample_from):
                     self.shuffle()
                     cursor = 0
-                if self.sample_from[cursor] not in sampled:
-                    sampled.append(self.sample_from.pop(cursor))
-                else:
+                if self.sample_from[cursor] in sampled or (len(sampled)==n-1 and self.sample_from[cursor] in self.frozen_scenes and all([sc in self.frozen_scenes for sc in sampled])):
                     cursor += 1
+                else:
+                    sampled.append(self.sample_from.pop(cursor))
+                # if self.sample_from[cursor] not in sampled:
+                #     popped_scene = self.sample_from.pop(cursor)
+                #     if len(sampled)==n-1 and all([sc in self.frozen_scenes for sc in sampled]): 
+                #         continue
+                #     sampled.append(popped_scene)
+                # else:
+                #     cursor += 1
         return sampled
 
 class CoordProjector(nn.Module):
@@ -731,7 +740,7 @@ class PlanesOptimizer(nn.Module):
             init_params:bool,optimize:bool,training_scenes:list=None,coords_normalization:dict=None,
             do_when_reshuffling=lambda:None,STD_factor:float=0.1,
             available_scenes:list=[],planes_rank_ratio:float=None,copy_params_path=None,run_time_signature:float=np.nan,
-            lr_scheduler=None
+            lr_scheduler=None,use_frozen_planes='',
             ) -> None:
         super(PlanesOptimizer,self).__init__()
         self.scenes = available_scenes
@@ -739,6 +748,15 @@ class PlanesOptimizer(nn.Module):
         if training_scenes is None:
             training_scenes = 1*self.scenes
         self.training_scenes = training_scenes
+        self.frozen_scene_paths = dict()
+        if use_frozen_planes!='':
+            for sc in training_scenes:
+                lr_scene = sc.replace(str(max(model_fine.scene_coupler.plane_res_vals)),str(min(model_fine.scene_coupler.plane_res_vals))).replace('DS%d'%(min(model_fine.scene_coupler.ds_vals)),'DS%d'%(max(model_fine.scene_coupler.ds_vals)))
+                frozen_planes_path = self.param_path(model_name='coarse',scene=lr_scene,save_location=use_frozen_planes)
+                if os.path.isfile(frozen_planes_path):
+                    self.frozen_scene_paths.update({sc:frozen_planes_path,lr_scene:frozen_planes_path})
+                    model_fine.scene_coupler.scene2saved[sc] = lr_scene
+                    model_fine.scene_coupler.downsample_couples[sc] = lr_scene
         self.scenes_with_planes = scene_id_plane_resolution.keys()
         assert len(available_scenes)>0
         assert copy_params_path is None or not init_params,"Those two don't work together"
@@ -753,7 +771,7 @@ class PlanesOptimizer(nn.Module):
         assert not init_params or optimize,'This would means using (frozen) random planes...'
         assert self.steps_per_buffer==-1 or self.steps_per_buffer>=self.buffer_size,\
             'Trying to use %d steps for a buffer of size %d: Some scenes would be loaded in vain.'%(options.steps_per_buffer,self.buffer_size)
-        self.scene_sampler = SceneSampler(self.training_scenes,do_when_reshuffling=do_when_reshuffling)
+        self.scene_sampler = SceneSampler(self.training_scenes,do_when_reshuffling=do_when_reshuffling,frozen_scenes=list(self.frozen_scene_paths.keys()))
         self.models = {}
         self.use_coarse_planes = use_coarse_planes
         self.save_location = save_location
@@ -771,7 +789,9 @@ class PlanesOptimizer(nn.Module):
             if model_name=='fine' and use_coarse_planes:    continue
             self.planes_per_scene = model.num_density_planes+model.use_viewdirs
             if init_params or copy_params_path:
-                for scene,res in tqdm(scene_id_plane_resolution.items(),desc='Initializing scene planes',):
+                for scene,res in tqdm([(k,v) for k,v in scene_id_plane_resolution.items() if k not in self.frozen_scene_paths],desc='Initializing scene planes',):
+                # for scene,res in tqdm(scene_id_plane_resolution.items(),desc='Initializing scene planes',):
+                    # if scene in self.frozen_scene_paths:    continue
                     if init_params:
                         params = nn.ParameterDict([
                             (get_plane_name(scene,d),
@@ -785,7 +805,7 @@ class PlanesOptimizer(nn.Module):
                             )
                             for d in range(self.planes_per_scene)])
                         cn = coords_normalization[scene]
-                    else:
+                    else: # copy_params_path:
                         params = self.load_scene_planes(model_name=model_name,scene=scene,save_location=copy_params_path,prefer_best=True)
                         cn = params['coords_normalization']
                         params = params['params']
@@ -815,8 +835,8 @@ class PlanesOptimizer(nn.Module):
             scenes_planes_name = model.scene_coupler.scene2saved[scene]
             if model_name=='coarse' or not self.use_coarse_planes:
                 loaded_params = self.load_scene_planes(model_name=model_name,scene=scenes_planes_name,prefer_best=load_best)
-                if not all([model.scene_coupler.scene2saved[scene] in k for k in loaded_params['params']]):
-                    print('!!! Warning: Applying patch designed for the pre-SR experiment !!!')
+                if scene not in self.frozen_scene_paths and not all([model.scene_coupler.scene2saved[scene] in k for k in loaded_params['params']]):
+                    print('!!! Warning: Applying patch designed for the preliminary-SR baseline experiment !!!')
                     assert(all([model.scene_coupler.scene2saved[scene].replace('_DS2_','_DS1_') in k for k in loaded_params['params']]))
                     loaded_params['params'] = nn.ParameterDict([(k.replace('_DS1_','_DS2_'),v) for k,v in loaded_params['params'].items()])
             model.planes_ = loaded_params['params'].cuda()
@@ -859,7 +879,8 @@ class PlanesOptimizer(nn.Module):
         scenes_list = self.scenes if as_best else self.cur_scenes
         scene_num = 0
         already_saved = []
-        scenes2save = scenes_list if len(scenes_list)<20 else tqdm(scenes_list,desc='Saving scene planes')
+        scenes2save = [sc for sc in scenes_list if sc not in self.frozen_scene_paths]
+        scenes2save = scenes2save if len(scenes2save)<20 else tqdm(scenes2save,desc='Saving scene planes')
         for scene in scenes2save:
             scene = model.scene_coupler.scene_with_saved_plane(scene)
             if scene in already_saved: continue
@@ -880,7 +901,11 @@ class PlanesOptimizer(nn.Module):
         if not as_best: self.saving_needed = False
 
     def load_scene_planes(self,model_name,scene,save_location=None,prefer_best=False):
-        file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location)
+        if scene in self.frozen_scene_paths:
+            file2load = self.frozen_scene_paths[scene]
+            prefer_best = True
+        else:
+            file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location)
         loaded_params = safe_loading(file2load,suffix='par',best=prefer_best)
         return loaded_params
 
@@ -898,13 +923,14 @@ class PlanesOptimizer(nn.Module):
                 already_loaded = []
                 scenes2load = self.cur_scenes if len(self.cur_scenes)<20 else tqdm(self.cur_scenes,desc='Loading scene planes')
                 for scene in scenes2load:
-                    scene = model.scene_coupler.scene_with_saved_plane(scene)
+                    if scene not in self.frozen_scene_paths:
+                        scene = model.scene_coupler.scene_with_saved_plane(scene)
                     if scene in already_loaded: continue
                     already_loaded.append(scene)
                     loaded_params = self.load_scene_planes(model_name=model_name,scene=scene)
                     params_dict.update(loaded_params['params'])
                     box_coords.update(dict([(sc,loaded_params['coords_normalization']) for sc in [scene]+model.scene_coupler.coupled_scene(scene)]))
-                    if self.optimize:
+                    if self.optimize and scene not in self.frozen_scene_paths:
                         if 'opt_states' in loaded_params:
                             optimizer_states.extend(loaded_params['opt_states'])
                         else:
@@ -920,7 +946,8 @@ class PlanesOptimizer(nn.Module):
 
             if not self.optimize:   continue
             if model_name=='coarse' or not self.use_coarse_planes:
-                params = list(params_dict.values())
+                params = list([v for i,v in enumerate(params_dict.values()) if self.cur_scenes[i//(model.num_density_planes+1)] not in self.frozen_scene_paths])
+                # params = list(params_dict.values())
                 if self.optimizer is None: # First call to this function:
                     self.optimizer = torch.optim.Adam(params, lr=self.lr)
                     if self.lr_scheduler is not None:
@@ -932,26 +959,23 @@ class PlanesOptimizer(nn.Module):
 
     def step(self):
         if self.optimize:
-            self.optimizer.step()
-            self.saving_needed = True
+            if self.cur_id not in self.frozen_scene_paths:
+                self.optimizer.step()
+                self.saving_needed = True
             self.generated_planes.clear()
             self.downsampled_planes.clear()
         self.steps_since_drawing += 1
         if hasattr(self.models['fine'],'SR_model'):
             self.models['fine'].SR_model.clear_SR_planes(all_planes=self.optimize)
-            # self.models['fine'].SR_model.clear_SR_planes(all_planes=reload_planes_4_SR)
 
         if self.steps_since_drawing==self.steps_per_buffer:
-            # self.draw_scenes(assign_LR_planes=not reload_planes_4_SR)
             self.draw_scenes(assign_LR_planes=not self.optimize)
             return self.cur_scenes
         else:
-            # if reload_planes_4_SR and hasattr(self.models['fine'],'SR_model'):
-            #     self.models['fine'].assign_LR_planes()
             return None
 
     def zero_grad(self):
-        if self.optimize:   self.optimizer.zero_grad()
+        if self.optimize and self.cur_id not in self.frozen_scene_paths:   self.optimizer.zero_grad()
 
     def jump_start(self,config=None,on=True):
         items2memorize = ['steps_per_buffer'] #,'scene_sampler.scenes''buffer_size',
@@ -1181,26 +1205,28 @@ def extract_ds_and_res(scene_name):
     return ds,res
 
 class SceneCoupler:
-    def __init__(self,scenes_list,planes_res_level,num_pos_planes,viewdir_plane,training_scenes,multi_im_res) -> None:
+    def __init__(self,scenes_list,HR_planes:bool,num_pos_planes,viewdir_plane,training_scenes,multi_im_res) -> None:
         num_planes = num_pos_planes+viewdir_plane
         planes_model = num_pos_planes>0
         name_pattern = lambda name: '^'+name.split('_DS')[0]+'_DS'+ ('(\d)+_PlRes(\d)+_'+name.split('_')[-1] if planes_model else '')
-        ds_ratios,res_ratios = [],[]
+        ds_ratios,res_ratios,res_vals,ds_vals = [],[],[],[]
         self.upsample_couples,self.downsample_couples,self.HR_planes_LR_ims_scenes = {},{},[]
         scenes_list = list(set(scenes_list+training_scenes))
         if multi_im_res:
             for sc_num in range(len(scenes_list)):
                 matching_scenes = [sc for sc in [s for i,s in enumerate(scenes_list) if i!=sc_num] if search(name_pattern(scenes_list[sc_num]),sc)]
                 if len(matching_scenes)>0:
-                    assert len(matching_scenes)==1 or planes_res_level!='HR_planes','Not supporting HR planes with multiple scene matches'
+                    assert len(matching_scenes)==1 or not HR_planes,'Not supporting HR planes with multiple scene matches'
                     org_vals = extract_ds_and_res(scenes_list[sc_num])
                     for match in matching_scenes:
                         found_vals = extract_ds_and_res(match)
+                        res_vals.extend([found_vals[1],org_vals[1]])
                         res_ratio = found_vals[1]/org_vals[1] if planes_model else None
                         if res_ratio==1:
                             continue
                         res_ratios.append(res_ratio)
                         ds_ratios.append(found_vals[0]/org_vals[0])
+                        ds_vals.extend([found_vals[0],org_vals[0]])
                         if ds_ratios[-1]==1 and res_ratio>1:
                             self.HR_planes_LR_ims_scenes.append(match)
                         # if ds_ratios[-1]>1:
@@ -1215,7 +1241,10 @@ class SceneCoupler:
                                 self.upsample_couples[scenes_list[sc_num]] = match
         if len(self.downsample_couples)==0:
             self.ds_factor = 1
-        else:    
+        else:
+            self.plane_res_vals = set(res_vals)
+            self.ds_vals = set(ds_vals)
+            assert len(self.plane_res_vals)<=2,'Should look into this...'
             self.ds_factor = int(max(1/res_ratios[0],res_ratios[0])) if planes_model else int(max(1/ds_ratios[0],ds_ratios[0]))
         if planes_model:
             for match_num in range(len(ds_ratios)):
@@ -1223,7 +1252,7 @@ class SceneCoupler:
                     assert ds_ratios[match_num]==1,"I expect to have the downsampling factor match the plane resolution ratio."
                 assert res_ratios[match_num] in [self.ds_factor,1/self.ds_factor],"Not all plane resolution ratios/downsampling factors are the same"
         self.use_HR_planes = False
-        if planes_res_level=='HR_planes':
+        if HR_planes:
             # self.downsampled_planes = {}
             self.HR_planes = [get_plane_name(k,d) for k in self.downsample_couples.keys() for d in range(num_pos_planes)]
             self.scene2saved = dict([(sc,self.upsample_couples[sc] if sc in self.upsample_couples else sc if sc in training_scenes else self.downsample_couples[sc])
@@ -1233,9 +1262,13 @@ class SceneCoupler:
         else:
             self.HR_planes = []
             self.scene2saved = dict([(sc,self.downsample_couples[sc] if sc in self.downsample_couples else sc) for sc in scenes_list])
-            self.downsample_planes = dict([(get_plane_name(hr_scene,d),get_plane_name(lr_scene,d))\
-                for hr_scene,lr_scene in self.downsample_couples.items() for d in range(num_pos_planes)])
-        self.plane2saved = dict([(get_plane_name(k,d),get_plane_name(v,d)) for k,v in self.scene2saved.items() for d in range(num_planes)])
+            # self.downsample_planes = dict([(get_plane_name(hr_scene,d),get_plane_name(lr_scene,d))\
+            #     for hr_scene,lr_scene in self.downsample_couples.items() for d in range(num_pos_planes)])
+        # self.plane2saved = dict([(get_plane_name(k,d),get_plane_name(v,d)) for k,v in self.scene2saved.items() for d in range(num_planes)])
+        def plane2saved(plane_name):
+            scene = plane_name2scene(plane_name)
+            return plane_name.replace(scene,self.scene2saved[scene])
+        self.plane2saved = plane2saved
 
     def toggle_used_planes_res(self,HR):
         if HR==True:    assert len(self.HR_planes)>0,'No HR planes to use.'
@@ -1252,13 +1285,11 @@ class SceneCoupler:
         # return self.downsample_couples[scene] if scene in self.downsample_couples else self.upsample_couples[scene] if scene in self.upsample_couples else scene
 
     def scene_with_saved_plane(self,scene,plane_not_scene=False):
-        return getattr(self,('plane' if plane_not_scene else 'scene')+'2saved')[scene]
-        # if (not self.HR_planes) and scene in getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples')):
-        #     return getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples'))[scene]
-        # elif self.HR_planes and scene in getattr(self,'upsample_'+('planes' if plane_not_scene else 'couples')):
-        #     return getattr(self,'upsample_'+('planes' if plane_not_scene else 'couples'))[scene]
-        # else:
-        #     return scene
+        # return getattr(self,('plane' if plane_not_scene else 'scene')+'2saved')[scene]
+        if plane_not_scene:
+            return self.plane2saved(scene)
+        else:
+            return self.scene2saved[scene]
 
     def should_SR(self,scene,plane_not_scene=False):
         if len(self.HR_planes)>0:
@@ -1268,7 +1299,12 @@ class SceneCoupler:
                 # return scene in getattr(self,'upsample_'+('planes' if plane_not_scene else 'couples')).values()
                 return scene in (self.HR_planes if plane_not_scene else self.downsample_couples.keys())
         else:
-            return scene in getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples'))
+            # return scene in getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples'))
+            if plane_not_scene:
+                return plane_name2scene(scene) in self.downsample_couples
+            else:
+                return scene in self.downsample_couples
+            # return scene in getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples'))
 
     def should_downsample(self,plane_name,for_LR_loading=False):
         return len(self.HR_planes)>0 and (for_LR_loading or not self.use_HR_planes) and self.plane2saved[plane_name] in self.HR_planes

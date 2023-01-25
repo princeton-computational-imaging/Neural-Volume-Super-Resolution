@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: E2E_DTU_Res8Sc200_6Sc800_32_LR100_400_Consist1_detachLR # debug-lego200 # DTU
+  id: E2E_DTU_206ScRes200_27Sc800_32_LR100_400_posFeatCatDecCh256 # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -38,12 +38,11 @@ dataset:
       1,800,32,'DTU': 'new_val.lst'
   # excluded_scenes:  ['scan4']
   # Load only some of the scenes in the dataset:
-  # max_scenes: 6
+  # max_scenes: 3
   # Evaluate up to so many scenes:
-  max_scenes_eval:  9
+  max_scenes_eval:  4
   # For the Blender datasets (synthetic), optionally return images
   # at half the original resolution of 800 x 800, to save space.
-  # half_res: True
   # Stride (include one per "testskip" images in the dataset).
   testskip: 10
 
@@ -116,7 +115,8 @@ nerf:
   # encode_direction_fn: None
   train:
     # End-to-end training of representation and SR models
-    train_end2end:  LR_planes # HR_planes #LR_planes
+    what: ['LR_planes','decoder','SR']
+    # train_end2end:  LR_planes # HR_planes #LR_planes
     # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes
     # sr_val_scenes_with_LR:  True
     # In the end-2-end training, learn decoder and sr model separately by not performing decoder steps during SR iterations

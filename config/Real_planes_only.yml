@@ -74,7 +74,7 @@ nerf:
   # # Encoding function for ray direction (theta, phi).
   # encode_direction_fn: None
   train:
-    planes_only: True
+    # planes_only: True
     # End-to-end training of representation and SR models
     # train_end2end:  LR_planes # HR_planes #LR_planes
     # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes

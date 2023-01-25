@@ -3,7 +3,7 @@ experiment:
   # Unique experiment identifier
   # id: planes_only_blurrySTD2
   # id: planes_only_258recovery
-  id: E2E_Synt_micShip_planesOnly_Scheduler5K0_5
+  id: E2E_Synt_micShip_planesAndDecoder_withOrigScenes
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -38,22 +38,14 @@ dataset:
   dir:
     train:
       # 8,200,32:   ['ship##1']
-      8,200,32:   ['mic','ship']
-      # 2,800,32:   ['guitar']
-      # 4,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
-      # 1,800,32,'llff':   ['flower','fortress','horns','leaves','room','trex']
+      8,200,32,'synt',1:   ['mic','ship']
+      # 8,200,32,'synt',1:   ['mic']
+      2,800,32,'synt',1:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      # 2,800,32,'synt',1:   ['engine']
       # 8,200,32:   ['chair##Gauss2','drums##Gauss2','ficus##Gauss2','hotdog##Gauss2','lego##Gauss2','materials##Gauss2','mic##Gauss2','ship##Gauss2',]
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship',]
-      # 8,200,32:   ['mic##Gauss2','mic']
-      # 4,200,32:   ['orchids']
-      # 8,200,32:   ['guitar']
     val:
-      # 1,800,32,'llff':   ['orchids','fern']
-      # 2,800,32:   ['ship##1']
-      # 1,800,32:   ['orchids']
-      # 2,800,32:   ['chair##Gauss2','drums##Gauss2','ficus##Gauss2','hotdog##Gauss2','lego##Gauss2','materials##Gauss2','mic##Gauss2','ship##Gauss2',]
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship',]
-      2,800,32:   ['mic','ship']
+      2,800,32,'synt':   ['mic','ship']
+      # 2,800,32,'synt':   ['mic']
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -74,6 +66,7 @@ dataset:
 # Model parameters.
 models:
   path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res27Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NOmicShip_0
+  use_existing_planes:  True # If true, use saved planes saved in the decoder model folder for the relevant scenes, WITHOUT updating them.
 
 # Optimizer params.
 optimizer:
@@ -81,9 +74,9 @@ optimizer:
   type: Adam
   # Learning rate.
   lr: 5.E-4 #1.E-3 #5.0E-3
-  lr_scheduler:
-    patience: 5000
-    factor: 0.5
+  # lr_scheduler:
+  #   patience: 5000
+  #   factor: 0.5
 
 # NeRF parameters.
 nerf:
@@ -98,7 +91,8 @@ nerf:
   # # Encoding function for ray direction (theta, phi).
   # encode_direction_fn: None
   train:
-    planes_only: True
+    what: ['LR_planes','decoder']
+    # planes_only: True
     # End-to-end training of representation and SR models
     # train_end2end:  LR_planes # HR_planes #LR_planes
     # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes
@@ -123,8 +117,9 @@ nerf:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
+      buffer_size:  5
       # buffer_size:  Makes no sense to use a buffer here since there is no point in alternating between scenes in this experiment (as decoder and SR model are fixed)
-      steps_per_buffer: 1
+      steps_per_buffer: 5
     # Whether or not to perturb the sampled depth values.
     perturb: True
     STD_factor: 0.34

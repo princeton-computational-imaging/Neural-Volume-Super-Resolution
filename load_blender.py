@@ -12,6 +12,8 @@ from collections import OrderedDict
 from magic import from_file
 from copy import deepcopy
 import load_llff
+from load_DTU import DVRDataset
+
 from glob import glob
 
 def translate_by_t_along_z(t):
@@ -58,12 +60,14 @@ class BlenderDataset(torch.utils.data.Dataset):
                 for k,v in val_scenes_dict_copy.items():
                     conf = [int(v) for v in k.split(',')]
                     val_scenes_dict.update({','.join([str(v) for v in [conf[0]*inferred_ds_factor,conf[1]//inferred_ds_factor,conf[2]]]):v})
-        self.downsampling_factors,self.all_scenes,plane_resolutions,val_ids,scene_types = self.get_scene_configs(val_scenes_dict)
+        self.downsampling_factors,self.all_scenes,plane_resolutions,val_ids,scene_types,scene_probs = self.get_scene_configs(val_scenes_dict)
+        assert sum(scene_probs)==1,'Why assign sampling probabilities to a validation scene?'
         self.downsampling_factors += train_dirs[0]
         plane_resolutions += train_dirs[2]
         train_ids = train_dirs[3]
         if getattr(config,'auto_remove_val',False): assert not any([id in train_ids for id in val_ids]),'Removed support to this option. Should re-enable.'
         scene_types += train_dirs[4]
+        scene_probs += train_dirs[5]
         if len(set(train_ids+val_ids))!=len(train_ids+val_ids) and not eval_mode:
             raise Exception('I suspect an overlap between training and validation scenes. The following appear in both:\n%s'%([s for s in val_ids if s in train_ids]))
         train_dirs = train_dirs[1]
@@ -71,19 +75,43 @@ class BlenderDataset(torch.utils.data.Dataset):
         self.images, self.poses, render_poses, self.hwfDs, i_split,self.per_im_scene_id = [],torch.zeros([0,4,4]),[],[],[np.array([]).astype(np.int64) for i in range(3)],[]
         scene_id,self.val_only_scene_ids,self.coords_normalization = -1,[],{}
         self.scene_id_plane_resolution = {}
-        self.i_train,self.i_val = OrderedDict(),OrderedDict()
+        self.i_train,self.i_val,self.scene_probs = OrderedDict(),OrderedDict(),OrderedDict()
         self.scenes_set = set()
         self.ds_kernels = {}
         self.scene_types = {}
+        # DTU scenes:
+        DTU_config = dict(deepcopy(config))
+        DTU_config['dir'] = dict([(k,dict([(k_in,v_in) for k_in,v_in in v.items() if "'DTU'" in k_in])) for k,v in DTU_config['dir'].items()])
+        if all([len(v)==0 for v in DTU_config['dir'].values()]):
+            self.DTU_dataset = None
+        else:
+            self.DTU_dataset = DVRDataset(config=DTU_config,scene_id_func=scene_id_func,eval_ratio=0.1,)
+            self.i_train.update(self.DTU_dataset.train_ims_per_scene)
+            self.i_val.update(self.DTU_dataset.i_val)
+            self.per_im_scene_id.extend(self.DTU_dataset.per_im_scene_id)
+            self.scenes_set = set(self.DTU_dataset.per_im_scene_id)
+            self.downsampling_factors.extend(self.DTU_dataset.downsampling_factors)
+            self.scene_types.update(dict([(sc,'DTU') for sc in self.scenes_set]))
+            self.scene_id_plane_resolution.update(self.DTU_dataset.scene_id_plane_resolution)
+            self.val_only_scene_ids.extend(self.DTU_dataset.val_scene_IDs())
+            if scene_norm_coords is not None:
+                for id in tqdm(self.scenes_set,desc='Computing DTU scene bounding boxes'):
+                    if scene_norm_coords is not None:
+                        scene_info = self.DTU_dataset.scene_info(id)
+                        scene_info.update({'near':config['DTU'].near,'far':config['DTU'].far})
+                        self.coords_normalization[id] = calc_scene_box(scene_info,including_dirs=scene_norm_coords.use_viewdirs,no_ndc=config['DTU'].no_ndc,
+                            adjust_az_range=getattr(scene_norm_coords,'adjust_azimuth_range',False),adjust_elevation_range=getattr(scene_norm_coords,'adjust_elevation_range',False))
+
         self.on_the_fly_load = len(self.all_scenes)>ON_THE_FLY_SCENES_THRESHOLD
-        for basedir,ds_factor,plane_res,scene_type in zip(tqdm(self.all_scenes,desc='Loading scenes'),self.downsampling_factors,plane_resolutions,scene_types):
+        for basedir,ds_factor,plane_res,scene_type,scene_prob in zip(tqdm(self.all_scenes,desc='Loading scenes'),self.downsampling_factors,plane_resolutions,scene_types,scene_probs):
             scene_path = os.path.join(config[scene_type].root,basedir)
             scene_id = self.get_scene_id(basedir,ds_factor,plane_res)
             if scene_id in self.i_train:
                 raise Exception("Scene %s already in the set"%(scene_id))
             self.scenes_set.add(scene_id)
             val_only = (scene_id in val_ids or len(val_ids)==0) if eval_mode else (scene_id not in train_ids)
-            if val_only:    self.val_only_scene_ids.append(scene_id)
+            if val_only:    
+                self.val_only_scene_ids.append(scene_id)
             self.scene_id_plane_resolution[scene_id] = plane_res
             if eval_mode:
                 if not val_only:    continue
@@ -145,6 +173,8 @@ class BlenderDataset(torch.utils.data.Dataset):
                         cur_i_split = [
                             np.array([i for i in np.arange(len(cur_images))]),cur_i_split,cur_i_split
                         ]
+            else:
+                raise Exception('Scene type %s not supported'%(scene_type))
             if scene_norm_coords is not None: # No need to calculate the per-scene normalization coefficients as those will be loaded with the saved model.
                 self.coords_normalization[scene_id] =\
                     calc_scene_box({'camera_poses':cur_poses.numpy()[:,:3,:4],'near':config[scene_type].near,'far':config[scene_type].far,'H':cur_hwfDs[0],'W':cur_hwfDs[1],'f':cur_hwfDs[2]},
@@ -156,12 +186,15 @@ class BlenderDataset(torch.utils.data.Dataset):
                 self.i_val[scene_id] = [v+len(self.images) for v in cur_i_split[1]]
             if not val_only:
                 self.i_train[scene_id] = [v+len(self.images) for v in cur_i_split[0]]
+                self.scene_probs[scene_id] = scene_prob
             self.images += cur_images
             self.poses = torch.cat((self.poses,cur_poses),0)
             self.hwfDs += [(cur_hwfDs[0][i],cur_hwfDs[1][i],cur_hwfDs[2][i],cur_hwfDs[3][i]) for i in range(len(cur_hwfDs[0]))]
             self.per_im_scene_id += [scene_id for i in cur_images]
     
     def item(self,index,device):
+        if self.scene_types[self.per_im_scene_id[index]]=='DTU':
+            return self.DTU_dataset.item(index,device)
         cur_H,cur_W,cur_focal,cur_ds_factor = self.hwfDs[index]
         if self.on_the_fly_load:
             img_target = (imageio.imread(self.images[index])/ 255.0).astype(np.float32)
@@ -180,7 +213,7 @@ class BlenderDataset(torch.utils.data.Dataset):
         return len(self.images)
 
     def get_scene_configs(self,config_dict,add_val_scene_LR=False,excluded_scene_ids=[]):
-        ds_factors,dir,plane_res,scene_ids,types = [],[],[],[],[]
+        ds_factors,dir,plane_res,scene_ids,types,probs = [],[],[],[],[],[]
         config_dict = dict(config_dict)
         if add_val_scene_LR:
             assert len(config_dict)==2
@@ -193,13 +226,15 @@ class BlenderDataset(torch.utils.data.Dataset):
                 [sc for sc in config_dict[conf_LR_planes] if sc not in config_dict[conf_HR_planes]]})
         for conf,scenes in config_dict.items():
             conf = list(eval(conf))
-            if len(conf)<2: conf.append(None)
-            if len(conf)<3: conf.append(conf[1])
-            if len(conf)<4: conf.append('synt')
+            if len(conf)<2: conf.append(None) # Positional planes resolution. Setting None for non-planes model (e.g. NeRF)
+            if len(conf)<3: conf.append(conf[1]) # View-direction planes resolution
+            if len(conf)<4: conf.append('synt') # Scene type
+            if len(conf)<5: conf.append(1) # Scene sampling probability
             conf = tuple(conf)
+            if conf[3]=='DTU':  continue
             if not isinstance(scenes,list): scenes = [scenes]
             for s in interpret_scene_list(scenes):
-                cur_factor,cur_dir,cur_res,cur_type = conf[0],s,(conf[1],conf[2]),conf[3]
+                cur_factor,cur_dir,cur_res,cur_type,cur_prob = conf[0],s,(conf[1],conf[2]),conf[3],conf[4]
                 cur_id = self.get_scene_id(cur_dir,cur_factor,cur_res)
                 if cur_id in excluded_scene_ids:
                     continue
@@ -208,7 +243,8 @@ class BlenderDataset(torch.utils.data.Dataset):
                 plane_res.append(cur_res)
                 dir.append(cur_dir)
                 types.append(cur_type)
-        return ds_factors,dir,plane_res,scene_ids,types
+                probs.append(cur_prob/len(scenes))
+        return ds_factors,dir,plane_res,scene_ids,types,probs
 
 def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
         downsampling_factor=1,val_downsampling_factor=None,cfg=None,splits2use=['train','val'],load_imgs=True,blur_kernel=None):

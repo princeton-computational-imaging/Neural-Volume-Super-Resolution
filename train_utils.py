@@ -47,8 +47,8 @@ def run_network(network_fn, pts, ray_batch, chunksize, embed_fn,\
     else:
         batches = get_minibatches(embedded, chunksize=chunksize)
     preds = []
-    if isinstance(network_fn,models.TwoDimPlanesModel):
-        network_fn.set_cur_scene_id(ds_factor_or_id)
+    # if isinstance(network_fn,models.TwoDimPlanesModel):
+    #     network_fn.set_cur_scene_id(ds_factor_or_id)
     for batch in batches:
         if return_input_grads:
             cur_pred,vjp_fn = vjp(network_fn,batch)
@@ -302,6 +302,9 @@ def run_one_iter_of_nerf(
     if encode_direction_fn is None:
         encode_direction_fn = identity_encoding
 
+    if isinstance(model_coarse,models.TwoDimPlanesModel):
+        model_coarse.set_cur_scene_id(ds_factor_or_id)
+        model_fine.set_cur_scene_id(ds_factor_or_id)
     ray_origins = batch_rays[0]
     ray_directions = batch_rays[1]
     viewdirs = None

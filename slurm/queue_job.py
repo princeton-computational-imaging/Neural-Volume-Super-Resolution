@@ -18,11 +18,12 @@ from tqdm import trange
 # CONFIG_FILE = "config/planes_internal_SR.yml"
 # CONFIG_FILE = "config/planes_E2E.yml"
 CONFIG_FILE = "config/Synt_planes_only.yml"
+# CONFIG_FILE = "config/DTU_E2E.yml"
 # CONFIG_FILE = "config/Real_planes_only.yml"
 
 
-# RESUME_TRAINING = 0
-RESUME_TRAINING = None
+RESUME_TRAINING = 1
+# RESUME_TRAINING = None
 # EVAL = 0
 EVAL = None
 EVAL_WHITE = False
@@ -33,7 +34,7 @@ EVAL_WHITE = False
 # PARAM2SWEEP = (['dataset','dir','val','2,800,32'],['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'])
 PARAM2SWEEP = None
 
-RUN_TIME = 10 # 20 # 10 # Hours
+RUN_TIME = 20 # 20 # 10 # Hours
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True
 

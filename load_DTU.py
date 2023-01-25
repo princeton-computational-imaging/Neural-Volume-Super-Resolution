@@ -40,22 +40,14 @@ class DVRDataset(torch.utils.data.Dataset):
         self,
         config,
         scene_id_func,
-        # path,
-        # stage="train",
-        # list_prefix="new_",
         image_size=None,
         sub_format='dtu', #"shapenet",
         scale_focal=False, #True,
         max_imgs=100000,
-        # z_near=0.1, #1.2,
-        # z_far=5.0, #4.0,
         single_images:bool=True,
         eval_ratio:float=None,
         existing_scenes2match=None,
         ds_factor_extraction_pattern=None,
-        # max_scenes:int=None,
-        # downsampling_factor:int=1,
-        # excluded_scenes:list=None,
     ):
         """
         :param path dataset root path, contains metadata.yml
@@ -70,8 +62,8 @@ class DVRDataset(torch.utils.data.Dataset):
         :param eval_ratio portion of scenes per image to be used for evaluation only, equaly spaced along the images order.
         """
         super().__init__()
-        self.base_path = config.root
-        z_near,z_far,max_scenes,excluded_scenes = config.near,config.far,getattr(config,'max_scenes',None),getattr(config,'excluded_scenes',None)
+        self.base_path = config['DTU'].root
+        z_near,z_far,max_scenes,excluded_scenes = config['DTU'].near,config['DTU'].far,config.get('max_scenes',None),getattr(config,'excluded_scenes',None)
         self.single_images = single_images
         assert eval_ratio is None or single_images,'eval_ratio can only be used when loader returns images, not full scenes.'
         assert os.path.exists(self.base_path)
@@ -79,8 +71,9 @@ class DVRDataset(torch.utils.data.Dataset):
 
         self.all_objs,self.val_scenes,self.downsampling_factors,self.plane_resolutions = [],[],[],[]
         for phase in ['train','val']:
-            if phase not in config.dir: continue
-            for conf,file in getattr(config.dir,phase).items():
+            if phase not in config['dir']: continue
+            # for conf,file in getattr(config['dir'],phase).items():
+            for conf,file in config['dir'][phase].items():
                 conf = eval(conf)
                 with open(os.path.join(self.base_path,file), "r") as f:
                     objs = sorted([('', os.path.join(self.base_path, x.strip())) for x in f.readlines()])
@@ -194,7 +187,7 @@ class DVRDataset(torch.utils.data.Dataset):
     def scene_info(self,scene_num):
         assert self.single_images
         self.single_images = False
-        scene = self.__getitem__(scene_num)
+        scene = self.__getitem__(scene_num if isinstance(scene_num,int) else self.scene_IDs.index(scene_num))
         self.single_images = True
         return {'camera_poses':scene['poses'].numpy()[:,:3,:4],
             'H':[scene['images'].shape[2] for i in range(len(scene['poses']))],
