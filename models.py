@@ -880,6 +880,7 @@ class PlanesOptimizer(nn.Module):
         scene_num = 0
         already_saved = []
         scenes2save = [sc for sc in scenes_list if sc not in self.frozen_scene_paths]
+        scenes2save = list(set([model.scene_coupler.scene_with_saved_plane(sc) for sc in scenes2save]))
         scenes2save = scenes2save if len(scenes2save)<20 else tqdm(scenes2save,desc='Saving scene planes')
         for scene in scenes2save:
             scene = model.scene_coupler.scene_with_saved_plane(scene)
@@ -1017,9 +1018,45 @@ class _Residual_Block(nn.Module):
         output = torch.add(output,identity_data)
         return output 
 
+
 class EDSR(nn.Module):
-    def __init__(self,scale_factor,in_channels,out_channels,sr_config,plane_interp,detach_LR_planes):
+    def __init__(self,in_channels,out_channels,hidden_size,n_blocks,scale_factor,padding,receptive_field_bound=np.iinfo(np.int32).max,**kwargs):
         super(EDSR, self).__init__()
+        KERNEL_SIZE = 3
+        self.required_padding,rf_factor = 0,1
+
+        def kernel_size(num_layers=1):
+            if (1+2*(self.required_padding+rf_factor*num_layers*((KERNEL_SIZE-1)//2)))<=receptive_field_bound:
+                self.required_padding += rf_factor*num_layers*(KERNEL_SIZE//2)
+                return KERNEL_SIZE
+            else:
+                return 1
+
+        self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=kernel_size(), stride=1, padding=padding, bias=False)
+        self.residual = nn.Sequential()
+        for _ in range(n_blocks):
+            self.residual.append(_Residual_Block(hidden_size=hidden_size,padding=padding,kernel_size=kernel_size(2)))
+        self.conv_mid = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=kernel_size(), stride=1, padding=padding, bias=False)
+        assert math.log2(scale_factor)==int(math.log2(scale_factor)),"Supperting only scale factors that are an integer power of 2."
+        upscaling_layers = []
+        for _ in range(int(math.log2(scale_factor))):
+            upscaling_layers += [
+                nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size*4, kernel_size=kernel_size(), stride=1, padding=padding, bias=False),
+                nn.PixelShuffle(2),
+            ]
+            rf_factor /= 2
+        self.upscale = nn.Sequential(*upscaling_layers)
+        self.conv_output = nn.Conv2d(in_channels=hidden_size, out_channels=out_channels, kernel_size=kernel_size(), stride=1, padding=padding, bias=False)
+
+    def forward(self,x):
+        out = self.conv_input(x)
+        out = self.conv_mid(self.residual(out))
+        out = self.upscale(out)
+        return self.conv_output(out)
+
+class PlanesSR(nn.Module):
+    def __init__(self,model_arch,scale_factor,in_channels,out_channels,sr_config,plane_interp,detach_LR_planes):
+        super(PlanesSR, self).__init__()
 
         hidden_size = sr_config.model.hidden_size
         n_blocks = sr_config.model.n_blocks
@@ -1027,45 +1064,50 @@ class EDSR(nn.Module):
         self.detach_LR_planes = detach_LR_planes
         self.scale_factor = scale_factor
         self.plane_interp = plane_interp
-        self.n_blocks = n_blocks
+        # self.n_blocks = n_blocks
         self.input_noise = getattr(sr_config,'sr_input_noise',0)
         self.output_noise = getattr(sr_config,'sr_output_noise',0)
         self.single_plane = getattr(sr_config.model,'single_plane',True)
         self.per_channel_sr = getattr(sr_config.model,'per_channel_sr',False)
         if self.per_channel_sr:
             in_channels = out_channels = 1
-        PADDING,KERNEL_SIZE = 0,3
-        self.required_padding,rf_factor = 0,1
+        # PADDING,KERNEL_SIZE = 0,3
+        # self.required_padding,rf_factor = 0,1
 
-        def kernel_size(num_layers=1):
-            if (1+2*(self.required_padding+rf_factor*num_layers*((KERNEL_SIZE-1)//2)))<=getattr(sr_config.model,'receptive_field_bound',np.iinfo(np.int32).max):
-                self.required_padding += rf_factor*num_layers*(KERNEL_SIZE//2)
-                return KERNEL_SIZE
-            else:
-                return 1
+        # def kernel_size(num_layers=1):
+        #     if (1+2*(self.required_padding+rf_factor*num_layers*((KERNEL_SIZE-1)//2)))<=getattr(sr_config.model,'receptive_field_bound',np.iinfo(np.int32).max):
+        #         self.required_padding += rf_factor*num_layers*(KERNEL_SIZE//2)
+        #         return KERNEL_SIZE
+        #     else:
+        #         return 1
 
-        self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
+        # assert model_arch in ['EDSR','SRResNet']
+        PADDING = 0
+        self.inner_model = model_arch(in_channels=in_channels,out_channels=out_channels,hidden_size=hidden_size,n_blocks=n_blocks,
+            scale_factor=scale_factor,padding=PADDING,receptive_field_bound=getattr(sr_config.model,'receptive_field_bound',np.iinfo(np.int32).max),
+            edsr_init=getattr(sr_config.model,'edsr_init',False),no_bn=getattr(sr_config.model,'no_batch_norm',False))
+        # self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
 
-        self.residual = nn.Sequential()
-        for _ in range(n_blocks):
-            self.residual.append(_Residual_Block(hidden_size=hidden_size,padding=PADDING,kernel_size=kernel_size(2)))
+        # self.residual = nn.Sequential()
+        # for _ in range(n_blocks):
+        #     self.residual.append(_Residual_Block(hidden_size=hidden_size,padding=PADDING,kernel_size=kernel_size(2)))
 
-        self.conv_mid = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
-        assert math.log2(scale_factor)==int(math.log2(scale_factor)),"Supperting only scale factors that are an integer power of 2."
-        upscaling_layers = []
-        for _ in range(int(math.log2(scale_factor))):
-            upscaling_layers += [
-                nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size*4, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False),
-                nn.PixelShuffle(2),
-            ]
-            rf_factor /= 2
+        # self.conv_mid = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
+        # assert math.log2(scale_factor)==int(math.log2(scale_factor)),"Supperting only scale factors that are an integer power of 2."
+        # upscaling_layers = []
+        # for _ in range(int(math.log2(scale_factor))):
+        #     upscaling_layers += [
+        #         nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size*4, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False),
+        #         nn.PixelShuffle(2),
+        #     ]
+        #     rf_factor /= 2
 
-        self.upscale = nn.Sequential(*upscaling_layers)
+        # self.upscale = nn.Sequential(*upscaling_layers)
 
-        self.conv_output = nn.Conv2d(in_channels=hidden_size, out_channels=out_channels, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
-        self.HR_overpadding = int(self.required_padding*self.scale_factor)
-        self.required_padding = int(np.ceil(self.required_padding))
-        self.HR_overpadding = self.required_padding*self.scale_factor-self.HR_overpadding
+        # self.conv_output = nn.Conv2d(in_channels=hidden_size, out_channels=out_channels, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
+        self.HR_overpadding = int(self.inner_model.required_padding*self.scale_factor)
+        self.inner_model.required_padding = int(np.ceil(self.inner_model.required_padding))
+        self.HR_overpadding = self.inner_model.required_padding*self.scale_factor-self.HR_overpadding
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -1085,11 +1127,11 @@ class EDSR(nn.Module):
             self.planes_diff = nn.L1Loss()
             self.consistentcy_loss = []
 
-    def make_layer(self, block,args, num_of_layer):
-        layers = []
-        for _ in range(num_of_layer):
-            layers.append(block(**args))
-        return nn.Sequential(*layers)
+    # def make_layer(self, block,args, num_of_layer):
+    #     layers = []
+    #     for _ in range(num_of_layer):
+    #         layers.append(block(**args))
+    #     return nn.Sequential(*layers)
 
     def interpolate_LR(self,id):
         return torch.nn.functional.interpolate(self.LR_planes[id].cuda(),scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=self.align_corners)
@@ -1155,19 +1197,19 @@ class EDSR(nn.Module):
             plane_roi = torch.stack([torch.floor(plane_roi[0]),torch.ceil(plane_roi[1])],0).cpu().numpy().astype(np.int32)
             plane_roi[0] = np.maximum(0,plane_roi[0]-1)
             plane_roi[1] = np.minimum(np.array(x.shape[2:]),plane_roi[1]+1)
-            pre_padding = np.minimum(plane_roi[0],self.required_padding)
-            post_padding = np.minimum(np.array(x.shape[2:])-plane_roi[1],self.required_padding)
+            pre_padding = np.minimum(plane_roi[0],self.inner_model.required_padding)
+            post_padding = np.minimum(np.array(x.shape[2:])-plane_roi[1],self.inner_model.required_padding)
             take_last = lambda ind: -ind if ind>0 else None
             DEBUG = False
             if DEBUG:   print('!! WARNING !!!!')
             x = x[...,plane_roi[0,0]-pre_padding[0]:plane_roi[1,0]+post_padding[0],plane_roi[0,1]-pre_padding[1]:plane_roi[1,1]+post_padding[1]]
             x = torch.nn.functional.pad(x,
-                pad=(self.required_padding-pre_padding[1],self.required_padding-post_padding[1],self.required_padding-pre_padding[0],self.required_padding-post_padding[0]),
+                pad=(self.inner_model.required_padding-pre_padding[1],self.inner_model.required_padding-post_padding[1],self.inner_model.required_padding-pre_padding[0],self.inner_model.required_padding-post_padding[0]),
                 mode='replicate')
             if self.per_channel_sr:
-                difference = torch.cat([self.inner_forward(x[:,ch:ch+1,...]) for ch in range(x.shape[1])],1)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
+                difference = torch.cat([self.inner_model(x[:,ch:ch+1,...]) for ch in range(x.shape[1])],1)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
             else:
-                difference = self.inner_forward(x)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
+                difference = self.inner_model(x)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
             min_index = plane_roi[0]*self.scale_factor
             max_index = plane_roi[1]*self.scale_factor
             residual_plane = self.residual_plane(plane_name)
@@ -1189,11 +1231,11 @@ class EDSR(nn.Module):
                 )
         return out
 
-    def inner_forward(self,x):
-        out = self.conv_input(x)
-        out = self.conv_mid(self.residual(out))
-        out = self.upscale(out)
-        return self.conv_output(out)
+    # def inner_forward(self,x):
+    #     out = self.conv_input(x)
+    #     out = self.conv_mid(self.residual(out))
+    #     out = self.upscale(out)
+    #     return self.conv_output(out)
 
 def get_scene_id(basedir,ds_factor,plane_res):
     return '%s_DS%d%s'%(basedir,ds_factor,'' if plane_res[0] is None else '_PlRes%d_%d'%(plane_res))
@@ -1308,3 +1350,129 @@ class SceneCoupler:
 
     def should_downsample(self,plane_name,for_LR_loading=False):
         return len(self.HR_planes)>0 and (for_LR_loading or not self.use_HR_planes) and self.plane2saved[plane_name] in self.HR_planes
+
+class _ResidualConvBlock(nn.Module):
+    """Implements residual conv function.
+
+    Args:
+        channels (int): Number of channels in the input image.
+    """
+
+    def __init__(self, channels: int,no_bn=False) -> None:
+        super(_ResidualConvBlock, self).__init__()
+        rcb_seq = [nn.Conv2d(channels, channels, (3, 3), (1, 1), (1, 1), bias=False),
+            nn.PReLU(),
+            nn.Conv2d(channels, channels, (3, 3), (1, 1), (1, 1), bias=False)]
+        if no_bn==False:
+            rcb_seq.insert(1,nn.BatchNorm2d(channels))
+            rcb_seq.insert(4,nn.BatchNorm2d(channels))
+        elif no_bn=='add_relu':
+            rcb_seq.append(nn.ReLU(inplace=True))
+        self.rcb = nn.Sequential(OrderedDict([(str(i),l) for i,l in enumerate(rcb_seq)]))
+
+    def forward(self, x: torch.tensor) -> torch.tensor:
+        identity = x
+
+        out = self.rcb(x)
+
+        out = torch.add(out, identity)
+
+        return out
+
+class _UpsampleBlock(nn.Module):
+    def __init__(self, channels: int, scale_factor: int) -> None:
+        super(_UpsampleBlock, self).__init__()
+        self.upsample_block = nn.Sequential(
+            nn.Conv2d(channels, channels * scale_factor * scale_factor, (3, 3), (1, 1), (1, 1)),
+            nn.PixelShuffle(2),
+            nn.PReLU(),
+        )
+
+    def forward(self, x: torch.tensor) -> torch.tensor:
+        out = self.upsample_block(x)
+
+        return out
+
+class SRResNet(nn.Module):
+    def __init__(
+            self,
+            in_channels: int,
+            out_channels: int,
+            hidden_size: int,
+            n_blocks: int,
+            scale_factor: int,
+            padding: int,
+            receptive_field_bound: int,
+            **kwargs
+    ) -> None:
+        super(SRResNet, self).__init__()
+        # First conv layer.
+        self.required_padding = 0
+        no_bn = kwargs.get('no_bn',False)
+        self.conv_block1 = nn.Sequential(
+            nn.Conv2d(in_channels, hidden_size, (9, 9), (1, 1), (4, 4)),
+            nn.PReLU(),
+        )
+
+        # Features trunk blocks.
+        trunk = []
+        for _ in range(n_blocks):
+            trunk.append(_ResidualConvBlock(hidden_size,no_bn))
+        self.trunk = nn.Sequential(*trunk)
+
+        # Second conv layer.
+        conv_block2_seq = [nn.Conv2d(hidden_size, hidden_size, (3, 3), (1, 1), (1, 1), bias=False)]
+        if no_bn==False:
+            conv_block2_seq.append(nn.BatchNorm2d(hidden_size))
+        self.conv_block2 = nn.Sequential(OrderedDict([(str(i),l) for i,l in enumerate(conv_block2_seq)]))
+
+        # Upscale block
+        upsampling = []
+        if scale_factor == 2 or scale_factor == 4 or scale_factor == 8:
+            for _ in range(int(math.log(scale_factor, 2))):
+                upsampling.append(_UpsampleBlock(hidden_size, 2))
+        elif scale_factor == 3:
+            upsampling.append(_UpsampleBlock(hidden_size, 3))
+        self.upsampling = nn.Sequential(*upsampling)
+
+        # Output layer.
+        self.conv_block3 = nn.Conv2d(hidden_size, out_channels, (9, 9), (1, 1), (4, 4))
+
+        # Initialize neural network weights
+        self._initialize_weights(edsr_init=kwargs.get('edsr_init',False))
+
+    def forward(self, x: torch.tensor) -> torch.tensor:
+        return self._forward_impl(x)
+
+    # Support torch.script function
+    def _forward_impl(self, x: torch.tensor) -> torch.tensor:
+        out1 = self.conv_block1(x)
+        out = self.trunk(out1)
+        out2 = self.conv_block2(out)
+        out = torch.add(out1, out2)
+        out = self.upsampling(out)
+        out = self.conv_block3(out)
+
+        # out = torch.clamp_(out, 0.0, 1.0)
+
+        return out
+
+    def _initialize_weights(self,edsr_init=False) -> None:
+        for module in self.modules():
+            if isinstance(module, nn.Conv2d):
+                if edsr_init:
+                    n = module.kernel_size[0] * module.kernel_size[1] * module.out_channels
+                    module.weight.data.normal_(0, math.sqrt(2. / n)/10)
+                    if module.bias is not None:
+                        module.bias.data.zero_()
+                else:
+                    nn.init.kaiming_normal_(module.weight)
+                    if module.bias is not None:
+                        nn.init.constant_(module.bias, 0)
+            elif isinstance(module, nn.BatchNorm2d):
+                if edsr_init:
+                    module.weight.data.fill_(1)
+                    if module.bias is not None:
+                        module.bias.data.zero_()
+                else:
+                    nn.init.constant_(module.weight, 1)

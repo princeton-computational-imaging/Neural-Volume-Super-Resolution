@@ -4,10 +4,11 @@ sys.path.append('.')
 from nerf_helpers import get_config,rgetattr,rsetattr
 
 config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/planes_E2E.yml'
+# config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/NeRF_LR.yml'
 # config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/Synt_planes_only.yml'
 # config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_Vanilla_0/config.yml'
-# config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Real_Res8Sc200_7Sc800_32_LR100_400_Vanilla_LR8_fern_0/config.yml'
-config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res27Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NOmicShip_0/config.yml'
+config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_SRResNet_noBN_chairLego_0/config.yml'
+# config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0/config.yml'
 
 def sort_scenes(config):
     # return config
@@ -44,8 +45,8 @@ for ch_type in ['dictionary_item_removed','dictionary_item_added','values_change
         diff_string = '\n%d: %s, %s'%(counter,ch_type,diff)
         if ch_type=='dictionary_item_removed':  diff_string += ' %s'%rgetattr(cfg_A,diff_attr)
         elif ch_type=='dictionary_item_added':  diff_string += ' %s'%rgetattr(cfg_B,diff_attr)
-        elif ch_type=='values_changed':  diff_string += ' %s -> %s'%(rgetattr(cfg_A,diff_attr),rgetattr(cfg_B,diff_attr))
-        elif ch_type=='type_changes':  raise Exception
+        elif ch_type=='values_changed':  diff_string += '\n%s -> \n%s'%(rgetattr(cfg_A,diff_attr),rgetattr(cfg_B,diff_attr))
+        elif ch_type=='type_changes':  diff_string += '\n%s -> \n%s'%(type(rgetattr(cfg_A,diff_attr)),type(rgetattr(cfg_B,diff_attr)))
         elif ch_type=='iterable_item_removed':  raise Exception
         print(diff_string)
         counter += 1

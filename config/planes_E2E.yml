@@ -1,10 +1,10 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  # id: E2E_Real_Res8Sc200_7Sc800_64_LR100_400_dirAdjust_fern
-  # id: E2E_Synt_Res29Sc200_27Sc1600_32_LR100_800_posFeatCatDecCh256_chairLego #_micShip #_PZerMean1
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_800_posFeatCatDecCh256_micShip
-  id: E2E_Synt_Res27Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NOmicShip
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_SRResNet16Bl_ReluNoBN_micShip
+  id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_chairLego_0 #_micShip #_PZerMean1
+  # id: E2E_Synt_Res29Sc200_25Sc800_32_LR100_400_posFeatCatDecCh256_remainingFour
+  # id: E2E_Synt_Res27Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NOmicShip
   # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32ship_0
   # id: E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_2xPlanesLR
   # id: E2E_Synt_Res266Sc100_258Sc800_32_LR100_800_SRrecField55_PZerMean1
@@ -14,7 +14,7 @@ experiment:
   # Seed for random number generators (for repeatability).
   randomseed: 10 # 34  # 8239
   # Number of training iterations.
-  train_iters: 750000
+  train_iters: 1500000
   # Number of training iterations after which to validate.
   validate_every: [0.1,5000] #50
   # Number of training iterations after which to checkpoint.
@@ -33,6 +33,8 @@ dataset:
     near: 2
     # Far clip plane (clip all depth values farther than this threshold).
     far:  6
+    # Do not use NDC (normalized device coordinates). Usually True for
+    # synthetic (Blender) datasets.
     no_ndc: True
   llff: 
     root: /scratch/gpfs/yb6751/datasets/LLFF
@@ -48,12 +50,11 @@ dataset:
   # auto_remove_val:  True
   dir:
     train:
-    #   # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'ship##Gauss2','mic##Gauss2'
-    #   # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] #,'mic','ship'] #,'ship##Gauss2','mic##Gauss2'
-      2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      # 8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #,'chair##Gauss2','lego##Gauss2'
-      # 1,1600,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] #mic,ship
+      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #'chair','lego',
       # 32,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
       # 8,800,32,'llff':   ['orchids','flower','fortress','horns','leaves','room','trex'] #,'fern'
       # 16,200,128,'llff':   ['horns','leaves']
@@ -63,26 +64,16 @@ dataset:
       # 8,200,32:   ['chair','mic',[0,50]]
       # 8,200,32:   ['mic','ship']
       # 2,800,32:   ['mic']
-    # val:
-    #   # 8,200,32:   ['materials']
-    #   # 2,800,32:   ['materials']
-    #   # 4,200,32,'llff':   ['horns']
-    #   # 800.,1.,32,'llff':   ['horns']
-    #   # 16,200,32,'llff':   ['horns']
-    #   # 4,800,128,'llff':   ['horns']
+    val:
     #   # 8,800,32,'llff':   ['fern',]
     #   # 1,800,32,'nerfstudio':   ['vegetation']
     #   # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
     #   # 4,800,32,'llff':   ['orchids','fern']
-    #   # 2,800,32:   ['ship','mic'] #,'ship##Gauss2','mic##Gauss2'
+      # 8,200,32:   ['ship##Gauss2','mic##Gauss2','ship','mic',]
+      8,200,32:   ['chair##Gauss2','lego##Gauss2','chair','lego',]
+      # 2,800,32:   ['chair','lego'] # 
     #   # 8,200,32:   ['ship','mic','ship##Gauss2','mic##Gauss2']
-    #   1,1600,32:   ['ship','mic'] #,'ship##Gauss2','mic##Gauss2'
-      # 8,200,32:   ['chair','lego','chair##Gauss2','lego##Gauss2']
-      # 1,1600,32:   ['chair','lego'] #,'chair##Gauss2','lego##Gauss2']
-      # 2,800,32:   ['hotdog']
-      # 8,200,32:   ['hotdog']
       # 2,800,32:   ['ship']
-    #   8,200,32:   ['chair','drums','ficus','ship']
       # 2,800,32:   ['mic#1']
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
@@ -92,13 +83,6 @@ dataset:
   # half_res: True
   # Stride (include one per "testskip" images in the dataset).
   testskip: 10
-  # Do not use NDC (normalized device coordinates). Usually True for
-  # synthetic (Blender) datasets.
-  # no_ndc: True
-  # # Near clip plane (clip all depth values closer than this threshold).
-  # near: 2
-  # # Far clip plane (clip all depth values farther than this threshold).
-  # far: 6
   llffhold: 2 #4
 
 # Model parameters.
@@ -197,7 +181,7 @@ nerf:
     # spatial_sampling: 1.
     # Number of random rays to retain from each image.
     # These sampled rays are used for training, and the others are discarded.
-    num_random_rays: 4096  # 32 * 32 * 4
+    num_random_rays: 4096 #3072 #4096  # 32 * 32 * 4
     # Size of each chunk (rays are batched into "chunks" and passed through
     # the network)
     chunksize: 131072  # 131072  # 1024 * 32
@@ -205,8 +189,8 @@ nerf:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
-      # buffer_size:  50
-      steps_per_buffer: 200
+      # buffer_size:  1
+      steps_per_buffer: 1
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
@@ -254,7 +238,7 @@ nerf:
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
 super_resolution:
-  lr: 5.E-5 #2.5E-5 #
+  lr: 5.E-5 #1.E-4 #
   training:
     loss: fine # fine,coarse,both
   apply_2_coarse: False #True # False
@@ -271,14 +255,17 @@ super_resolution:
   # plane_resize_mode:  bicubic
   model:
     # Name of the torch.nn.Module class that implements the model.
-    type: EDSR
+    # type: EDSR
+    type: SRResNet
+    # edsr_init:  True
+    no_batch_norm:  'add_relu' #True
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
     # hidden_size: 32 #256 #128 #256
     hidden_size: 256 #128 #256
     # Number of residual blocks (originally 32):
     # n_blocks: 8 #32
-    n_blocks: 32
+    n_blocks: 16 #32
     # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
     # receptive_field_bound:  55
     # scale_factor: 4 #sqrt #one #sqrt #linear

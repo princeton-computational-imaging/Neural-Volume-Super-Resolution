@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: lr_nerf_chair
+  id: lr_nerf_ship_mip
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -35,10 +35,11 @@ dataset:
   max_scenes_eval:  9
   # auto_remove_val:  True
   dir:
-    train:
-      8,:   ['chair']
+    # train:
+    #   8,:   ['ship']
     val:
-      2,:   ['chair']
+      # 2,:   ['ship']
+      8,:   ['ship']
   testskip: 10
 
 # Model parameters.
@@ -99,14 +100,14 @@ optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 5.0E-3
+  lr: 1.0E-3 #1.0E-3 #5.0E-3
 
 # NeRF parameters.
 nerf:
   # Use viewing directions as input, in addition to the X, Y, Z coordinates.
   use_viewdirs: True
   # Encoding function for position (X, Y, Z).
-  encode_position_fn: positional_encoding
+  encode_position_fn: mip #mip #positional_encoding
   # Encoding function for ray direction (theta, phi).
   encode_direction_fn: positional_encoding
   # Training-specific parameters.

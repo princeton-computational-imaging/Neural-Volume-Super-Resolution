@@ -61,7 +61,7 @@ class BlenderDataset(torch.utils.data.Dataset):
                     conf = [int(v) for v in k.split(',')]
                     val_scenes_dict.update({','.join([str(v) for v in [conf[0]*inferred_ds_factor,conf[1]//inferred_ds_factor,conf[2]]]):v})
         self.downsampling_factors,self.all_scenes,plane_resolutions,val_ids,scene_types,scene_probs = self.get_scene_configs(val_scenes_dict)
-        assert sum(scene_probs)==1,'Why assign sampling probabilities to a validation scene?'
+        assert sum(scene_probs)==len(val_scenes_dict),'Why assign sampling probabilities to a validation scene?'
         self.downsampling_factors += train_dirs[0]
         plane_resolutions += train_dirs[2]
         train_ids = train_dirs[3]
@@ -85,6 +85,8 @@ class BlenderDataset(torch.utils.data.Dataset):
         if all([len(v)==0 for v in DTU_config['dir'].values()]):
             self.DTU_dataset = None
         else:
+            if eval_mode:
+                DTU_config['dir'].pop('train')
             self.DTU_dataset = DVRDataset(config=DTU_config,scene_id_func=scene_id_func,eval_ratio=0.1,)
             self.i_train.update(self.DTU_dataset.train_ims_per_scene)
             self.i_val.update(self.DTU_dataset.i_val)
@@ -231,7 +233,9 @@ class BlenderDataset(torch.utils.data.Dataset):
             if len(conf)<4: conf.append('synt') # Scene type
             if len(conf)<5: conf.append(1) # Scene sampling probability
             conf = tuple(conf)
-            if conf[3]=='DTU':  continue
+            if conf[3]=='DTU':
+                probs.append(1) #Merely bypassing the assert outside when dealing with DTU
+                continue
             if not isinstance(scenes,list): scenes = [scenes]
             for s in interpret_scene_list(scenes):
                 cur_factor,cur_dir,cur_res,cur_type,cur_prob = conf[0],s,(conf[1],conf[2]),conf[3],conf[4]

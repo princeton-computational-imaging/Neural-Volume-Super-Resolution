@@ -18,7 +18,10 @@ def run_network(network_fn, pts, ray_batch, chunksize, embed_fn,\
     pts_shape = list(pts.shape)
     if mip_nerf:
         ro, rd, near, far, viewdir = torch.split(ray_batch,[3,3,1,1,3],dim=-1)
-        dx = ds_factor_or_id*0.00135
+        if isinstance(ds_factor_or_id,str):
+            dx = int(search('(?<=_DS)(\d)+(?=$)',ds_factor_or_id).group(0))*0.00135
+        else:
+            dx = ds_factor_or_id*0.00135
         # Get t_vals in world to aply mipnerf
         radii = dx * 2 / np.sqrt(12.)
         means,covs = mip.cast_rays(z_vals,ro,rd,radii,None)

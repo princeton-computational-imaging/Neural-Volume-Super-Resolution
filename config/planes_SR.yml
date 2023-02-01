@@ -1,15 +1,15 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: SR16vs2Scenes_32B128C_LR4_planeNorm_SRrecField15
+  id: Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_micShip_EDSRrecField15
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 10 # 0 # 34  # 8239
   # Number of training iterations.
-  train_iters: 750000
+  train_iters: 1500000
   # Number of training iterations after which to validate.
-  validate_every: [0.1,1000] #50
+  validate_every: [0.1,5000] #50
   # Number of training iterations after which to checkpoint.
   save_every: 10.0 #5000
   # Number of training iterations after which to print progress.
@@ -19,15 +19,38 @@ experiment:
 dataset:
   # Base directory of dataset.
   # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
-  root: /scratch/gpfs/yb6751/datasets/Synthetic
-  max_scenes_eval:  9
+  synt: 
+    root: /scratch/gpfs/yb6751/datasets/Synthetic
+    # Near clip plane (clip all depth values closer than this threshold).
+    near: 2
+    # Far clip plane (clip all depth values farther than this threshold).
+    far:  6
+    # Do not use NDC (normalized device coordinates). Usually True for
+    # synthetic (Blender) datasets.
+    no_ndc: True
+  llff: 
+    root: /scratch/gpfs/yb6751/datasets/LLFF
+    near: 0
+    far:  1
+    no_ndc: False
+  # nerfstudio: 
+  #   root: /scratch/gpfs/yb6751/datasets/nerfstudio
+  #   near: 0
+  #   far:  1
+  #   no_ndc: False
+  max_scenes_eval:  4
+  # auto_remove_val:  True
   dir:
     train:
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials']
-      2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon',[0,51]]
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      # 8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] #mic,ship
+      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #'chair','lego',
+      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']      # 'drums','ficus','hotdog','materials',
+      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti'] #,'cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'      # 8,800,32,'llff':   ['orchids','flower','fortress','horns','leaves','room','trex'] #,'fern'
+      # 16,200,128,'llff':   ['horns','leaves']
+      # 4,800,128,'llff':   ['leaves']
       # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
       # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
       # 8,200,32:   ['chair','mic']
@@ -36,8 +59,9 @@ dataset:
       # 2,800,32:   ['mic']
     val:
       2,800,32:   ['mic','ship']
+      # 2,800,32:   ['chair','lego']
       # 2,800,32:   ['mic']
-      # 2,800,32:   ['mic#1']
+      # 2,800,32:   ['drums','ficus','hotdog','materials']
       # 2,800,32: ['chair','drums',]
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
@@ -46,13 +70,7 @@ dataset:
   # at half the original resolution of 800 x 800, to save space.
   # Stride (include one per "testskip" images in the dataset).
   testskip: 10
-  # Do not use NDC (normalized device coordinates). Usually True for
-  # synthetic (Blender) datasets.
-  no_ndc: True
-  # Near clip plane (clip all depth values closer than this threshold).
-  near: 2
-  # Far clip plane (clip all depth values farther than this threshold).
-  far: 6
+  llffhold: 2 #4
 
 # Model parameters.
 models:
@@ -65,30 +83,43 @@ models:
   # HR and LR planes trained consistently:
   # E2E model with 6 HR training scenes:
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_1
-  # Model with 64 training scenes:
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/Synt_Res66Sc200_32_LR100_400_SepValSceneTrain_fromE2E_0
+  # Model with 27 training scenes, without mic and ship:
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0
+  # Model with 27 training scenes, without chair and lego:
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_chairLego_0
+  # Model with 25 training scenes, without 'drums','ficus','hotdog','materials':
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_25Sc800_32_LR100_400_posFeatCatDecCh256_remainingFour_0
 
 # Optimizer params.
 optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 5.0E-5 #5.0E-6 # 5.0E-3
+  lr: 5.0E-4 #5.0E-5 # 5.0E-3
 
 # NeRF parameters.
 nerf:
   # Use viewing directions as input, in addition to the X, Y, Z coordinates.
   use_viewdirs: True
   train:
-    # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
+    # End-to-end training of representation and SR models
+    what: ['SR']
+    # train_end2end:  LR_planes # HR_planes #LR_planes
+    # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes
+    # sr_val_scenes_with_LR:  True
+    # In the end-2-end training, learn decoder and sr model separately by not performing decoder steps during SR iterations
+    # separate_decoder_sr:  True
+    # In the end-2-end training, learn the LR planes corresponding to the validation scenes without affecting the decoder (almost as if learned afterwards.)
+    # separate_decoder_val_scenes:  True
+    # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
+    # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
+    #  since HR images are not available for their training) (default: True):
+    # detach_LR_planes: False
+    # # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
     # spatial_sampling: 1.
     # Number of random rays to retain from each image.
     # These sampled rays are used for training, and the others are discarded.
-    num_random_rays: 4096  # 32 * 32 * 4
-    # When using spacial patch sampling, how to calculate the sampling distribution: By estimating non-background areas (default) or based on patch-STD
-    # spatial_patch_sampling: STD # STD, background_est
-    # Simulating a batch by accumulating gradients over consecutive steps:
-    # virtual_batch_size: 6
+    num_random_rays: 4096 #3072 #4096  # 32 * 32 * 4
     # Size of each chunk (rays are batched into "chunks" and passed through
     # the network)
     chunksize: 131072  # 131072  # 1024 * 32
@@ -137,8 +168,8 @@ super_resolution:
   # Super-resolve view-directions plane as well, or only positional planes:
   SR_viewdir: False
   input_normalization:  True
-  consistency_loss_w: 0 #0.001
-  plane_loss_w:  0 #1
+  consistency_loss_w: 0 # 0.001
+  # plane_loss_w:  0 #1
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
@@ -148,11 +179,12 @@ super_resolution:
     # Number of layers in the model.
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
-    hidden_size: 128 #256 #128 #256
+    # hidden_size: 32 #256 #128 #256
+    hidden_size: 256 #128 #256
     # Number of residual blocks (originally 32):
     n_blocks: 32
     # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
     receptive_field_bound:  15
-    # scale_factor: one #one #sqrt #linear
+    # scale_factor: 4 #sqrt #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
     # single_plane: False

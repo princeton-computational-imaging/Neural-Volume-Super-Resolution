@@ -140,6 +140,18 @@
             ]
         },
         {
+            "name": "resume planes SR",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/planes_SR.yml",
+                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
+            ]
+        },
+        {
             "name": "Synt planes only",
             "type": "python",
             "request": "launch",
@@ -206,18 +218,6 @@
             "justMyCode": true,
             "args":[
                 "--config","config/planes_internal_SR.yml"
-            ]
-        },
-        {
-            "name": "resume planes SR",
-            "type": "python",
-            "request": "launch",
-            "program": "train_nerf.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args":[
-                "--config","config/planes_SR.yml",
-                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
             ]
         },
         {
@@ -311,6 +311,20 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args":["--config","config/DTU_E2E.yml"]
+        },
+        {
+            "name": "end2end DTU EVAL",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/DTU_E2E.yml",
+                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
+                "--eval","images", //"video", //"images",
+                "--results_path","/tigress/yb6751/projects/NeuralMFSR/results"
+            ]
         },
         {
             "name": "resume SR",
