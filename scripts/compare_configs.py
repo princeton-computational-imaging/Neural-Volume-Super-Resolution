@@ -3,11 +3,12 @@ import sys
 sys.path.append('.')
 from nerf_helpers import get_config,rgetattr,rsetattr
 
-config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/planes_E2E.yml'
+# config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/planes_E2E.yml'
+config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/DTU_E2E.yml'
 # config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/NeRF_LR.yml'
 # config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/Synt_planes_only.yml'
 # config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_Vanilla_0/config.yml'
-config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_SRResNet_noBN_chairLego_0/config.yml'
+config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_DTU_103ScRes200_88Sc800_32_LR100_400_posFeatCatDecCh256_0/config.yml'
 # config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0/config.yml'
 
 def sort_scenes(config):
@@ -32,6 +33,9 @@ def diff2attr(diff_string):
     return attr
 
 diff_attrs = set()
+if len(config_diffs)==0:
+    print('No configuration differences.')
+    sys.exit(0)
 for ch_type in ['dictionary_item_removed','dictionary_item_added','values_changed','type_changes','iterable_item_removed']:
     if ch_type not in config_diffs: continue
     for diff in config_diffs[ch_type]:

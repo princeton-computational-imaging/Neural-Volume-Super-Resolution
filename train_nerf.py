@@ -114,13 +114,14 @@ def main():
         # Write out config parameters.
         with open(os.path.join(logdir, "config.yml"), "w") as f:
             f.write(cfg.dump())  # cfg, f, default_flow_style=False)
+    resume_experiment = os.path.exists(configargs.load_checkpoint)
     if configargs.load_checkpoint!='':
-        assert os.path.exists(configargs.load_checkpoint)
+        assert resume_experiment
     if not eval_mode:   writer = SummaryWriter(logdir)
 
-    load_saved_models = hasattr(cfg.models,'path') or os.path.exists(configargs.load_checkpoint)
-    # init_new_scenes = not load_saved_models or (train_planes_only and not os.path.exists(configargs.load_checkpoint))
-    init_new_scenes = not os.path.exists(configargs.load_checkpoint) and any([m in ['LR_planes','HR_planes'] for m in what2train])
+    load_saved_models = hasattr(cfg.models,'path') or resume_experiment
+    # init_new_scenes = not load_saved_models or (train_planes_only and not resume_experiment)
+    init_new_scenes = not resume_experiment and any([m in ['LR_planes','HR_planes'] for m in what2train])
 
 
     # images, poses, render_poses, hwf, i_split = None, None, None, None, None
@@ -238,6 +239,7 @@ def main():
     def print_scenes_list(title,scenes):
         print('\n%d %s scenes:'%(len(scenes),title))
         print(scenes)
+    experiment_info = dict()
     if eval_mode:
         print_scenes_list('evaluation',evaluation_sequences)
     else:
@@ -245,17 +247,17 @@ def main():
         for cat in set(val_strings):
             print_scenes_list('"%s" evaluation'%(cat),[s for i,s in enumerate(evaluation_sequences) if val_strings[i]==cat])
         assert all([val_ims_per_scene==len(i_val[id]) for id in evaluation_sequences]),'Assuming all scenes have the same number of evaluation images'
+
         running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','zero_mean_planes_loss','fine_loss','fine_psnr','loss','coarse_loss','inconsistency']
-        running_scores = dict([(score,dict([(cat,deque(maxlen=len(training_scenes) if cat=='train' else val_ims_per_scene)) for cat in list(set(val_strings))+['train']])) for score in running_mean_logs])
-    # i_train = [i for s in i_train.values() for i in s]
+        experiment_info['running_scores'] = dict([(score,dict([(cat,deque(maxlen=len(training_scenes) if cat=='train' else val_ims_per_scene)) for cat in list(set(val_strings))+['train']])) for score in running_mean_logs])
     image_sampler = ImageSampler(i_train,dataset.scene_probs)
 
     def write_scalar(name,new_value,iter):
         RUNNING_MEAN = True
         if not eval_mode:
             val_set,metric = name.split('/')
-            running_scores[metric][val_set].append(new_value)
-            writer.add_scalar(name,np.mean(running_scores[metric][val_set]) if RUNNING_MEAN else new_value,iter)
+            experiment_info['running_scores'][metric][val_set].append(new_value)
+            writer.add_scalar(name,np.mean(experiment_info['running_scores'][metric][val_set]) if RUNNING_MEAN else new_value,iter)
 
     def write_image(name,images,text,iter,psnrs=[],fontscale=font_scale,psnr_gains=[]):
         if eval_mode:
@@ -482,7 +484,6 @@ def main():
                             trainable_parameters_ += collect_params(model_fine,filter='all')
                 else: 
                     trainable_parameters_ += list(model_fine.parameters())
-            # trainable_parameters.append({'params':trainable_parameters_,'lr':cfg.optimizer.lr})
     # if eval_mode or train_planes_only:
     # if eval_mode or not rep_model_training:
     if not eval_mode and (rep_model_training or not planes_model):
@@ -492,21 +493,28 @@ def main():
     else:
         optimizer = None
     # Load an existing checkpoint, if a path is specified.
-    start_i,eval_counter = 0,0
     # models2save = (['representation'] if (rep_model_training or train_planes_only) else [])+(['SR'] if SR_experiment=='model' else [])
     models2save = (['decoder'] if 'decoder' in what2train else [])+(['SR'] if SR_experiment=='model' and 'SR' in what2train else [])
     # best_saved = (0,np.finfo(np.float32).max)
-    best_loss = (0,np.finfo(np.float32).max)
-    last_saved = dict(zip(models2save,[[] for i in models2save]))
+    experiment_info.update({'start_i':0,'eval_counter':0,'best_loss':(0,np.finfo(np.float32).max),'last_saved':dict(zip(models2save,[[] for i in models2save]))})
+    experiment_info_file = os.path.join(logdir, "exp_info.pkl")
+    # experiment_info['start_i'],experiment_info['eval_counter'] = 0,0
+    # experiment_info['best_loss'] = (0,np.finfo(np.float32).max)
+    # experiment_info['last_saved'] = dict(zip(models2save,[[] for i in models2save]))
     params_init_path = None
     if load_saved_models:
+        if resume_experiment and not eval_mode:
+            legacy_info_tracking = not os.path.exists(experiment_info_file)
+            if not legacy_info_tracking:
+                experiment_info = safe_loading(experiment_info_file,suffix='pkl')
+
         # load_best = eval_mode or train_planes_only
         load_best = eval_mode or init_new_scenes
         # initialize_from_trained = configargs.load_checkpoint=='' and end2end_training
         if SR_experiment:
-            if SR_experiment=="model" and ('SR' not in what2train or os.path.exists(configargs.load_checkpoint)):
-            # if SR_experiment=="model" and (os.path.exists(configargs.load_checkpoint) or train_planes_only or initialize_from_trained):
-                if os.path.exists(configargs.load_checkpoint):
+            if SR_experiment=="model" and ('SR' not in what2train or resume_experiment):
+            # if SR_experiment=="model" and (resume_experiment or train_planes_only or initialize_from_trained):
+                if resume_experiment:
                     SR_checkpoint_path = configargs.load_checkpoint
                 elif getattr(cfg.super_resolution.model,'path',None) is not None:
                     SR_checkpoint_path = cfg.super_resolution.model.path
@@ -514,10 +522,10 @@ def main():
                     SR_checkpoint_path = cfg.models.path
                 SR_checkpoint_path = find_latest_checkpoint(SR_checkpoint_path,sr=True,find_best=load_best or ('SR' not in what2train))
                 SR_model_checkpoint = safe_loading(SR_checkpoint_path,suffix='ckpt_best' if load_best else 'ckpt')
-                if not eval_mode and 'decoder' not in what2train:
-                    start_i = int(SR_checkpoint_path.split('/')[-1][len('SR_checkpoint'):-len('.ckpt')])+1
-                    eval_counter = SR_model_checkpoint['eval_counter']
-                    best_loss = SR_model_checkpoint['best_loss']
+                if legacy_info_tracking and not eval_mode and 'decoder' not in what2train:
+                    experiment_info['start_i'] = int(SR_checkpoint_path.split('/')[-1][len('SR_checkpoint'):-len('.ckpt')])+1
+                    experiment_info['eval_counter'] = SR_model_checkpoint['eval_counter']
+                    experiment_info['best_loss'] = SR_model_checkpoint['best_loss'] if 'best_loss' in SR_model_checkpoint else SR_model_checkpoint['best_saved']
                 print(("Using" if load_best else "Resuming training of")+" SR model %s"%(SR_checkpoint_path))
                 saved_config_dict = get_config(os.path.join('/'.join(SR_checkpoint_path.split('/')[:-1]),"config.yml"))
                 config_diffs = DeepDiff(saved_config_dict.super_resolution,cfg.super_resolution)
@@ -541,11 +549,11 @@ def main():
         else:
             checkpoint_filename = find_latest_checkpoint(configargs.load_checkpoint,sr=False,find_best=load_best or 'decoder' not in what2train)
             checkpoint = safe_loading(checkpoint_filename,suffix='ckpt_best' if load_best else 'ckpt')
-            if not eval_mode:
-                start_i = int(checkpoint_filename.split('/')[-1][len('checkpoint'):-len('.ckpt')])+1
-                eval_counter = checkpoint['eval_counter']
+            if legacy_info_tracking and not eval_mode:
+                experiment_info['start_i'] = int(checkpoint_filename.split('/')[-1][len('checkpoint'):-len('.ckpt')])+1
+                experiment_info['eval_counter'] = checkpoint['eval_counter']
                 # best_saved = checkpoint['best_saved']
-                best_loss = checkpoint['best_loss']
+                experiment_info['best_loss'] = checkpoint['best_loss'] if 'best_loss' in checkpoint else checkpoint['best_saved']
             print("Resuming training on model %s"%(checkpoint_filename))
         checkpoint_config = get_config(os.path.join('/'.join(checkpoint_filename.split('/')[:-1]),'config.yml'))
         config_diffs = DeepDiff(checkpoint_config.models,cfg.models)
@@ -642,7 +650,7 @@ def main():
         )
 
     if planes_model:    assert not (hasattr(cfg.models.coarse,'plane_resolutions') or hasattr(cfg.models.coarse,'viewdir_plane_resolution')),'Depricated.'
-    if SR_experiment=="model" and getattr(cfg.super_resolution,'input_normalization',False) and not os.path.exists(configargs.load_checkpoint):
+    if SR_experiment=="model" and getattr(cfg.super_resolution,'input_normalization',False) and not resume_experiment:
         #Initializing a new SR model that uses input normalization
         SR_model.normalization_params(planes_opt.get_plane_stats(viewdir=getattr(cfg.super_resolution,'SR_viewdir',False),single_plane=SR_model.single_plane))
 
@@ -680,7 +688,7 @@ def main():
                 img_indecis = [v for i,v in enumerate(i_val.values())]
                 eval_cycles = len(i_val)
             else:
-                val_ind = lambda dummy: eval_counter%val_ims_per_scene
+                val_ind = lambda dummy: experiment_info['eval_counter']%val_ims_per_scene
                 img_indecis = [[v[val_ind(val_strings[i])] for i,v in enumerate(i_val.values())]]
                 eval_cycles = 1
 
@@ -1055,15 +1063,15 @@ def main():
             write_scalar("train/fine_psnr", mse2psnr(fine_loss.item()), iter)
         return loss.item(),psnr,new_drawn_scenes
 
-    training_time,last_evaluated = 0,1*start_i
+    training_time,last_evaluated = 0,1*experiment_info['start_i']
     recently_saved, = time.time(),
     eval_loss_since_save,print_cycle_loss,print_cycle_psnr = [],[],[]
     evaluation_time = 0
     recent_loss_avg = np.nan
-    jump_start_phase = isinstance(getattr(cfg.nerf.train,'jump_start',False),list) and start_i==0
+    jump_start_phase = isinstance(getattr(cfg.nerf.train,'jump_start',False),list) and experiment_info['start_i']==0
     if jump_start_phase:
         n_jump_start_scenes = planes_opt.jump_start(config=cfg.nerf.train.jump_start)
-    for iter in trange(start_i,cfg.experiment.train_iters):
+    for iter in trange(experiment_info['start_i'],cfg.experiment.train_iters):
         # Validation
         if isinstance(cfg.experiment.validate_every,list):
             evaluate_now = evaluation_time<=training_time*cfg.experiment.validate_every[0] or iter-last_evaluated>=cfg.experiment.validate_every[1]
@@ -1096,7 +1104,7 @@ def main():
             elif not store_planes:
                 image_sampler.update_active(training_scenes)
             training_time = 0
-            eval_counter += 1
+            experiment_info['eval_counter'] += 1
 
         if eval_mode:   break
         # Training:
@@ -1136,32 +1144,25 @@ def main():
         save_now &= iter>0
         if save_now:
             save_as_best = False
-            # recent_loss_avg = np.finfo(np.float32).max
-            if len(running_scores['loss'][list(important_loss_terms)[0]])==val_ims_per_scene:
-                recent_loss_avg = np.mean([l for term in important_loss_terms for l in running_scores['loss'][term]])
-            # if len(eval_loss_since_save)>0:
-            #     recent_loss_avg = np.mean(eval_loss_since_save)
-                # if recent_loss_avg<best_saved[1]:
-                #     best_saved = (iter,recent_loss_avg)
-                if recent_loss_avg<best_loss[1]:
-                    best_loss = (iter,recent_loss_avg)
+            if len(experiment_info['running_scores']['loss'][list(important_loss_terms)[0]])==val_ims_per_scene:
+                recent_loss_avg = np.mean([l for term in important_loss_terms for l in experiment_info['running_scores']['loss'][term]])
+                if recent_loss_avg<experiment_info['best_loss'][1]:
+                    experiment_info['best_loss'] = (iter,recent_loss_avg)
                     save_as_best = True
             if save_as_best:
-                # print("================Saving new best checkpoint at iteration %d, with average evaluation loss %.3e====================="%(best_saved[0],best_saved[1]))
-                print("================Saving new best checkpoint at iteration %d, with average evaluation loss %.3e====================="%(best_loss[0],best_loss[1]))
+                print("================Saving new best checkpoint at iteration %d, with average evaluation loss %.3e====================="%(experiment_info['best_loss'][0],experiment_info['best_loss'][1]))
             else:
-                # print("================Best checkpoint is still %d, with average evaluation loss %.3e (recent average is %.3e)====================="%(best_saved[0],best_saved[1],recent_loss_avg))
-                print("================Best checkpoint is still %d, with average evaluation loss %.3e (recent average is %.3e)====================="%(best_loss[0],best_loss[1],recent_loss_avg))
+                print("================Best checkpoint is still %d, with average evaluation loss %.3e (recent average is %.3e)====================="%(experiment_info['best_loss'][0],experiment_info['best_loss'][1],recent_loss_avg))
             recently_saved = time.time()
             eval_loss_since_save = []
             for model2save in models2save:
                 model_filename = '%scheckpoint'%('SR_' if model2save=='SR' else '')
-                checkpoint_dict = {
-                    "iter": iter,
-                    "eval_counter": eval_counter,
-                    # "best_saved":best_saved,
-                    "best_loss":best_loss,
-                }
+                checkpoint_dict = {}
+                # checkpoint_dict = {
+                #     "iter": iter,
+                #     "eval_counter": eval_counter,
+                #     "best_loss":best_loss,
+                # }
                 if model2save=="SR":
                     checkpoint_dict.update({"SR_model":SR_model.state_dict()})
                     if SR_optimizer is not None:
@@ -1186,12 +1187,14 @@ def main():
                 ckpt_name = os.path.join(logdir, model_filename + "%s.ckpt")
                 # if (model2save=='decoder' and 'decoder' in what2train) or (model2save=='SR' and 'SR' in what2train):
                 safe_saving(ckpt_name%(str(iter).zfill(5)),content=checkpoint_dict,suffix='ckpt',best=False,run_time_signature=run_time_signature)
-                if len(last_saved[model2save])>0:
-                    os.remove(last_saved[model2save].pop(0))
-                last_saved[model2save].append(ckpt_name%(str(iter).zfill(5)))
+                if len(experiment_info['last_saved'][model2save])>0:
+                    os.remove(experiment_info['last_saved'][model2save].pop(0))
+                experiment_info['last_saved'][model2save].append(ckpt_name%(str(iter).zfill(5)))
                 if save_as_best:
                     safe_saving(ckpt_name%(''),content=checkpoint_dict,suffix='ckpt',best=True,run_time_signature=run_time_signature)
                 del checkpoint_dict
+            experiment_info['start_i'] = iter+1
+            safe_saving(experiment_info_file,content=experiment_info,suffix='pkl',run_time_signature=run_time_signature)
 
     print("Done!")
 

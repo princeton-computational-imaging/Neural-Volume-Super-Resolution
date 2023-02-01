@@ -172,14 +172,10 @@ def avergae_scores(scores_dict,per_scene=False):
         return dict([(m,(np.mean([np.mean(v) for v in scores_dict[m].values()]),np.std([v_ for v in scores_dict[m].values() for v_ in v]))) for m in scores_dict])
 
 def find_leading(scores,metric,k):
-    # FIND_MAX = True
     methods_4_comparison = [meth for meth in METHODS if meth not in ['LR',GT_method,'ours']]
     mean_advantages,mean_absolutes = {},{}
     for sc in scores[metric[0]]['ours']:
         STDs = [np.std([v for method in METHODS for v in scores[m][method][sc]]) for m in metric] if len(metric)>1 else [1]
-        # if FIND_MAX:
-        #     mean_advantages[sc] = [np.max(np.array([np.array(scores[m]['ours'][sc])-np.array(scores[m][method][sc]) for method in methods_4_comparison]),0) for m in metric]
-        # else:
         mean_advantages[sc] = [np.mean(np.array([np.array(scores[m]['ours'][sc])-np.array(scores[m][method][sc]) for method in methods_4_comparison]),0) for m in metric]
         mean_advantages[sc] = np.array([mean_advantages[sc][i]/STDs[i]*(-1 if metric[i]=='LPIPS' else 1) for i in range(len(metric))]).sum(0)
         mean_absolutes[sc] = [np.mean(np.array([np.array(scores[m]['ours'][sc]) for method in methods_4_comparison]),0) for m in metric]

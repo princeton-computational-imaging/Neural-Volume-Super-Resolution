@@ -51,15 +51,6 @@ class BlenderDataset(torch.utils.data.Dataset):
         self.get_scene_id = scene_id_func
         train_dirs = self.get_scene_configs(getattr(config.dir,'train',{}),add_val_scene_LR=add_val_scene_LR)
         val_scenes_dict = getattr(config.dir,'val',{})
-        if False and eval_mode:
-            inferred_ds_factor = max(train_dirs[0])/min(train_dirs[0])
-            assert inferred_ds_factor==int(inferred_ds_factor)
-            inferred_ds_factor = int(inferred_ds_factor)
-            if inferred_ds_factor>1 and len(getattr(config.dir,'val',{}))>0:
-                val_scenes_dict_copy = deepcopy(val_scenes_dict)
-                for k,v in val_scenes_dict_copy.items():
-                    conf = [int(v) for v in k.split(',')]
-                    val_scenes_dict.update({','.join([str(v) for v in [conf[0]*inferred_ds_factor,conf[1]//inferred_ds_factor,conf[2]]]):v})
         self.downsampling_factors,self.all_scenes,plane_resolutions,val_ids,scene_types,scene_probs = self.get_scene_configs(val_scenes_dict)
         assert sum(scene_probs)==len(val_scenes_dict),'Why assign sampling probabilities to a validation scene?'
         self.downsampling_factors += train_dirs[0]

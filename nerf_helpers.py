@@ -13,6 +13,7 @@ import functools
 from imresize import imresize
 import os
 import sys
+import pickle
 
 def safe_saving(file_name,content,suffix,best=False,run_time_signature=0):
     if run_time_signature:
@@ -32,7 +33,11 @@ def safe_saving(file_name,content,suffix,best=False,run_time_signature=0):
 
     if best:
         file_name = file_name.replace('.%s'%(suffix),'.%s_best'%(suffix))
-    torch.save(content,file_name.replace('.%s'%(suffix),'.%s_temp'%(suffix)))
+    if suffix=='pkl':
+        with open(file_name.replace('.%s'%(suffix),'.%s_temp'%(suffix)), 'wb') as f:
+            pickle.dump(content, f)
+    else:
+        torch.save(content,file_name.replace('.%s'%(suffix),'.%s_temp'%(suffix)))
     del_bckp = False
     if os.path.isfile(file_name):
         del_bckp = True
@@ -46,7 +51,11 @@ def safe_loading(file_name,suffix,best=False):
         file_name = file_name.replace('.%s'%(suffix),'.%s_best'%(suffix))
     for version in ['','_temp','_bckp']:
         try:
-            content = torch.load(file_name.replace('.%s'%(suffix),'.%s%s'%(suffix,version)))
+            if suffix=='pkl':
+                with open(file_name.replace('.%s'%(suffix),'.%s%s'%(suffix,version)), 'rb') as f:
+                    content = pickle.load(f)
+            else:
+                content = torch.load(file_name.replace('.%s'%(suffix),'.%s%s'%(suffix,version)))
             break
         except Exception as e:
             if version=='_bckp':
@@ -123,7 +132,10 @@ class ImageSampler:
         self.im_inds,self.im_probs = [],[]
         for sc in active_scenes:
             self.im_inds.extend(self.scenes_dict[sc])
-            self.im_probs.extend(len(self.scenes_dict[sc])*[self.scene_probs[sc]/len(self.scenes_dict[sc])])
+            if sc in self.scene_probs:
+                self.im_probs.extend(len(self.scenes_dict[sc])*[self.scene_probs[sc]/len(self.scenes_dict[sc])])
+            else:
+                self.im_probs.extend(len(self.scenes_dict[sc])*[1/len(self.scenes_dict[sc])])
             # self.im_probs.extend(len(self.scenes_dict[sc])*[1/len(self.scenes_dict[sc])])
         self.im_probs = np.array(self.im_probs)
         self.im_probs /= np.sum(self.im_probs)

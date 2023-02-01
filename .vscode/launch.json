@@ -313,6 +313,18 @@
             "args":["--config","config/DTU_E2E.yml"]
         },
         {
+            "name": "end2end DTU resume",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/DTU_E2E.yml",
+                "--load-checkpoint","resume",
+            ]
+        },
+        {
             "name": "end2end DTU EVAL",
             "type": "python",
             "request": "launch",

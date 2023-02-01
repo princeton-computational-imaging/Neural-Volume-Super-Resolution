@@ -1,13 +1,13 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: E2E_DTU_103ScRes200_88Sc800_32_LR100_400_posFeatCatDecCh256_0 # debug-lego200 # DTU
+  id: E2E_DTU_103ScRes200_88Sc800_32_LR100_400_posFeatCatDecCh256 # debug-lego200 # DTU
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 2 # 34  # 8239
   # Number of training iterations.
-  train_iters: 750000
+  train_iters: 1500000
   # Number of training iterations after which to validate.
   validate_every: [0.1,5000] #50
   # Number of training iterations after which to checkpoint.
@@ -35,7 +35,7 @@ dataset:
       4,200,32,'DTU': 'all_train.lst'
       1,800,32,'DTU': 'new_train.lst'
     val:
-      4,200,32,'DTU': 'new_val.lst'
+      # 4,200,32,'DTU': 'new_val.lst'
       1,800,32,'DTU': 'new_val.lst'
   # excluded_scenes:  ['scan4']
   # Load only some of the scenes in the dataset:
