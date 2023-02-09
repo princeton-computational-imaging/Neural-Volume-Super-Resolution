@@ -109,7 +109,12 @@ def main():
         configargs.load_checkpoint = logdir
     else:
         if configargs.load_checkpoint=='':
-            if os.path.exists(logdir):  assert len([f for f in os.listdir(logdir) if '.ckpt' in f])==0,'Folder %s already contains saved models.'%(logdir)
+            if os.path.exists(logdir):
+                # existing_ckpt = find_latest_checkpoint(logdir,sr=False,find_best=False)
+                # if existing_ckpt is not None:
+                #     assert int(search("(?<=checkpoint)(\d)+(?=\.ckpt$)",existing_ckpt).group(0))==0,'Folder %s already contains saved models.'%(logdir)
+                #     os.rmdir(logdir)
+                assert len([f for f in os.listdir(logdir) if '.ckpt' in f])==0,'Folder %s already contains saved models.'%(logdir)
             os.makedirs(logdir, exist_ok=True)
         # Write out config parameters.
         with open(os.path.join(logdir, "config.yml"), "w") as f:
@@ -147,25 +152,18 @@ def main():
     CURREPTED_VAL_PATCH = True
     if CURREPTED_VAL_PATCH:
         i_val = OrderedDict([(k,v) for k,v in i_val.items() if search('^(\d)+_',k) is None])
-    if hasattr(cfg.dataset,'max_scenes_eval') and not eval_mode:
-        i_val,val_only_scene_ids = subsample_dataset(scenes_dict=i_val,max_scenes=cfg.dataset.max_scenes_eval,val_only_scenes=val_only_scene_ids,max_val_only_scenes=cfg.dataset.max_scenes_eval)
-    if not eval_mode:
-        # val_ims_per_scene = len(i_val[list(i_val.keys())[0]])
-        val_ims_per_scene = [len(v) for v in i_val.values()]
-        assert all([max(val_ims_per_scene)%v==0 for v in val_ims_per_scene]),"Need to be able to repeat scene eval sets to have the same number of eval images for all scnenes."
-        val_ims_per_scene = max(val_ims_per_scene)
-        i_val = OrderedDict([(k,val_ims_per_scene//len(v)*v) for k,v in i_val.items()])
+    # if hasattr(cfg.dataset,'max_scenes_eval') and not eval_mode:
+    #     i_val,val_only_scene_ids = subsample_dataset(scenes_dict=i_val,max_scenes=cfg.dataset.max_scenes_eval,val_only_scenes=val_only_scene_ids,max_val_only_scenes=cfg.dataset.max_scenes_eval,pick_first=True)
+    # if not eval_mode:
+    #     # val_ims_per_scene = len(i_val[list(i_val.keys())[0]])
+    #     val_ims_per_scene = [len(v) for v in i_val.values()]
+    #     assert all([max(val_ims_per_scene)%v==0 for v in val_ims_per_scene]),"Need to be able to repeat scene eval sets to have the same number of eval images for all scnenes."
+    #     val_ims_per_scene = max(val_ims_per_scene)
+    #     i_val = OrderedDict([(k,val_ims_per_scene//len(v)*v) for k,v in i_val.items()])
     eval_training_too = not eval_mode
     available_scenes = list(scenes_set)
-    if eval_training_too:
-        temp = list(i_val.keys())
-        for id in temp:
-            if id not in i_train:    continue
-            im_freq = len(i_train[id])//val_ims_per_scene
-            if id in i_val.keys(): #Avoid evaluating training images for scenes which were discarded for evaluation due to max_scenes_eval
-                i_val[id+'_train'] = [i_train[id][i] for i in sorted([(i+im_freq//2)%len(i_train[id]) for i in  np.unique(np.round(np.linspace(0,len(i_train[id])-1,val_ims_per_scene)).astype(int))])]
+
     training_scenes = list(i_train.keys())
-    # planes_updating = rep_model_training or train_planes_only
     planes_updating = any(['planes' in m for m in what2train])
     if planes_model and not planes_updating:
         available_scenes = []
@@ -177,26 +175,65 @@ def main():
     scene_coupler = models.SceneCoupler(list(set(available_scenes+val_only_scene_ids)),HR_planes='HR_planes' in what2train,
         num_pos_planes=getattr(cfg.models.coarse,'num_planes',3) if planes_model else 0,viewdir_plane=cfg.nerf.use_viewdirs,training_scenes=training_scenes,
         multi_im_res=SR_experiment=='model' or not planes_model)
+    val_strings = []
+    ASSUME_LR_IF_NO_COUPLES = True
+    ASSUME_LR_IF_NO_COUPLES = ASSUME_LR_IF_NO_COUPLES and (len(scene_coupler.downsample_couples)==0 and SR_experiment)
+
+    for id in i_val:
+        # bare_id = id.replace('_train','').replace('_HRplane','')
+        tags = []
+        if id in val_only_scene_ids:    tags.append('blind_validation')
+        # elif '_train' in id:    tags.append('train_imgs')
+        else:   tags.append('validation')
+        if '##Gauss' in id:    tags.append('Gauss')
+        if id in scene_coupler.downsample_couples.values() or ASSUME_LR_IF_NO_COUPLES: tags.append('LR')
+        elif id in scene_coupler.HR_planes_LR_ims_scenes:  tags.append('downscaled')
+        # elif '_HRplane' in id:  tags.append('HRplanes')
+        if len(dataset.module_confinements[id])>0: tags.append('Fixed_'+'_'.join(dataset.module_confinements[id]))
+        if dataset.scene_types[id]=='llff': tags.append('real')
+        val_strings.append('_'.join(tags))
+
+    if hasattr(cfg.dataset,'max_scenes_eval') and not eval_mode:
+        scenes2keep = subsample_dataset(max_scenes=cfg.dataset.max_scenes_eval,scene_types=val_strings,pick_first=True)
+        i_val = OrderedDict([item for i,item in enumerate(i_val.items()) if i in scenes2keep])
+        val_only_scene_ids = [sc for sc in val_only_scene_ids if sc in i_val]
+    if not eval_mode:
+        # val_ims_per_scene = len(i_val[list(i_val.keys())[0]])
+        val_ims_per_scene = [len(v) for v in i_val.values()]
+        assert all([max(val_ims_per_scene)%v==0 for v in val_ims_per_scene]),"Need to be able to repeat scene eval sets to have the same number of eval images for all scnenes."
+        val_ims_per_scene = max(val_ims_per_scene)
+        i_val = OrderedDict([(k,val_ims_per_scene//len(v)*v) for k,v in i_val.items()])
+
+    if eval_training_too:
+        temp = list(i_val.keys())
+        for id in temp:
+            if id not in i_train:    continue
+            im_freq = len(i_train[id])//val_ims_per_scene
+            if id in i_val.keys(): #Avoid evaluating training images for scenes which were discarded for evaluation due to max_scenes_eval
+                i_val[id+'_train'] = [i_train[id][i] for i in sorted([(i+im_freq//2)%len(i_train[id]) for i in  np.unique(np.round(np.linspace(0,len(i_train[id])-1,val_ims_per_scene)).astype(int))])]
+    # training_scenes = list(i_train.keys())
+    # planes_updating = any(['planes' in m for m in what2train])
+    # if planes_model and not planes_updating:
+    #     available_scenes = []
+    #     for conf,scenes in [c for p in LR_model_config.dataset.dir.values() for c in p.items()]:
+    #         conf=eval(conf)
+    #         for sc in interpret_scene_list(scenes):
+    #             available_scenes.append(models.get_scene_id(sc,conf[0],(conf[1],conf[2] if len(conf)>2 else conf[1])))
+
+    # scene_coupler = models.SceneCoupler(list(set(available_scenes+val_only_scene_ids)),HR_planes='HR_planes' in what2train,
+    #     num_pos_planes=getattr(cfg.models.coarse,'num_planes',3) if planes_model else 0,viewdir_plane=cfg.nerf.use_viewdirs,training_scenes=training_scenes,
+    #     multi_im_res=SR_experiment=='model' or not planes_model)
     if planes_model:
-        # if 'decoder' in what2train and 'SR' not in what2train:
-        #     assert len(scene_coupler.downsample_couples)==0
         if 'SR' in what2train and len(what2train)==1:
             assert all([sc not in scene_coupler.downsample_couples.values() for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
-        # if rep_model_training:
-        #     if not end2end_training:
-        #         assert len(scene_coupler.downsample_couples)==0
-        #         # assert all([sc not in scene_coupler.downsample_couples.values() for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
-        # else:
-        #     assert train_planes_only or all([sc not in scene_coupler.downsample_couples.values() for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
     if SR_experiment=='model':
         if 'HR_planes' in what2train:
-        # if end2end_training=='HR_planes':
             for sc in scene_coupler.downsample_couples:
+                if sc not in i_val: continue
                 if sc in training_scenes:
                     i_val[sc+'_HRplane'] = 1*i_val[sc]
                     if sc+'_train' in i_val:
                         i_val[sc+'_HRplane_train'] = 1*i_val[sc+'_train']
-        # for sc in scene_coupler.downsample_couples.keys():  
         for sc in scenes_set:  
             if sc not in scene_coupler.downsample_couples:  continue
             if init_new_scenes:
@@ -218,8 +255,8 @@ def main():
 
     evaluation_sequences = list(i_val.keys())
     val_strings = []
-    ASSUME_LR_IF_NO_COUPLES = True
-    ASSUME_LR_IF_NO_COUPLES = ASSUME_LR_IF_NO_COUPLES and (len(scene_coupler.downsample_couples)==0 and SR_experiment)
+    # ASSUME_LR_IF_NO_COUPLES = True
+    # ASSUME_LR_IF_NO_COUPLES = ASSUME_LR_IF_NO_COUPLES and (len(scene_coupler.downsample_couples)==0 and SR_experiment)
     for id in evaluation_sequences:
         bare_id = id.replace('_train','').replace('_HRplane','')
         tags = []
@@ -230,6 +267,7 @@ def main():
         if bare_id in scene_coupler.downsample_couples.values() or ASSUME_LR_IF_NO_COUPLES: tags.append('LR')
         elif bare_id in scene_coupler.HR_planes_LR_ims_scenes:  tags.append('downscaled')
         elif '_HRplane' in id:  tags.append('HRplanes')
+        if len(dataset.module_confinements[bare_id])>0: tags.append('Fixed_'+'_'.join(dataset.module_confinements[bare_id]))
         if dataset.scene_types[bare_id]=='llff': tags.append('real')
         val_strings.append('_'.join(tags))
     important_loss_terms = [tag for tag in val_strings if 'blind_validation' in tag]
@@ -248,7 +286,7 @@ def main():
             print_scenes_list('"%s" evaluation'%(cat),[s for i,s in enumerate(evaluation_sequences) if val_strings[i]==cat])
         assert all([val_ims_per_scene==len(i_val[id]) for id in evaluation_sequences]),'Assuming all scenes have the same number of evaluation images'
 
-        running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','zero_mean_planes_loss','fine_loss','fine_psnr','loss','coarse_loss','inconsistency']
+        running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','zero_mean_planes_loss','fine_loss','fine_psnr','loss','coarse_loss','inconsistency','loss_sr','loss_lr']
         experiment_info['running_scores'] = dict([(score,dict([(cat,deque(maxlen=len(training_scenes) if cat=='train' else val_ims_per_scene)) for cat in list(set(val_strings))+['train']])) for score in running_mean_logs])
     image_sampler = ImageSampler(i_train,dataset.scene_probs)
 
@@ -346,6 +384,7 @@ def main():
             zero_mean_planes_w=getattr(cfg.nerf.train,'zero_mean_planes_w',None),
             dec_dss_layers=getattr(cfg.models.coarse,'dec_dss_layers',None),
             plane_stats=PLANE_STATS,
+            detach_LR_planes=getattr(cfg.nerf.train,'detach_LR_planes',True),
         )
         
     else:
@@ -402,6 +441,7 @@ def main():
                     ensemble_size=getattr(cfg.models.fine,'ensemble_size',1),
                     dec_dss_layers=getattr(cfg.models.fine,'dec_dss_layers',None),
                     plane_stats=PLANE_STATS,
+                    detach_LR_planes=getattr(cfg.nerf.train,'detach_LR_planes',True),
                 )
             else:
                 model_fine = getattr(models, cfg.models.fine.type)(
@@ -441,13 +481,15 @@ def main():
             SR_factor = int(np.sqrt(scene_coupler.ds_factor))
         else:
             SR_factor = sf_config
+        # seperate_SR_planes_opt = getattr(cfg.nerf.train,'seperate_SR_planes_opt',False)
+        assert not getattr(cfg.super_resolution.model,'single_plane',True) or getattr(cfg.super_resolution,'all_planes_dss_layers',None) is None
         SR_model = models.PlanesSR(
             model_arch=getattr(models, cfg.super_resolution.model.type),scale_factor=SR_factor,
             in_channels=plane_channels*(1 if getattr(cfg.super_resolution.model,'single_plane',True) else model_fine.num_density_planes),
             out_channels=plane_channels*(1 if getattr(cfg.super_resolution.model,'single_plane',True) else model_fine.num_density_planes),
             sr_config=cfg.super_resolution,
             plane_interp=getattr(cfg.super_resolution,'plane_resize_mode',model_fine.plane_interp),
-            detach_LR_planes=getattr(cfg.nerf.train,'detach_LR_planes',True)
+            # detach_LR_planes=getattr(cfg.nerf.train,'detach_LR_planes',True)
         )
         print("SR model: %d parameters"%(num_parameters(SR_model)))
         SR_model.to(device)
@@ -612,14 +654,14 @@ def main():
     if planes_model and SR_model is not None:
         save_RAM_memory = not store_planes and len(model_coarse.planes_)>=10
         if getattr(cfg.super_resolution,'apply_2_coarse',False):
-            model_coarse.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,save_interpolated=not save_RAM_memory,
-                set_planes=not store_planes,plane_dropout=getattr(cfg.super_resolution,'plane_dropout',0),
+            model_coarse.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,
+                plane_dropout=getattr(cfg.super_resolution,'plane_dropout',0),
                 single_plane=getattr(cfg.super_resolution.model,'single_plane',True))
         else:
             assert getattr(cfg.super_resolution.training,'loss','both')=='fine'
             if not rep_model_training:  model_coarse.optional_no_grad = torch.no_grad
-        model_fine.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,save_interpolated=not save_RAM_memory,
-            set_planes=not store_planes,plane_dropout=getattr(cfg.super_resolution,'plane_dropout',0),
+        model_fine.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,
+            plane_dropout=getattr(cfg.super_resolution,'plane_dropout',0),
             single_plane=getattr(cfg.super_resolution.model,'single_plane',True))
     run_time_signature = time.time()
     if store_planes:
@@ -706,12 +748,7 @@ def main():
                     sr_scene = SR_experiment and scene_ids[img_idx] in scene_coupler.downsample_couples and '_HRplane' not in evaluation_sequences[scene_num]
                     HR_plane_LR_im = scene_ids[img_idx] in scene_coupler.HR_planes_LR_ims_scenes
                     scene_coupler.toggle_used_planes_res(HR='_HRplane' in evaluation_sequences[scene_num])
-                    if True: #dataset_type=='DTU' or CONSTRUCT_DATASET:
-                        img_target,pose_target,cur_H,cur_W,cur_focal,cur_ds_factor = dataset.item(img_idx,device)
-                    else:
-                        img_target = images[img_idx].to(device)
-                        pose_target = poses[img_idx, :3, :4].to(device)
-                        cur_H,cur_W,cur_focal,cur_ds_factor = H[img_idx], W[img_idx], focal[img_idx],ds_factor[img_idx]
+                    img_target,pose_target,cur_H,cur_W,cur_focal,cur_ds_factor = dataset.item(img_idx,device)
                     if HR_plane_LR_im:
                         cur_H *= scene_coupler.ds_factor
                         cur_W *= scene_coupler.ds_factor
@@ -899,13 +936,7 @@ def main():
         scene_coupler.toggle_used_planes_res(hr_planes_iter)
         sr_iter = cur_scene_id in scene_coupler.downsample_couples and not hr_planes_iter
         HR_plane_LR_im = cur_scene_id in scene_coupler.HR_planes_LR_ims_scenes
-        # if dataset_type=='synt':
-        if True: #dataset_type=='DTU' or CONSTRUCT_DATASET:
-            img_target,pose_target,cur_H,cur_W,cur_focal,cur_ds_factor = dataset.item(img_idx,device)
-        else:
-            img_target = images[img_idx].to(device)
-            pose_target = poses[img_idx, :3, :4].to(device)
-            cur_H,cur_W,cur_focal,cur_ds_factor = H[img_idx], W[img_idx], focal[img_idx],ds_factor[img_idx]
+        img_target,pose_target,cur_H,cur_W,cur_focal,cur_ds_factor = dataset.item(img_idx,device)
         if HR_plane_LR_im:
             cur_H *= scene_coupler.ds_factor
             cur_W *= scene_coupler.ds_factor
@@ -1020,6 +1051,7 @@ def main():
         psnr = None
         if isinstance(loss,torch.Tensor):
             write_scalar("train/loss", loss.item(), iter)
+            write_scalar("train/loss_%s"%('sr' if cur_scene_id in scene_coupler.downsample_couples else 'lr'), loss.item(), iter)
             psnr = mse2psnr(loss.item())
             write_scalar("train/psnr", psnr, iter)
 
@@ -1044,7 +1076,8 @@ def main():
             new_drawn_scenes = planes_opt.step()
         if last_v_batch_iter:
             if optimizer is not None:
-                decoder_step = True
+                # decoder_step = True
+                decoder_step = 'decoder' not in dataset.module_confinements[cur_scene_id]
                 if 'SR' in what2train:
                 # if end2end_training:
                     if getattr(cfg.nerf.train,'separate_decoder_sr',False):
@@ -1054,7 +1087,7 @@ def main():
 
                 if decoder_step:
                     optimizer.step()
-            if SR_optimizer is not None and sr_iter:
+            if SR_optimizer is not None and sr_iter and 'SR' not in dataset.module_confinements[cur_scene_id]:
                 SR_optimizer.step()
         if coarse_loss is not None:
             write_scalar("train/coarse_loss", coarse_loss.item(), iter)
@@ -1130,7 +1163,6 @@ def main():
                 "[TRAIN] Iter: "
                 + str(iter)
                 + " Loss: "
-                # + str(loss.item())
                 + str(np.mean(print_cycle_loss))
                 + " PSNR: "
                 + str(np.mean(print_cycle_psnr))
@@ -1141,7 +1173,8 @@ def main():
         save_now = scenes_cycle_counter.check_and_reset() if (store_planes and rep_model_training) else False
         save_now |= iter % cfg.experiment.save_every == 0 if isinstance(cfg.experiment.save_every,int) else (time.time()-recently_saved)/60>cfg.experiment.save_every
         save_now |= iter == cfg.experiment.train_iters - 1
-        save_now &= iter>0
+        if '/slurm/code/' in os.getcwd(): save_now |= iter==0   # Assuming not debugging when called from a slurm code folder.
+        # save_now &= iter>0
         if save_now:
             save_as_best = False
             if len(experiment_info['running_scores']['loss'][list(important_loss_terms)[0]])==val_ims_per_scene:
@@ -1188,7 +1221,8 @@ def main():
                 # if (model2save=='decoder' and 'decoder' in what2train) or (model2save=='SR' and 'SR' in what2train):
                 safe_saving(ckpt_name%(str(iter).zfill(5)),content=checkpoint_dict,suffix='ckpt',best=False,run_time_signature=run_time_signature)
                 if len(experiment_info['last_saved'][model2save])>0:
-                    os.remove(experiment_info['last_saved'][model2save].pop(0))
+                    chkp2remove = experiment_info['last_saved'][model2save].pop(0)
+                    if os.path.exists(chkp2remove): os.remove(chkp2remove)
                 experiment_info['last_saved'][model2save].append(ckpt_name%(str(iter).zfill(5)))
                 if save_as_best:
                     safe_saving(ckpt_name%(''),content=checkpoint_dict,suffix='ckpt',best=True,run_time_signature=run_time_signature)

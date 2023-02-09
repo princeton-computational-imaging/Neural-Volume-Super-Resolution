@@ -244,7 +244,6 @@ class DSS(nn.Module):
         self.relu = nn.functional.relu
 
     def forward(self,features):
-        # features = [feat.squeeze(0).squeeze(-1).permute(1,0) for feat in features]
         for layer_num in range(len(self.per_plane_layers)):
             per_plane = []
             for plane in features:
@@ -255,7 +254,6 @@ class DSS(nn.Module):
             features = [self.relu((plane+planes_avg) if self.combine=='sum' else (plane+planes_avg)/2) for plane in per_plane]
         features = torch.stack(features,0)
         features = features.sum(0) if self.combine=='sum' else features.mean(0)
-        # return features.permute(1,0).unsqueeze(0).unsqueeze(-1)
         return features        
 
 
@@ -281,6 +279,7 @@ class TwoDimPlanesModel(nn.Module):
         num_planes_or_rot_mats=3,
         viewdir_mapping=False,
         plane_stats=False,
+        detach_LR_planes=True,
         plane_loss_w=None,
         scene_coupler=None,
         point_coords_noise=0,
@@ -301,6 +300,7 @@ class TwoDimPlanesModel(nn.Module):
             num_viewdir_plane_channels = num_plane_channels if use_viewdirs else 0
         self.num_viewdir_plane_channels = num_viewdir_plane_channels
         self.plane_stats = plane_stats
+        self.detach_LR_planes = detach_LR_planes
         assert interp_viewdirs in ['bilinear','bicubic',None]
         assert interp_viewdirs is None,'Depricated'
         self.interp_from_learned = interp_viewdirs
@@ -338,7 +338,6 @@ class TwoDimPlanesModel(nn.Module):
         if dec_dss_layers is not None:  assert ensemble_size==1,'Unsupported'
         # Density (alpha) decoder:
         self.density_dec = nn.ModuleDict([(str(i),nn.ModuleList()) for i in range(ensemble_size)])
-        # self.density_dec = nn.ModuleList()
         self.debug = {'max_norm':defaultdict(lambda: torch.finfo(torch.float32).min),'min_norm':defaultdict(lambda: torch.finfo(torch.float32).max)}
         in_channels = num_plane_channels*(self.num_density_planes if proj_combination=='concat' else 1)
         for i in range(ensemble_size):
@@ -393,17 +392,18 @@ class TwoDimPlanesModel(nn.Module):
                 align_corners=self.align_corners,
             )
 
-    def gen_plane(self,plane_name):
+    def gen_plane(self,plane_name,detach=False):
         if self.plane_rank is None or plane_name not in self.plane_rank:
-            return self.planes_[plane_name]
+            plane = self.planes_[plane_name]
         else:
             if plane_name not in self.generated_planes:
                 self.generated_planes[plane_name] = torch.matmul(self.planes_[plane_name][...,:self.plane_rank[plane_name]],
                     self.planes_[plane_name][...,self.plane_rank[plane_name]:].permute([0,1,3,2]))
-            return self.generated_planes[plane_name]
+            plane = self.generated_planes[plane_name]
+        return plane.detach() if detach else plane
 
-    def raw_plane(self,plane_name,downsample=False):
-        plane = self.gen_plane(plane_name)
+    def raw_plane(self,plane_name,downsample=False,detach=False):
+        plane = self.gen_plane(plane_name,detach=detach)
         if self.zero_mean_planes_w is not None and self.scene_coupler.plane2saved[plane_name] not in self.zero_mean_planes_loss:
             self.zero_mean_planes_loss[self.scene_coupler.plane2saved[plane_name]] = torch.mean(plane,(2,3)).abs().mean()
         if downsample:
@@ -428,7 +428,7 @@ class TwoDimPlanesModel(nn.Module):
         self.SR_planes2drop = []
         self.planes2drop = []
         
-    def assign_SR_model(self,SR_model,SR_viewdir,save_interpolated=True,set_planes=True,plane_dropout=0,single_plane=True):
+    def assign_SR_model(self,SR_model,SR_viewdir,plane_dropout=0,single_plane=True):
         self.SR_model = SR_model
         self.SR_model.align_corners = self.align_corners
         self.SR_model.SR_viewdir = SR_viewdir
@@ -436,11 +436,6 @@ class TwoDimPlanesModel(nn.Module):
         self.single_plane_SR = single_plane
         self.skip_SR_ = False
         assert not SR_viewdir,'Ceased supporting this option'
-        if set_planes: 
-            raise Exception('Depricated')
-            for k,v in self.planes_.items():
-                if not SR_viewdir and get_plane_name(None,self.num_density_planes) in k:  continue
-                self.SR_model.set_LR_plane(v.detach(),id=k,save_interpolated=save_interpolated)
 
     def set_cur_scene_id(self,scene_id):
         self.cur_id = scene_id
@@ -460,6 +455,7 @@ class TwoDimPlanesModel(nn.Module):
 
     def planes(self,dim_num:int,super_resolve:bool,grid:torch.tensor=None)->torch.tensor:
         plane_name = get_plane_name(self.cur_id,dim_num)
+        detach = self.detach_LR_planes and plane_name2scene(plane_name) in self.scene_coupler.downsample_couples and not self.scene_coupler.use_HR_planes
         downsample_plane = self.scene_coupler.should_downsample(plane_name)
         plane_name = self.scene_coupler.scene_with_saved_plane(plane_name,plane_not_scene=True)
         if super_resolve:
@@ -478,7 +474,7 @@ class TwoDimPlanesModel(nn.Module):
                 plane = nn.functional.interpolate(self.raw_plane(plane_name,downsample_plane),scale_factor=1/self.planes_ds_factor,
                     align_corners=self.align_corners,mode=self.plane_interp,antialias=True)
             else:
-                plane = self.raw_plane(plane_name,downsample_plane)
+                plane = self.raw_plane(plane_name,downsample_plane,detach=detach)
         return plane.cuda()
 
     def skip_SR(self,skip):
@@ -515,8 +511,6 @@ class TwoDimPlanesModel(nn.Module):
                     align_corners=self.align_corners,
                     padding_mode='border',
                 ))
-        # return projections
-        # projections = self.combine_pos_planes(projections)
         return [p.squeeze(0).squeeze(-1).permute(1,0) for p in projections]
 
     def project_viewdir(self,dirs):
@@ -648,10 +642,10 @@ class TwoDimPlanesModel(nn.Module):
             if scene is not None and self.scene_coupler.scene2saved[scene] not in k:    continue
             if not self.SR_model.SR_viewdir and get_plane_name(None,self.num_density_planes) in k:  continue
             if self.scene_coupler.should_downsample(k,for_LR_loading=True):
-                LR_plane = self.downsample_plane(self.raw_plane(k))
+                LR_plane = self.downsample_plane(self.raw_plane(k,detach=self.detach_LR_planes))
             else:
-                LR_plane = self.raw_plane(k)
-            if self.SR_model.detach_LR_planes: LR_plane = LR_plane.detach()
+                LR_plane = self.raw_plane(k,detach=self.detach_LR_planes)
+            # if self.SR_model.detach_LR_planes: LR_plane = LR_plane.detach()
             self.SR_model.set_LR_plane(LR_plane,id=k,save_interpolated=False)
 
     def return_zero_mean_planes_loss(self):
@@ -858,8 +852,6 @@ class PlanesOptimizer(nn.Module):
     def get_plane_stats(self,viewdir=False,single_plane=True):
         model_name='coarse'
         plane_means,plane_STDs = [],[]
-        # for scene in tqdm(self.training_scenes,desc='Collecting plane statistics'):
-        # for scene in tqdm(self.models[model_name].scene_coupler.downsample_couples.values(),desc='Collecting plane statistics'):
         for scene in tqdm(self.training_scenes,desc='Collecting plane statistics'):
             loaded_params = self.load_scene_planes(model_name=model_name,scene=self.models[model_name].scene_coupler.scene2saved[scene])
             # loaded_params = torch.load(self.param_path(model_name=model_name,scene=self.models[model_name].scene_coupler.scene2saved[scene]))
@@ -879,8 +871,12 @@ class PlanesOptimizer(nn.Module):
         scenes_list = self.scenes if as_best else self.cur_scenes
         scene_num = 0
         already_saved = []
-        scenes2save = [sc for sc in scenes_list if sc not in self.frozen_scene_paths]
-        scenes2save = list(set([model.scene_coupler.scene_with_saved_plane(sc) for sc in scenes2save]))
+        scenes2save_ = [sc for sc in scenes_list if sc not in self.frozen_scene_paths]
+        scenes2save = []
+        for sc in scenes2save_:
+            if model.scene_coupler.scene_with_saved_plane(sc) not in scenes2save:
+                scenes2save.append(model.scene_coupler.scene_with_saved_plane(sc))
+        # scenes2save = list(set([model.scene_coupler.scene_with_saved_plane(sc) for sc in scenes2save]))
         scenes2save = scenes2save if len(scenes2save)<20 else tqdm(scenes2save,desc='Saving scene planes')
         for scene in scenes2save:
             scene = model.scene_coupler.scene_with_saved_plane(scene)
@@ -1055,56 +1051,30 @@ class EDSR(nn.Module):
         return self.conv_output(out)
 
 class PlanesSR(nn.Module):
-    def __init__(self,model_arch,scale_factor,in_channels,out_channels,sr_config,plane_interp,detach_LR_planes):
+    # def __init__(self,model_arch,scale_factor,in_channels,out_channels,sr_config,plane_interp,detach_LR_planes):
+    def __init__(self,model_arch,scale_factor,in_channels,out_channels,sr_config,plane_interp):
         super(PlanesSR, self).__init__()
 
         hidden_size = sr_config.model.hidden_size
         n_blocks = sr_config.model.n_blocks
         input_normalization = sr_config.get("input_normalization",False)
-        self.detach_LR_planes = detach_LR_planes
+        # self.detach_LR_planes = detach_LR_planes
         self.scale_factor = scale_factor
         self.plane_interp = plane_interp
         # self.n_blocks = n_blocks
         self.input_noise = getattr(sr_config,'sr_input_noise',0)
         self.output_noise = getattr(sr_config,'sr_output_noise',0)
         self.single_plane = getattr(sr_config.model,'single_plane',True)
+        self.all_planes_dss_layers = getattr(sr_config,'all_planes_dss_layers',None)
         self.per_channel_sr = getattr(sr_config.model,'per_channel_sr',False)
         if self.per_channel_sr:
             in_channels = out_channels = 1
-        # PADDING,KERNEL_SIZE = 0,3
-        # self.required_padding,rf_factor = 0,1
-
-        # def kernel_size(num_layers=1):
-        #     if (1+2*(self.required_padding+rf_factor*num_layers*((KERNEL_SIZE-1)//2)))<=getattr(sr_config.model,'receptive_field_bound',np.iinfo(np.int32).max):
-        #         self.required_padding += rf_factor*num_layers*(KERNEL_SIZE//2)
-        #         return KERNEL_SIZE
-        #     else:
-        #         return 1
 
         # assert model_arch in ['EDSR','SRResNet']
         PADDING = 0
         self.inner_model = model_arch(in_channels=in_channels,out_channels=out_channels,hidden_size=hidden_size,n_blocks=n_blocks,
             scale_factor=scale_factor,padding=PADDING,receptive_field_bound=getattr(sr_config.model,'receptive_field_bound',np.iinfo(np.int32).max),
             edsr_init=getattr(sr_config.model,'edsr_init',False),no_bn=getattr(sr_config.model,'no_batch_norm',False))
-        # self.conv_input = nn.Conv2d(in_channels=in_channels, out_channels=hidden_size, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
-
-        # self.residual = nn.Sequential()
-        # for _ in range(n_blocks):
-        #     self.residual.append(_Residual_Block(hidden_size=hidden_size,padding=PADDING,kernel_size=kernel_size(2)))
-
-        # self.conv_mid = nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
-        # assert math.log2(scale_factor)==int(math.log2(scale_factor)),"Supperting only scale factors that are an integer power of 2."
-        # upscaling_layers = []
-        # for _ in range(int(math.log2(scale_factor))):
-        #     upscaling_layers += [
-        #         nn.Conv2d(in_channels=hidden_size, out_channels=hidden_size*4, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False),
-        #         nn.PixelShuffle(2),
-        #     ]
-        #     rf_factor /= 2
-
-        # self.upscale = nn.Sequential(*upscaling_layers)
-
-        # self.conv_output = nn.Conv2d(in_channels=hidden_size, out_channels=out_channels, kernel_size=kernel_size(), stride=1, padding=PADDING, bias=False)
         self.HR_overpadding = int(self.inner_model.required_padding*self.scale_factor)
         self.inner_model.required_padding = int(np.ceil(self.inner_model.required_padding))
         self.HR_overpadding = self.inner_model.required_padding*self.scale_factor-self.HR_overpadding
@@ -1126,12 +1096,6 @@ class PlanesSR(nn.Module):
         if self.consistency_loss_w is not None:
             self.planes_diff = nn.L1Loss()
             self.consistentcy_loss = []
-
-    # def make_layer(self, block,args, num_of_layer):
-    #     layers = []
-    #     for _ in range(num_of_layer):
-    #         layers.append(block(**args))
-    #     return nn.Sequential(*layers)
 
     def interpolate_LR(self,id):
         return torch.nn.functional.interpolate(self.LR_planes[id].cuda(),scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=self.align_corners)
@@ -1185,8 +1149,8 @@ class PlanesSR(nn.Module):
             out = self.SR_planes[plane_name].cuda()
         else:
             LR_plane = self.LR_planes[plane_name].cuda()
-            if self.detach_LR_planes:
-                LR_plane = LR_plane.detach()
+            # if self.detach_LR_planes:
+            #     LR_plane = LR_plane.detach()
             if self.training and self.input_noise>0:
                 LR_plane = torch.add(LR_plane,torch.normal(mean=0,std=self.input_noise*LR_plane.std(),size=LR_plane.shape).type(LR_plane.type()))
             x = 1*LR_plane
@@ -1349,7 +1313,7 @@ class SceneCoupler:
             # return scene in getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples'))
 
     def should_downsample(self,plane_name,for_LR_loading=False):
-        return len(self.HR_planes)>0 and (for_LR_loading or not self.use_HR_planes) and self.plane2saved[plane_name] in self.HR_planes
+        return len(self.HR_planes)>0 and (for_LR_loading or not self.use_HR_planes) and self.plane2saved(plane_name) in self.HR_planes
 
 class _ResidualConvBlock(nn.Module):
     """Implements residual conv function.

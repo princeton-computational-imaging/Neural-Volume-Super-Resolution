@@ -1,9 +1,12 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_SRResNet16Bl_ReluNoBN_micShip
-  id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_chairLego_0 #_micShip #_PZerMean1
-  # id: E2E_Synt_Res29Sc200_25Sc800_32_LR100_400_posFeatCatDecCh256_remainingFour
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_HRplanes_micShip
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_NoHRinfoBug_trainScenes21SR6Dec_micShip #_HRplanes
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_NoHRinfoBug_noPlnDetach_micShip
+  id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_21SepDecSRscenesNoProbs_AllPlnsSR_micShip
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss #_micShip #_PZerMean1 #_chairLego
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_SepPlanesSR_micShip
   # id: E2E_Synt_Res27Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NOmicShip
   # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32ship_0
   # id: E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_2xPlanesLR
@@ -46,22 +49,23 @@ dataset:
   #   near: 0
   #   far:  1
   #   no_ndc: False
-  max_scenes_eval:  4
+  max_scenes_eval:  2 #4
   # auto_remove_val:  True
   dir:
     train:
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] #mic,ship
+      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] # old
+      # 8,200,32:   ['house','robot','chair','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','mic','ship'] # All 29 scenes
+      8,200,32,'synt',None:   ['house','robot','chair','ficus','materials','holiday']
+      8,200,32,'synt',None,['decoder']:   ['bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','mic','ship'] # All 29 scenes
+      # 8,200,32:   ['holiday']      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      # 8,200,32,'synt',None,['decoder']:   ['motorbike','ship']      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
+      # 2,800,32:   ['house','robot','chair','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #mic,ship
+      2,800,32,'synt',None:   ['house','robot','chair','ficus','materials','holiday'] #mic,ship
+      2,800,32,'synt',None,['decoder']:   ['bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums',] #mic,ship
       # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #'chair','lego',
       # 32,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
-      # 8,800,32,'llff':   ['orchids','flower','fortress','horns','leaves','room','trex'] #,'fern'
-      # 16,200,128,'llff':   ['horns','leaves']
-      # 4,800,128,'llff':   ['leaves']
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
-      # 8,200,32:   ['chair','mic',[0,50]]
+      # 2,800,32:   ['holiday'] #mic,ship
+      # 2,800,32,'synt',None,['decoder']:   ['motorbike'] #mic,ship
       # 8,200,32:   ['mic','ship']
       # 2,800,32:   ['mic']
     val:
@@ -69,8 +73,8 @@ dataset:
     #   # 1,800,32,'nerfstudio':   ['vegetation']
     #   # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
     #   # 4,800,32,'llff':   ['orchids','fern']
-      # 8,200,32:   ['ship##Gauss2','mic##Gauss2','ship','mic',]
-      8,200,32:   ['chair##Gauss2','lego##Gauss2','chair','lego',]
+      2,800,32:   ['mic','ship',] #'ship##Gauss2','mic##Gauss2',
+      # 8,200,32:   ['chair##Gauss2','lego##Gauss2','chair','lego',]
       # 2,800,32:   ['chair','lego'] # 
     #   # 8,200,32:   ['ship','mic','ship##Gauss2','mic##Gauss2']
       # 2,800,32:   ['ship']
@@ -122,7 +126,7 @@ models:
     # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
     # interp_viewdirs: bilinear #'bilinear','bicubic',None
     #### Plane coniguration: ####
-    # num_plane_channels: 36
+    # num_plane_channels: 24
     # num_viewdir_plane_channels: 48
     # Limiting planes' rank by constructing them as a product of two matrices. The following parameter determines the ratio of the rank relative to the full rank:
     # planes_rank_ratio:  0.005
@@ -176,12 +180,13 @@ nerf:
     # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
     # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
     #  since HR images are not available for their training) (default: True):
-    # detach_LR_planes: False
+    detach_LR_planes: False
+    # seperate_SR_planes_opt: True
     # # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
     # spatial_sampling: 1.
     # Number of random rays to retain from each image.
     # These sampled rays are used for training, and the others are discarded.
-    num_random_rays: 4096 #3072 #4096  # 32 * 32 * 4
+    num_random_rays: 3072 #3072 #4096  # 32 * 32 * 4
     # Size of each chunk (rays are batched into "chunks" and passed through
     # the network)
     chunksize: 131072  # 131072  # 1024 * 32
@@ -190,7 +195,7 @@ nerf:
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
       # buffer_size:  1
-      steps_per_buffer: 1
+      steps_per_buffer: 200
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
@@ -253,22 +258,23 @@ super_resolution:
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
+  # all_planes_dss_layers: 4
   model:
     # Name of the torch.nn.Module class that implements the model.
-    # type: EDSR
-    type: SRResNet
+    type: EDSR
+    # type: SRResNet
     # edsr_init:  True
-    no_batch_norm:  'add_relu' #True
+    # no_batch_norm:  'add_relu' #True
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
     # hidden_size: 32 #256 #128 #256
     hidden_size: 256 #128 #256
     # Number of residual blocks (originally 32):
     # n_blocks: 8 #32
-    n_blocks: 16 #32
+    n_blocks: 32 #32
     # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
     # receptive_field_bound:  55
     # scale_factor: 4 #sqrt #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
-    # single_plane: False
+    single_plane: False
     # per_channel_sr: True

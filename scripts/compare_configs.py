@@ -3,13 +3,14 @@ import sys
 sys.path.append('.')
 from nerf_helpers import get_config,rgetattr,rsetattr
 
-# config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/planes_E2E.yml'
-config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/DTU_E2E.yml'
+config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/planes_E2E.yml'
+# config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0/config.yml'
 # config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/NeRF_LR.yml'
 # config_B_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/config/Synt_planes_only.yml'
 # config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_Vanilla_0/config.yml'
-config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_DTU_103ScRes200_88Sc800_32_LR100_400_posFeatCatDecCh256_0/config.yml'
+# config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_SepPlanesSR_micShip_0/config.yml'
 # config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0/config.yml'
+config_A_file = None
 
 def sort_scenes(config):
     # return config
@@ -19,8 +20,10 @@ def sort_scenes(config):
                 rsetattr(config.dataset.dir,'.'.join([partition,conf]),sorted([sc for sc in getattr(config.dataset.dir,partition)[conf] if not isinstance(sc,list)]))
     return config
 
-cfg_A = sort_scenes(get_config(config_A_file))
 cfg_B = sort_scenes(get_config(config_B_file))
+if config_A_file is None:
+    config_A_file = '/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/%s/config.yml'%(cfg_B.experiment.id)
+cfg_A = sort_scenes(get_config(config_A_file))
 
 config_diffs = DeepDiff(cfg_A,cfg_B)
 ok = True

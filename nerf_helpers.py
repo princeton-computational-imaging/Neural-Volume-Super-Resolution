@@ -189,8 +189,16 @@ def is_background_white(image):
     #     return 1
     # else:
     #     return 0
+def subsample_dataset(max_scenes,pick_first=False,scene_types=[]):
+    scenes_nums2keep = []
+    for scene_type in set(scene_types):
+        scene_nums = [i for i,sc_t in enumerate(scene_types) if sc_t==scene_type]
+        inds2keep = [i for i in (range(min(len(scene_nums),max_scenes)) if pick_first else np.unique(np.round(np.linspace(0,len(scene_nums)-1,max_scenes)).astype(int)))]
+        scenes_nums2keep.extend([scene_nums[i] for i in inds2keep])
+    return scenes_nums2keep
 
-def subsample_dataset(scenes_dict,max_scenes,val_only_scenes=[],scene_id_func=None,max_val_only_scenes=None):
+
+def subsample_dataset_old(scenes_dict,max_scenes,val_only_scenes=[],scene_id_func=None,max_val_only_scenes=None):
     convert2list, = False,
     val_scene_as_inds = len(val_only_scenes)>0 and isinstance(val_only_scenes[0],int)
     if val_scene_as_inds:

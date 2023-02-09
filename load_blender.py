@@ -51,14 +51,17 @@ class BlenderDataset(torch.utils.data.Dataset):
         self.get_scene_id = scene_id_func
         train_dirs = self.get_scene_configs(getattr(config.dir,'train',{}),add_val_scene_LR=add_val_scene_LR)
         val_scenes_dict = getattr(config.dir,'val',{})
-        self.downsampling_factors,self.all_scenes,plane_resolutions,val_ids,scene_types,scene_probs = self.get_scene_configs(val_scenes_dict)
-        assert sum(scene_probs)==len(val_scenes_dict),'Why assign sampling probabilities to a validation scene?'
+        self.downsampling_factors,self.all_scenes,plane_resolutions,val_ids,scene_types,scene_probs,module_confinements = self.get_scene_configs(val_scenes_dict)
+        # assert sum(scene_probs)==len(val_scenes_dict),'Why assign sampling probabilities to a validation scene?'
+        assert all([p==1 for p in scene_probs]),'Why assign sampling probabilities to validation scenes?'
+        assert all([len(c)==0 for c in module_confinements]),'No sense in confinging training of VALIDATION scenes to specific moduels'
         self.downsampling_factors += train_dirs[0]
         plane_resolutions += train_dirs[2]
         train_ids = train_dirs[3]
         if getattr(config,'auto_remove_val',False): assert not any([id in train_ids for id in val_ids]),'Removed support to this option. Should re-enable.'
         scene_types += train_dirs[4]
         scene_probs += train_dirs[5]
+        module_confinements += train_dirs[6]
         if len(set(train_ids+val_ids))!=len(train_ids+val_ids) and not eval_mode:
             raise Exception('I suspect an overlap between training and validation scenes. The following appear in both:\n%s'%([s for s in val_ids if s in train_ids]))
         train_dirs = train_dirs[1]
@@ -68,8 +71,7 @@ class BlenderDataset(torch.utils.data.Dataset):
         self.scene_id_plane_resolution = {}
         self.i_train,self.i_val,self.scene_probs = OrderedDict(),OrderedDict(),OrderedDict()
         self.scenes_set = set()
-        self.ds_kernels = {}
-        self.scene_types = {}
+        self.ds_kernels,self.scene_types,self.module_confinements = {},{},{}
         # DTU scenes:
         DTU_config = dict(deepcopy(config))
         DTU_config['dir'] = dict([(k,dict([(k_in,v_in) for k_in,v_in in v.items() if "'DTU'" in k_in])) for k,v in DTU_config['dir'].items()])
@@ -81,6 +83,8 @@ class BlenderDataset(torch.utils.data.Dataset):
             self.DTU_dataset = DVRDataset(config=DTU_config,scene_id_func=scene_id_func,eval_ratio=0.1,)
             self.i_train.update(self.DTU_dataset.train_ims_per_scene)
             self.i_val.update(self.DTU_dataset.i_val)
+            if len(set(list(self.i_train.keys())+list(self.DTU_dataset.val_scene_IDs())))!=len(list(self.i_train.keys())+self.DTU_dataset.val_scene_IDs()) and not eval_mode:
+                raise Exception('I suspect an overlap between training and validation scenes. The following appear in both:\n%s'%([s for s in self.DTU_dataset.val_scene_IDs() if s in self.i_train.keys()]))
             self.per_im_scene_id.extend(self.DTU_dataset.per_im_scene_id)
             self.scenes_set = set(self.DTU_dataset.per_im_scene_id)
             self.downsampling_factors.extend(self.DTU_dataset.downsampling_factors)
@@ -96,9 +100,10 @@ class BlenderDataset(torch.utils.data.Dataset):
                             adjust_az_range=getattr(scene_norm_coords,'adjust_azimuth_range',False),adjust_elevation_range=getattr(scene_norm_coords,'adjust_elevation_range',False))
 
         self.on_the_fly_load = len(self.all_scenes)>ON_THE_FLY_SCENES_THRESHOLD
-        for basedir,ds_factor,plane_res,scene_type,scene_prob in zip(tqdm(self.all_scenes,desc='Loading scenes'),self.downsampling_factors,plane_resolutions,scene_types,scene_probs):
+        for basedir,ds_factor,plane_res,scene_type,scene_prob,module_confinement in zip(tqdm(self.all_scenes,desc='Loading scenes'),self.downsampling_factors,plane_resolutions,scene_types,scene_probs,module_confinements):
             scene_path = os.path.join(config[scene_type].root,basedir)
             scene_id = self.get_scene_id(basedir,ds_factor,plane_res)
+            self.module_confinements[scene_id] = module_confinement
             if scene_id in self.i_train:
                 raise Exception("Scene %s already in the set"%(scene_id))
             self.scenes_set.add(scene_id)
@@ -206,7 +211,7 @@ class BlenderDataset(torch.utils.data.Dataset):
         return len(self.images)
 
     def get_scene_configs(self,config_dict,add_val_scene_LR=False,excluded_scene_ids=[]):
-        ds_factors,dir,plane_res,scene_ids,types,probs = [],[],[],[],[],[]
+        ds_factors,dir,plane_res,scene_ids,types,probs,module_confinements = [],[],[],[],[],[],[]
         config_dict = dict(config_dict)
         if add_val_scene_LR:
             assert len(config_dict)==2
@@ -222,10 +227,12 @@ class BlenderDataset(torch.utils.data.Dataset):
             if len(conf)<2: conf.append(None) # Positional planes resolution. Setting None for non-planes model (e.g. NeRF)
             if len(conf)<3: conf.append(conf[1]) # View-direction planes resolution
             if len(conf)<4: conf.append('synt') # Scene type
-            if len(conf)<5: conf.append(1) # Scene sampling probability
+            if len(conf)<5: conf.append(len(scenes)) # Scene sampling probability
+            elif conf[4] is None:   conf[4] = len(scenes)
+            if len(conf)<6: conf.append([]) # Scene sampling probability
             conf = tuple(conf)
             if conf[3]=='DTU':
-                probs.append(1) #Merely bypassing the assert outside when dealing with DTU
+                probs.append(len(scenes)) #Merely bypassing the assert outside when dealing with DTU
                 continue
             if not isinstance(scenes,list): scenes = [scenes]
             for s in interpret_scene_list(scenes):
@@ -239,7 +246,8 @@ class BlenderDataset(torch.utils.data.Dataset):
                 dir.append(cur_dir)
                 types.append(cur_type)
                 probs.append(cur_prob/len(scenes))
-        return ds_factors,dir,plane_res,scene_ids,types,probs
+                module_confinements.append(conf[5])
+        return ds_factors,dir,plane_res,scene_ids,types,probs,module_confinements
 
 def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
         downsampling_factor=1,val_downsampling_factor=None,cfg=None,splits2use=['train','val'],load_imgs=True,blur_kernel=None):

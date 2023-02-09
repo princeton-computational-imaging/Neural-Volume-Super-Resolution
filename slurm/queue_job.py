@@ -16,10 +16,10 @@ from tqdm import trange
 # CONFIG_FILE = "config/planes_SR.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
-# CONFIG_FILE = "config/planes_E2E.yml"
+CONFIG_FILE = "config/planes_E2E.yml"
 # CONFIG_FILE = "config/Synt_planes_only.yml"
 # CONFIG_FILE = "config/NeRF_LR.yml"
-CONFIG_FILE = "config/DTU_E2E.yml"
+# CONFIG_FILE = "config/DTU_E2E.yml"
 # CONFIG_FILE = "config/Real_planes_only.yml"
 
 
@@ -35,7 +35,7 @@ EVAL_WHITE = False
 # PARAM2SWEEP = (['dataset','dir','val','2,800,32'],['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'])
 PARAM2SWEEP = None
 
-RUN_TIME = 96 # 20 # 10 # Hours
+RUN_TIME = 1 # 20 # 10 # Hours
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True
 
@@ -63,7 +63,6 @@ existing_ids = [int(search("(?<="+job_name%(run_suffix(0))+"_)(\d)+(?=$)",f).gro
 config_file = ''+CONFIG_FILE
 cfg = get_config(config_file)
 
-# job_name += '%s'
 for run_num in (trange(len(PARAM2SWEEP[1])) if len(PARAM2SWEEP[1])>1 else range(len(PARAM2SWEEP[1]))):
     # run_suffix = str(PARAM2SWEEP[1][run_num]).replace('.','_') if sweep_jobs else ''
     if RESUME_TRAINING is None:
