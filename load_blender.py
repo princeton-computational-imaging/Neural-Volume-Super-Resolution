@@ -3,10 +3,10 @@ import os
 from tqdm import tqdm
 from re import search
 # import cv2
-import imageio
+# import imageio
 import numpy as np
 import torch
-from nerf_helpers import im_resize,calc_scene_box,interpret_scene_list
+from nerf_helpers import im_resize,calc_scene_box,interpret_scene_list,imread
 # from models import get_scene_id
 from collections import OrderedDict
 from magic import from_file
@@ -44,7 +44,7 @@ def pose_spherical(theta, phi, radius):
 
 FIGURE_IMAGES_MODE = False
 class BlenderDataset(torch.utils.data.Dataset):
-    def __init__(self,config,scene_id_func,add_val_scene_LR,eval_mode,scene_norm_coords=None) -> None:
+    def __init__(self,config,scene_id_func,add_val_scene_LR,eval_mode,scene_norm_coords=None) -> None: #,assert_LR_ver_of_val=False
         ON_THE_FLY_SCENES_THRESHOLD = 2 if eval_mode else 20
         super(BlenderDataset,self).__init__()
         if FIGURE_IMAGES_MODE:  assert eval_mode
@@ -52,7 +52,6 @@ class BlenderDataset(torch.utils.data.Dataset):
         train_dirs = self.get_scene_configs(getattr(config.dir,'train',{}),add_val_scene_LR=add_val_scene_LR)
         val_scenes_dict = getattr(config.dir,'val',{})
         self.downsampling_factors,self.all_scenes,plane_resolutions,val_ids,scene_types,scene_probs,module_confinements = self.get_scene_configs(val_scenes_dict)
-        # assert sum(scene_probs)==len(val_scenes_dict),'Why assign sampling probabilities to a validation scene?'
         assert all([p==1 for p in scene_probs]),'Why assign sampling probabilities to validation scenes?'
         assert all([len(c)==0 for c in module_confinements]),'No sense in confinging training of VALIDATION scenes to specific moduels'
         self.downsampling_factors += train_dirs[0]
@@ -66,6 +65,10 @@ class BlenderDataset(torch.utils.data.Dataset):
             raise Exception('I suspect an overlap between training and validation scenes. The following appear in both:\n%s'%([s for s in val_ids if s in train_ids]))
         train_dirs = train_dirs[1]
         self.all_scenes.extend(train_dirs)
+        # if not eval_mode and assert_LR_ver_of_val:
+        #     for i,sc in enumerate(val_ids):
+        #         if sc not in train_ids: # A blind validation scene:
+        #             pass
         self.images, self.poses, render_poses, self.hwfDs, i_split,self.per_im_scene_id = [],torch.zeros([0,4,4]),[],[],[np.array([]).astype(np.int64) for i in range(3)],[]
         scene_id,self.val_only_scene_ids,self.coords_normalization = -1,[],{}
         self.scene_id_plane_resolution = {}
@@ -195,7 +198,8 @@ class BlenderDataset(torch.utils.data.Dataset):
             return self.DTU_dataset.item(index,device)
         cur_H,cur_W,cur_focal,cur_ds_factor = self.hwfDs[index]
         if self.on_the_fly_load:
-            img_target = (imageio.imread(self.images[index])/ 255.0).astype(np.float32)
+            img_target = imread(self.images[index])
+            # img_target = (imageio.imread(self.images[index])/ 255.0).astype(np.float32)
             if hasattr(self,'base_factor'): #LLFF
                 cur_ds_factor //= self.base_factor
             if cur_ds_factor>1:
@@ -227,8 +231,8 @@ class BlenderDataset(torch.utils.data.Dataset):
             if len(conf)<2: conf.append(None) # Positional planes resolution. Setting None for non-planes model (e.g. NeRF)
             if len(conf)<3: conf.append(conf[1]) # View-direction planes resolution
             if len(conf)<4: conf.append('synt') # Scene type
-            if len(conf)<5: conf.append(len(scenes)) # Scene sampling probability
-            elif conf[4] is None:   conf[4] = len(scenes)
+            if len(conf)<5: conf.append(1) # Scene sampling probability
+            elif conf[4] is None:   conf[4] = 1
             if len(conf)<6: conf.append([]) # Scene sampling probability
             conf = tuple(conf)
             if conf[3]=='DTU':
@@ -236,7 +240,7 @@ class BlenderDataset(torch.utils.data.Dataset):
                 continue
             if not isinstance(scenes,list): scenes = [scenes]
             for s in interpret_scene_list(scenes):
-                cur_factor,cur_dir,cur_res,cur_type,cur_prob = conf[0],s,(conf[1],conf[2]),conf[3],conf[4]
+                cur_factor,cur_dir,cur_res,cur_type,cur_prob = conf[0],s,(conf[1],conf[2]),conf[3],conf[4]*len(scenes)
                 cur_id = self.get_scene_id(cur_dir,cur_factor,cur_res)
                 if cur_id in excluded_scene_ids:
                     continue
@@ -299,7 +303,8 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
             else:
                 per_im_ds_factor = 1*downsampling_factor
             if load_imgs:
-                img = (imageio.imread(fname)/ 255.0).astype(np.float32)
+                img = imread(fname)
+                # img = (imageio.imread(fname)/ 255.0).astype(np.float32)
                 H.append(img.shape[0])
                 W.append(img.shape[1])
                 resized_img = torch.from_numpy(im_resize(img, scale_factor=per_im_ds_factor,blur_kernel=blur_kernel))

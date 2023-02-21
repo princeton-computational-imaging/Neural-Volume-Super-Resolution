@@ -12,6 +12,7 @@ import lpips
 import torch
 import sys
 import pickle
+from nerf_helpers import imread
 # from nerf_helpers import bicubic_interp
 
 DEBUG_MODE = False #False #True
@@ -93,7 +94,8 @@ def calc_psnr(im1,im2):
     return -10.0 * math.log10(np.mean((im1-im2)**2))
 
 def load_im(path):
-    return (imageio.imread(path)/ 255.0).astype(np.float32)[...,:3]
+    return  imread(path)
+    # return (imageio.imread(path)/ 255.0).astype(np.float32)[...,:3]
 
 assert REF_SCORES in ['save','load',None]
 if 'LPIPS' in SCORES_2_SHOW:

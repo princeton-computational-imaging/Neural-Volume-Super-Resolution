@@ -10,7 +10,7 @@ import numpy as np
 import cv2
 from torchvision import transforms
 from collections import OrderedDict
-from nerf_helpers import subsample_dataset,im_resize,find_scene_match
+from nerf_helpers import subsample_dataset,im_resize,find_scene_match,imread
 
 def get_image_to_tensor_balanced(image_size=0):
     ops = []
@@ -244,7 +244,8 @@ class DVRDataset(torch.utils.data.Dataset):
 
         for idx, (rgb_path, mask_path) in enumerate(zip(rgb_paths, mask_paths)):
             i = sel_indices[idx]
-            img = imageio.imread(rgb_path)[..., :3]
+            img = imread(rgb_path)
+            # img = imageio.imread(rgb_path)[..., :3]
             if self.downsampling_factors[index]!=1:
                 # resized_img = cv2.resize(img, dsize=(img.shape[1]//self.downsampling_factor, img.shape[0]//self.downsampling_factor), interpolation=cv2.INTER_AREA)
                 resized_img = im_resize(img,scale_factor=self.downsampling_factors[index])

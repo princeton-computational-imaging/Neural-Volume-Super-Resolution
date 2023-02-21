@@ -14,6 +14,7 @@ from imresize import imresize
 import os
 import sys
 import pickle
+import imageio
 
 def safe_saving(file_name,content,suffix,best=False,run_time_signature=0):
     if run_time_signature:
@@ -73,6 +74,15 @@ def rgetattr(obj, attr, *args):
     def _getattr(obj, attr):
         return getattr(obj, attr, *args)
     return functools.reduce(_getattr, [obj] + attr.split('.'))
+
+def deep_update(org_dict,new_dict):
+    for k,v in new_dict.items():
+        if isinstance(v,dict):
+            org_dict[k] = deep_update(org_dict[k],v)
+        else:
+            org_dict[k] = v
+    return org_dict
+    
 class null_with:
     def __enter__(self):
         pass
@@ -129,9 +139,10 @@ class ImageSampler:
         # assert same_scene_probs,'Unsupported yet.'
 
     def update_active(self,active_scenes):
+        self.active_scenes = active_scenes
         self.im_inds,self.im_probs = [],[]
-        for sc in active_scenes:
-            self.im_inds.extend(self.scenes_dict[sc])
+        for sc_num,sc in enumerate(active_scenes):
+            self.im_inds.extend([(sc_num,ind) for ind in self.scenes_dict[sc]])
             if sc in self.scene_probs:
                 self.im_probs.extend(len(self.scenes_dict[sc])*[self.scene_probs[sc]/len(self.scenes_dict[sc])])
             else:
@@ -141,7 +152,8 @@ class ImageSampler:
         self.im_probs /= np.sum(self.im_probs)
 
     def sample(self):
-        return np.random.choice(self.im_inds,size=1,p=self.im_probs)[0]
+        chosen = np.random.choice(len(self.im_inds),size=1,p=self.im_probs)[0]
+        return self.active_scenes[self.im_inds[chosen][0]],self.im_inds[chosen][1]
     
 
 def set_config_defaults(source,target):
@@ -240,6 +252,12 @@ def integral_image(image):
 
 def img2mse(img_src, img_tgt):
     return torch.nn.functional.mse_loss(img_src, img_tgt)
+
+def imread(path,with_alpha=False):
+    image = imageio.imread(path)
+    if not with_alpha and image.shape[2]>3:
+        image = image[...,:3]*(image[...,3:]>0)
+    return (image/255.0).astype(np.float32)
 
 def assert_list(input):
     return input if isinstance(input,list) else [input]

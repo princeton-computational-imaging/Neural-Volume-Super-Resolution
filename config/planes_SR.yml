@@ -1,7 +1,8 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_micShip_EDSRrecField15
+  id: Synt_Res29Sc200_27Sc800_32_LR100_400_fromDetachedLR_imConstLossFreq10nonSpatial
+  # id: Synt_Res29Sc200_27Sc800_32_LR100_400_detachedLR
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -38,29 +39,19 @@ dataset:
   #   near: 0
   #   far:  1
   #   no_ndc: False
-  max_scenes_eval:  4
+  max_scenes_eval:  2 #4
   # auto_remove_val:  True
   dir:
     train:
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
-      # 8,200,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
       2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] #mic,ship
-      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #'chair','lego',
-      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']      # 'drums','ficus','hotdog','materials',
-      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti'] #,'cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'      # 8,800,32,'llff':   ['orchids','flower','fortress','horns','leaves','room','trex'] #,'fern'
-      # 16,200,128,'llff':   ['horns','leaves']
-      # 4,800,128,'llff':   ['leaves']
-      # 8,200,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 2,800,32:   ['ficus','hotdog','lego','materials','mic','ship']
-      # 8,200,32:   ['chair','mic']
-      # 2,800,32:   ['chair']
       # 8,200,32:   ['mic','mic#1']
+      8,200,32,'synt',0:   ['ship','mic']
       # 2,800,32:   ['mic']
     val:
       2,800,32:   ['mic','ship']
       # 2,800,32:   ['chair','lego']
       # 2,800,32:   ['mic']
+      # 2,800,32:   ['ship']
       # 2,800,32:   ['drums','ficus','hotdog','materials']
       # 2,800,32: ['chair','drums',]
   # Optionally, provide a path to the pre-cached dataset dir. This
@@ -84,18 +75,20 @@ models:
   # E2E model with 6 HR training scenes:
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res8Sc200_6Sc800_32_LR100_400_detachLR_1
   # Model with 27 training scenes, without mic and ship:
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0
   # Model with 27 training scenes, without chair and lego:
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_chairLego_0
   # Model with 25 training scenes, without 'drums','ficus','hotdog','materials':
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_25Sc800_32_LR100_400_posFeatCatDecCh256_remainingFour_0
+  # Model with 27 training scenes, without mic and ship, after fixing the bug that did not detach the coures model LR planes in SR iterations:
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
 
 # Optimizer params.
 optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 5.0E-4 #5.0E-5 # 5.0E-3
+  lr: 5.E-4 #5.0E-5 # 5.0E-3
 
 # NeRF parameters.
 nerf:
@@ -126,8 +119,8 @@ nerf:
     # Save GPU memory by holding plane variables on cpu memory until needed:
     # save_GPU_memory: True
     store_planes:
-      # buffer_size:  1 #3 #5
-      steps_per_buffer: 8 #40
+      # buffer_size:  1
+      steps_per_buffer: 200
     # Whether or not to perturb the sampled depth values.
     perturb: True
     # Number of depth samples per ray for the coarse network.
@@ -168,12 +161,18 @@ super_resolution:
   # Super-resolve view-directions plane as well, or only positional planes:
   SR_viewdir: False
   input_normalization:  True
-  consistency_loss_w: 0 # 0.001
+  # consistency_loss_w: 0 # 0.001
   # plane_loss_w:  0 #1
+  im_consistency_loss_w: 1 #1#0
+  blind_only_im_consistency:  True
+  im_consistency_iters_freq:  10
+  antialias_rendered_downsampling:  False
+  nonspatial_sampling4im_consistency: True
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
   model:
+    path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
     # Name of the torch.nn.Module class that implements the model.
     type: EDSR
     # Number of layers in the model.
@@ -184,7 +183,7 @@ super_resolution:
     # Number of residual blocks (originally 32):
     n_blocks: 32
     # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
-    receptive_field_bound:  15
+    # receptive_field_bound:  15
     # scale_factor: 4 #sqrt #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
     # single_plane: False

@@ -1,12 +1,14 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_HRplanes_micShip
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_NoHRinfoBug_trainScenes21SR6Dec_micShip #_HRplanes
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_NoHRinfoBug_noPlnDetach_micShip
-  id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_21SepDecSRscenesNoProbs_AllPlnsSR_micShip
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromDetachedLR_imConsistLoss_WOplanes_micShip
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_HRplanes_micShip #_HRplanes
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
+  id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_NoHRinfoBug_noPlnDetach_micShip
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_AllPlnsSR_micShip
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss #_micShip #_PZerMean1 #_chairLego
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_SepPlanesSR_micShip
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromDetachedLR_imConsistLossFreq10nonSpatial_WOplanes_HrLr_micShip
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_imConsistLoss_micShip
   # id: E2E_Synt_Res27Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NOmicShip
   # id: E2E_Synt_Res16Sc200_15Sc800_32_LR100_400_SRrecField55_PZerMean1_DatasetDirVal2_800_32ship_0
   # id: E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_2xPlanesLR
@@ -55,18 +57,18 @@ dataset:
     train:
       # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] # old
       # 8,200,32:   ['house','robot','chair','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','mic','ship'] # All 29 scenes
-      8,200,32,'synt',None:   ['house','robot','chair','ficus','materials','holiday']
-      8,200,32,'synt',None,['decoder']:   ['bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','mic','ship'] # All 29 scenes
+      # 8,200,32,'synt',None:   ['house','robot','chair','ficus','materials','holiday']
+      # 8,200,32,'synt',None,['decoder']:   ['bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','mic','ship'] # All 29 scenes
       # 8,200,32:   ['holiday']      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
       # 8,200,32,'synt',None,['decoder']:   ['motorbike','ship']      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      # 2,800,32:   ['house','robot','chair','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #mic,ship
-      2,800,32,'synt',None:   ['house','robot','chair','ficus','materials','holiday'] #mic,ship
-      2,800,32,'synt',None,['decoder']:   ['bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums',] #mic,ship
+      2,800,32:   ['house','robot','chair','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #mic,ship
+      # 2,800,32,'synt',None:   ['house','robot','chair','ficus','materials','holiday'] #mic,ship
+      # 2,800,32,'synt',None,['decoder']:   ['bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums',] #mic,ship
       # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #'chair','lego',
       # 32,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
       # 2,800,32:   ['holiday'] #mic,ship
       # 2,800,32,'synt',None,['decoder']:   ['motorbike'] #mic,ship
-      # 8,200,32:   ['mic','ship']
+      8,200,32,'synt',10:   ['mic','ship']
       # 2,800,32:   ['mic']
     val:
     #   # 8,800,32,'llff':   ['fern',]
@@ -84,14 +86,13 @@ dataset:
   cachedir: cache/legocache200
   # For the Blender datasets (synthetic), optionally return images
   # at half the original resolution of 800 x 800, to save space.
-  # half_res: True
   # Stride (include one per "testskip" images in the dataset).
   testskip: 10
   llffhold: 2 #4
 
 # Model parameters.
 models:
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_3
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.
@@ -169,8 +170,8 @@ nerf:
   # encode_direction_fn: None
   train:
     # End-to-end training of representation and SR models
-    what: ['LR_planes','decoder','SR']
-    # train_end2end:  LR_planes # HR_planes #LR_planes
+    # what: ['LR_planes','decoder','SR'] #,'HR_planes',
+    what: ['decoder','SR'] #,'HR_planes','LR_planes',
     # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes
     # sr_val_scenes_with_LR:  True
     # In the end-2-end training, learn decoder and sr model separately by not performing decoder steps during SR iterations
@@ -180,7 +181,7 @@ nerf:
     # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
     # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
     #  since HR images are not available for their training) (default: True):
-    detach_LR_planes: False
+    # detach_LR_planes: False
     # seperate_SR_planes_opt: True
     # # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
     # spatial_sampling: 1.
@@ -252,6 +253,11 @@ super_resolution:
   # input_normalization:  True
   # consistency_loss_w: 0 #1 #0.001
   # plane_loss_w:  0 #1
+  im_consistency_loss_w: 1 #1#0
+  blind_only_im_consistency:  True
+  im_consistency_iters_freq:  10
+  antialias_rendered_downsampling:  False
+  nonspatial_sampling4im_consistency: True
   # Add Gaussian noise to SR input, with STD relative to the plane's STD:
   # sr_input_noise: 0.1
   # sr_output_noise:  1
@@ -260,6 +266,7 @@ super_resolution:
   # plane_resize_mode:  bicubic
   # all_planes_dss_layers: 4
   model:
+    path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
     # Name of the torch.nn.Module class that implements the model.
     type: EDSR
     # type: SRResNet
@@ -276,5 +283,5 @@ super_resolution:
     # receptive_field_bound:  55
     # scale_factor: 4 #sqrt #one #sqrt #linear
     # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
-    single_plane: False
+    # single_plane: False
     # per_channel_sr: True
