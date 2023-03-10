@@ -65,10 +65,6 @@ class BlenderDataset(torch.utils.data.Dataset):
             raise Exception('I suspect an overlap between training and validation scenes. The following appear in both:\n%s'%([s for s in val_ids if s in train_ids]))
         train_dirs = train_dirs[1]
         self.all_scenes.extend(train_dirs)
-        # if not eval_mode and assert_LR_ver_of_val:
-        #     for i,sc in enumerate(val_ids):
-        #         if sc not in train_ids: # A blind validation scene:
-        #             pass
         self.images, self.poses, render_poses, self.hwfDs, i_split,self.per_im_scene_id = [],torch.zeros([0,4,4]),[],[],[np.array([]).astype(np.int64) for i in range(3)],[]
         scene_id,self.val_only_scene_ids,self.coords_normalization = -1,[],{}
         self.scene_id_plane_resolution = {}
@@ -103,6 +99,7 @@ class BlenderDataset(torch.utils.data.Dataset):
                             adjust_az_range=getattr(scene_norm_coords,'adjust_azimuth_range',False),adjust_elevation_range=getattr(scene_norm_coords,'adjust_elevation_range',False))
 
         self.on_the_fly_load = len(self.all_scenes)>ON_THE_FLY_SCENES_THRESHOLD
+        if self.on_the_fly_load:    self.marg2crop = {}
         for basedir,ds_factor,plane_res,scene_type,scene_prob,module_confinement in zip(tqdm(self.all_scenes,desc='Loading scenes'),self.downsampling_factors,plane_resolutions,scene_types,scene_probs,module_confinements):
             scene_path = os.path.join(config[scene_type].root,basedir)
             scene_id = self.get_scene_id(basedir,ds_factor,plane_res)
@@ -124,7 +121,7 @@ class BlenderDataset(torch.utils.data.Dataset):
                 assert scene_type=='synt'
                 setattr(config,scene_type,{'root':config.root,'near':config.near,'far':config.far})
                 # scene_path = os.path.join(config.root,basedir)
-            base_ds_factor = 1
+            # base_ds_factor = 1
             if search('##',basedir) is not None:
                 if search('##(\d)+',basedir) is not None:
                     scene_path = scene_path.replace(search('##(\d)+',basedir).group(0),'')
@@ -145,14 +142,16 @@ class BlenderDataset(torch.utils.data.Dataset):
                 )
             elif scene_type=='llff':
                 assert scene_id not in self.ds_kernels,'Unsupported'
-                cur_images, cur_poses, _, _, cur_i_split,base_factor = load_llff.load_llff_data(
+                cur_images, cur_poses, _, _, cur_i_split,load_params = load_llff.load_llff_data(
                     scene_path,
                     factor=ds_factor,
                     base_factor=min(self.downsampling_factors),
                     max_factor=max(self.downsampling_factors),
                     load_imgs=not self.on_the_fly_load,
                 )
-                if self.on_the_fly_load:    self.base_factor = base_factor
+                if self.on_the_fly_load:    
+                    self.base_factor = load_params[0]
+                    self.marg2crop[scene_id] = load_params[1]
                 cur_images = [im for im in cur_images]
                 cur_hwfDs = cur_poses[0, :3, -1]
                 cur_hwfDs = [int(cur_hwfDs[0]),int(cur_hwfDs[1]),cur_hwfDs[2].item(),ds_factor]
@@ -200,10 +199,14 @@ class BlenderDataset(torch.utils.data.Dataset):
         if self.on_the_fly_load:
             img_target = imread(self.images[index])
             # img_target = (imageio.imread(self.images[index])/ 255.0).astype(np.float32)
+            if self.per_im_scene_id[index] in self.marg2crop:
+                marg2crop = self.marg2crop[self.per_im_scene_id[index]]
+                img_target = img_target[marg2crop[0]:-marg2crop[0] if marg2crop[0]>0 else None,marg2crop[1]:-marg2crop[1] if marg2crop[1]>0 else None,:]
+            resizing_factor = 1*cur_ds_factor
             if hasattr(self,'base_factor'): #LLFF
-                cur_ds_factor //= self.base_factor
-            if cur_ds_factor>1:
-                img_target = im_resize(img_target, scale_factor=cur_ds_factor,
+                resizing_factor //= self.base_factor
+            if resizing_factor>1:
+                img_target = im_resize(img_target, scale_factor=resizing_factor,
                     blur_kernel=self.ds_kernels[self.per_im_scene_id[index]] if self.per_im_scene_id[index] in self.ds_kernels else None)
             img_target = torch.from_numpy(img_target)
         else:

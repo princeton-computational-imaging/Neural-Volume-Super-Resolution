@@ -272,6 +272,18 @@
             "args":["--config","config/NeRF_LR.yml"]
         },
         {
+            "name": "resume NeRF LR",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/NeRF_LR.yml",
+                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
+            ]
+        },
+        {
             "name": "NeRF LR EVAL",
             "type": "python",
             "request": "launch",

@@ -11,19 +11,24 @@ from skimage.metrics import structural_similarity
 import lpips
 import torch
 import sys
+sys.path.append('.')
 import pickle
-from nerf_helpers import imread
+from nerf_helpers import imread,calc_resize_crop_margins
 # from nerf_helpers import bicubic_interp
 
 DEBUG_MODE = False #False #True
-FIND_LEADING = True #False
-REF_SCORES = None #'load','save'
+FIND_LEADING = True #True #False
+REF_SCORES = 'save' #None #'load','save'
 SORT_SCORES = True #False
-DTU_SCENES = True #False #True
+DTU_SCENES = False #False #True
+LLFF_SCENES = False
 if DTU_SCENES:
     USE_ALL_SCENES = True
     HR_DS_FACTOR = 1
     GT_IMS_PATH = '/scratch/gpfs/yb6751/datasets/rs_dtu_4/DTU'
+elif LLFF_SCENES:
+    USE_ALL_SCENES = False
+    HR_DS_FACTOR = 8
 else:
     USE_ALL_SCENES = False
     HR_DS_FACTOR = 2
@@ -39,43 +44,53 @@ GT_AS_LR_INPUTS = False #True
 # SCENES = ['ship##Gauss2','mic##Gauss2'] #,'leaves','horns' Real scenes
 # SCENES = ['ship##Gauss2','mic##Gauss2','lego##Gauss2','chair##Gauss2']
 SCENES = ['ship','mic','lego','chair']
+# SCENES = ['mic'] #,'lego''chair','ship',
+# SCENES = ['orchids','fern'] #,'chair','ship'
 
 RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/'
 SAVE_BICUBIC = RESULTS_PATH+'bicubic_ours'
 # OUR_RESULTS_PATH = RESULTS_PATH+'ours'
 # EXPERIMENT_ID = 'ours'
-EXPERIMENT_ID = 'E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCat_andGauss_0'
+# EXPERIMENT_ID = 'E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromDetachedLR_imConsistLossFreq10nonSpatial_WOplanes_HrLr_micShip_0_intermediate'
+# EXPERIMENT_ID = 'ours_ICCV_perSceneRefine'
+EXPERIMENT_ID = 'ours_gaussian'
 # OUR_RESULTS_PATH = RESULTS_PATH+EXPERIMENT_ID
 if DTU_SCENES:
     OUR_RESULTS_PATH = RESULTS_PATH+'E2E_DTU_103ScRes200_88Sc800_32_LR100_400_posFeatCatDecCh256_0'
 else:
-    OUR_RESULTS_PATH = RESULTS_PATH+'E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0'
+    # OUR_RESULTS_PATH = RESULTS_PATH+'E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0'
+    OUR_RESULTS_PATH = RESULTS_PATH+EXPERIMENT_ID
 
 # OUR2_RESULTS_PATH = RESULTS_PATH+'E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCat_andGauss_0'
 # BASELINES_PATH = RESULTS_PATH+'baselines'+'/'+EXPERIMENT_ID
-BASELINES_PATH = OUR_RESULTS_PATH.replace(RESULTS_PATH,RESULTS_PATH+'baselines/')
-# BASELINES_PATH = RESULTS_PATH+'baselines'
+# BASELINES_PATH = OUR_RESULTS_PATH.replace(RESULTS_PATH,RESULTS_PATH+'baselines/')
+BASELINES_PATH = RESULTS_PATH+'baselines'
+POST_SR_PATH = os.path.join(BASELINES_PATH,'postSR_MipNeRF')
 PER_SCENE = False
 PER_MODEL_PSNR_GAIN = True # When using models other than our plane-based (e.g. NeRF), compute PSNR gain with respect to the LR version produced by that model.
 
+postSR_pattern = lambda scene:scene+'_DS%d/*'%(HR_DS_FACTOR*SR_FACTOR)
 METHODS = OrderedDict({
     'GT_synt':{'p_im':'(?<=\/r_)(\d)+(?=\.png$)','p_scene':lambda scene:(scene[:scene.find('##')] if '##' in scene else scene)+'/test/*','path':GT_IMS_PATH,},
-    # 'GT_real':{'p_im':'(?<=\/image)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'/images_4/*','path':'/scratch/gpfs/yb6751/datasets/LLFF',},
-    'LR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*fine/*'%(HR_DS_FACTOR*SR_FACTOR),'path':OUR_RESULTS_PATH,},
+    # 'GT_real':{'p_im':'(?<=\/image)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'/images_8/*','path':'/scratch/gpfs/yb6751/datasets/LLFF',},
+    # 'LR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*fine/*'%(HR_DS_FACTOR*SR_FACTOR),'path':OUR_RESULTS_PATH,},
     'ours':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
     # 'ours2':{'title':'Ours','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR2_RESULTS_PATH},
     'naive':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*fine/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
     # 'nerf':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)\.png$)','p_scene':lambda scene:'lr_nerf_'+scene+'_0/'+scene+'_DS%d/blind_fine/*'%(HR_DS_FACTOR),'path':os.path.join(BASELINES_PATH,'nerf'),'own_lr':True},
     # 'mip_nerf':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)\.png$)','p_scene':lambda scene:'lr_nerf_'+scene+'_mip_0/'+scene+'_DS%d/blind_fine/*'%(HR_DS_FACTOR),'path':os.path.join(BASELINES_PATH,'nerf'),'own_lr':True},
-    # 'rstt_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_RSTT_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BASELINES_PATH},
-    # 'rstt':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_RSTT_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BASELINES_PATH},
-    # 'swin_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SWIN_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BASELINES_PATH},
-    # 'srgan_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SRGAN_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BASELINES_PATH},
-    # 'edsr_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BASELINES_PATH},
-    # 'swin':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SWIN_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BASELINES_PATH},
-    # 'srgan':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SRGAN_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BASELINES_PATH},
-    # 'edsr':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BASELINES_PATH},
-    # 'preSR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/blind_fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/planes_on_SR_Res800_32_0'},
+    'mip_nerf':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d/blind_fine/*'%(HR_DS_FACTOR),'path':os.path.join(RESULTS_PATH,'baselines/MipNeRF')}, # New pre-SR baseline configuration, using Mip-NeRF representation model trained on images super-resolved using a pre-trained SwinIR model.
+    # 'rstt_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_RSTT_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    # 'rstt':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_RSTT_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    # 'swin_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SWIN_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    # 'srgan_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SRGAN_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    # 'edsr_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    # 'swin':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SWIN_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    # 'srgan':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SRGAN_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    # 'edsr':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    # 'preSR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/blind_fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/planes_on_SR_Res800_32_0'}, # Old pre-SR baseline configuration, using planes representation model trained on images super-resolved using a trained-from-scratch EDSR model
+    # 'preSR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2/blind_fine/*','path':os.path.join(RESULTS_PATH,'baselines/MipNeRF_preSR')}, # New pre-SR baseline configuration, using Mip-NeRF representation model trained on images super-resolved using a pre-trained SwinIR model.
+    # 'preSRscratch':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d/blind_fine/*'%(HR_DS_FACTOR),'path':os.path.join(RESULTS_PATH,'baselines/MipNeRF_preSRscratch')}, # New pre-SR baseline configuration, using Mip-NeRF representation model trained on images super-resolved using a SwinIR model trained from scratch on our scene training set.
     # 'view':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/Synt_Res16Sc800_32_400_NerfUseviewdirsTrue_1'},
     # 'no_view':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/Synt_Res16Sc800_32_400_NerfUseviewdirsFalse_0'},
     # 'PlRes100':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes100*/*fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/plane_resolution_RES100_400_1600_0'},
@@ -87,7 +102,7 @@ METHODS = OrderedDict({
 })
 GT_method = 'GT_synt' if 'GT_synt' in METHODS else 'GT_real'
 # METHODS_2_SHOW = ['edsr','bicubic','ours']
-SCORES_2_SHOW = ['PSNR','SSIM'] #,'LPIPS'
+SCORES_2_SHOW = ['PSNR','SSIM','LPIPS'] #
 # METHODS_2_SHOW = OrderedDict([(k,i) for i,k in enumerate(METHODS_2_SHOW)])
 # assert [m in METHODS for m in METHODS_2_SHOW]
 def calc_psnr(im1,im2):
@@ -135,7 +150,10 @@ for sc_num,scene in enumerate(SCENES):
             print("!!!!!!!!!!! DEBUG MODE !!!!!!!!!!!!!")
             break
         GT_im = load_im(im_path)
-        if HR_DS_FACTOR>1:
+        marg2crop = calc_resize_crop_margins(GT_im.shape,SR_FACTOR)
+        if marg2crop is not None:
+            GT_im = GT_im[marg2crop[0]:-marg2crop[0] if marg2crop[0]>0 else None,marg2crop[1]:-marg2crop[1] if marg2crop[1]>0 else None,:]
+        if HR_DS_FACTOR>1 and 'images_%d'%(HR_DS_FACTOR) not in im_path:
             GT_im = cv2.resize(GT_im, dsize=(GT_im.shape[1]//HR_DS_FACTOR,GT_im.shape[0]//HR_DS_FACTOR), interpolation=cv2.INTER_AREA)
         if 'bicubic' in METHODS:
             if GT_AS_LR_INPUTS:
@@ -167,11 +185,12 @@ for sc_num,scene in enumerate(SCENES):
 
 def avergae_scores(scores_dict,per_scene=False):
     if per_scene:
-        # return dict([(m,dict([(k,np.mean(v)) for k,v in scores_dict[m].items()])) for m in scores_dict])
         return dict([(m,dict([(k,(np.mean(v),np.std(v))) for k,v in scores_dict[m].items()])) for m in scores_dict])
     else:
-        # return dict([(m,np.mean([np.mean(v) for v in scores_dict[m].values()])) for m in scores_dict])
-        return dict([(m,(np.mean([np.mean(v) for v in scores_dict[m].values()]),np.std([v_ for v in scores_dict[m].values() for v_ in v]))) for m in scores_dict])
+        AVG_PER_SCENE_STDS = True
+        return dict([(m,(np.mean([np.mean(v) for v in scores_dict[m].values()]),
+            np.mean([np.std(v) for v in scores_dict[m].values()]) if AVG_PER_SCENE_STDS else np.std([v_ for v in scores_dict[m].values() for v_ in v])
+            )) for m in scores_dict])
 
 def find_leading(scores,metric,k):
     methods_4_comparison = [meth for meth in METHODS if meth not in ['LR',GT_method,'ours']]

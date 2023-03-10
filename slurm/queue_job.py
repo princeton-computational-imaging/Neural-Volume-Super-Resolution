@@ -23,19 +23,19 @@ CONFIG_FILE = "config/planes_E2E.yml"
 # CONFIG_FILE = "config/Real_planes_only.yml"
 
 
-RESUME_TRAINING = 0
-# RESUME_TRAINING = None
-# EVAL = 0
 EVAL = None
-EVAL_WHITE = False
+# RESUME_TRAINING = 0
+RESUME_TRAINING = None
+# EVAL = 0
 
 # PARAM2SWEEP = (['nerf','use_viewdirs'],[True,False])
 # PARAM2SWEEP = (['dataset','max_scenes'],[10*i for i in range(1,11)])
 # PARAM2SWEEP = (['models','coarse','num_planes'],[6,9])
 # PARAM2SWEEP = (['dataset','dir','val','2,800,32'],['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'])
 PARAM2SWEEP = None
+EVAL_WHITE = False
 
-RUN_TIME = 1 # 20 # 10 # Hours
+RUN_TIME = 48 # 20 # 10 # Hours
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True
 
@@ -107,7 +107,7 @@ for run_num in (trange(len(PARAM2SWEEP[1])) if len(PARAM2SWEEP[1])>1 else range(
         else:
             print("Evaluating model in %s"%(job_identifier))
 
-    config_filename = "config%s.yml"%(str(run_num) if sweep_jobs else '')
+    config_filename = "config%s%s.yml"%(str(run_num) if sweep_jobs else '','_Eval' if EVAL is not None else '')
     if RESUME_TRAINING is None or OVERWRITE_RESUMED_CONFIG or not os.path.exists(code_folder):
         if run_num==0:
             for f in [f for f in os.listdir() if f[-3:]==".py"]:
@@ -125,14 +125,18 @@ for run_num in (trange(len(PARAM2SWEEP[1])) if len(PARAM2SWEEP[1])>1 else range(
     if RESUME_TRAINING is not None:
         python_command += " --load-checkpoint %s"%(saved_models_folder)
         if EVAL is not None:
-            python_command += " --eval video --results_path %s"%(EVAL_FOLDER)
+            # python_command += " --eval video --results_path %s"%(EVAL_FOLDER)
+            python_command += " --eval images --results_path %s"%(EVAL_FOLDER)
     eval_prefix = 'EVAL_' if EVAL is not None else ''
+    def hours2string(hours):
+        return '%s%s_'%('%dD'%(hours//24) if hours>=24 else '','%dH'%(hours%24) if hours%24!=0 else '')
+
     with open(os.path.join("slurm/scripts/%s.sh"%(eval_prefix+job_identifier)),"w") as f:
         f.write("#!/bin/bash\n")
         f.write("#SBATCH --nodes=1\n")
         f.write("#SBATCH --ntasks=1\n")
-        # f.write("#SBATCH --job-name=%s\n"%(eval_prefix+job_name%(run_suffix(run_num))))
-        f.write("#SBATCH --job-name=%s\n"%(eval_prefix+job_identifier))
+        f.write("#SBATCH --job-name=%s\n"%(hours2string(RUN_TIME)+eval_prefix+job_identifier))
+        # f.write("#SBATCH --job-name=%s\n"%(eval_prefix+job_identifier))
         f.write("#SBATCH --cpus-per-task=10\n")
         # f.write("#SBATCH --mem=64G\n")
         f.write("#SBATCH --gres=gpu:1\n")

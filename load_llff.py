@@ -1,5 +1,5 @@
 import os
-from nerf_helpers import im_resize
+from nerf_helpers import im_resize,calc_resize_crop_margins
 import imageio
 import numpy as np
 import torch
@@ -75,6 +75,7 @@ def _load_data(basedir, factor=None,base_factor=1,max_factor=1, width=None, heig
     # actual_base_factor = 1*base_factor
     # base_factor = 1*factor
     while not os.path.isdir(os.path.join(basedir,"images%s"%('_%d'%(base_factor) if base_factor>1 else ''))):
+        assert base_factor>=1
         base_factor //= 2
     images_subdir = "images%s"%('_%d'%(base_factor) if base_factor>1 else '')
     # factor *= base_factor
@@ -106,13 +107,16 @@ def _load_data(basedir, factor=None,base_factor=1,max_factor=1, width=None, heig
         return
 
     sh = np.array(imageio.imread(imgfiles[0]).shape)
-    crop_origs = any([v%(max_factor//base_factor) for v in sh[:2]])
-    if crop_origs:
-        marg2crop = np.zeros([2]).astype(np.int32)
-        for dim in [0,1]:
-            while (sh[dim]-2*marg2crop[dim])%(max_factor//base_factor):
-                marg2crop[dim] += 1
-                assert marg2crop[dim]<max_factor//base_factor,'Cannot find a suitable crop'
+    marg2crop = calc_resize_crop_margins(sh,max_factor//base_factor)
+    # crop_origs = any([v%(max_factor//base_factor) for v in sh[:2]])
+    # marg2crop = None
+    # if crop_origs:
+    #     marg2crop = np.zeros([2]).astype(np.int32)
+    #     for dim in [0,1]:
+    #         while (sh[dim]-2*marg2crop[dim])%(max_factor//base_factor):
+    #             marg2crop[dim] += 1
+    #             assert marg2crop[dim]<max_factor//base_factor,'Cannot find a suitable crop'
+    if marg2crop is not None:
         sh[:2] -= 2*marg2crop
     sh = (sh[0]//(factor//base_factor),sh[1]//(factor//base_factor),sh[2])
     poses[:2, 4, :] = np.array(sh[:2]).reshape([2, 1])
@@ -129,17 +133,17 @@ def _load_data(basedir, factor=None,base_factor=1,max_factor=1, width=None, heig
                 return imageio.imread(f)
 
         imgs = [imread(f)[..., :3] / 255.0 for f in imgfiles]
-        if crop_origs:
+        if marg2crop is not None:
             imgs = [im[marg2crop[0]:-marg2crop[0] if marg2crop[0]>0 else None,marg2crop[1]:-marg2crop[1] if marg2crop[1]>0 else None,:] for im in imgs]
         if factor!=base_factor:
             imgs = [im_resize(im, scale_factor=factor//base_factor) for im in imgs]
         imgs = np.stack(imgs, -1)
     else:
-        assert not crop_origs,'Unsupported yet'
+        # assert not crop_origs,'Unsupported yet'
         imgs = imgfiles
 
     # print("Loaded image data", imgs.shape, poses[:, -1, 0])
-    return poses, bds, imgs,base_factor
+    return poses, bds, imgs,(base_factor,marg2crop)
 
 
 def normalize(x):
@@ -285,7 +289,7 @@ def load_llff_data(
     basedir, factor=8,base_factor=1,max_factor=1, recenter=True, bd_factor=0.75, spherify=False, path_zflat=False,load_imgs=True,
 ):
 
-    poses, bds, imgs,base_factor = _load_data(
+    poses, bds, imgs,load_params = _load_data(
         basedir, factor=factor,base_factor=base_factor,max_factor=max_factor,load_imgs=load_imgs,
     )  # factor=8 downsamples original imgs by 8x
     # print("Loaded", basedir, bds.min(), bds.max())
@@ -358,4 +362,4 @@ def load_llff_data(
     # images = images.astype(np.float32)
     poses = poses.astype(np.float32)
 
-    return torch.from_numpy(images.astype(np.float32)) if load_imgs else images, torch.from_numpy(poses), bds, render_poses, i_test,None if load_imgs else base_factor
+    return torch.from_numpy(images.astype(np.float32)) if load_imgs else images, torch.from_numpy(poses), bds, render_poses, i_test,None if load_imgs else load_params

@@ -1,7 +1,11 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: lr_nerf_ship_mip
+  # id: lr_nerf_chair_mip_0
+  # id: lr_nerf_chairGauss_mip_0
+  id: lr_nerf_orchids_mip_preSRscratch_0
+  # id: lr_nerf_chair_mip_preSR
+  # id: lr_nerf_orchids_mip_0
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -21,7 +25,9 @@ dataset:
   # type: DTU # DTU,synt
   # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
   synt: 
-    root: /scratch/gpfs/yb6751/datasets/Synthetic
+    # root: /scratch/gpfs/yb6751/datasets/Synthetic
+    # root: /tigress/yb6751/projects/NeuralMFSR/results/SwinIR4preSR
+    root: /tigress/yb6751/projects/NeuralMFSR/results/ScratchSwinIR4preSR
     # Near clip plane (clip all depth values closer than this threshold).
     near: 2
     # Far clip plane (clip all depth values farther than this threshold).
@@ -29,17 +35,20 @@ dataset:
     no_ndc: True
   llff: 
     root: /scratch/gpfs/yb6751/datasets/LLFF
+    # root: /tigress/yb6751/projects/NeuralMFSR/results/ScratchSwinIR4preSR
     near: 0
     far:  1
     no_ndc: False
   max_scenes_eval:  9
   # auto_remove_val:  True
   dir:
-    # train:
-    #   8,:   ['ship']
+    train:
+    #   # 8,:   ['chair'] #,'chair##Gauss2'
+      32,None,None,'llff':   ['orchids']
     val:
-      # 2,:   ['ship']
-      8,:   ['ship']
+    #   8,:   ['chair'] #,'chair##Gauss2'
+      # 32,None,None,'llff':   ['orchids']
+      8,None,None,'llff':   ['orchids']
   testskip: 10
 
 # Model parameters.

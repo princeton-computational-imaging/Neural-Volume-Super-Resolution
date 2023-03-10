@@ -656,10 +656,10 @@ class TwoDimPlanesModel(nn.Module):
         return loss
 
     def return_im_consistency_loss(self,sr,gt_lr=None,gt_hr=None):
-        loss = None
+        # loss = None
         assert (gt_lr is None) ^ (gt_hr is None)
-        if hasattr(self,'SR_model') and self.SR_model.im_consistency_loss_w is not None:
-            loss = torch.nn.functional.l1_loss(gt_lr if gt_hr is None else self.downsample_plane(gt_hr,antialias=True),self.downsample_plane(sr,antialias=True))
+        # if hasattr(self,'SR_model') and self.SR_model.im_consistency_loss_w is not None:
+        loss = torch.nn.functional.l1_loss(gt_lr if gt_hr is None else self.downsample_plane(gt_hr,antialias=True),self.downsample_plane(sr,antialias=True))
         return loss
 
 def create_plane(resolution,num_plane_channels,init_STD):

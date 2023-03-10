@@ -300,7 +300,18 @@ def im_resize(image,scale_factor,blur_kernel=None):
         output = np.clip(imresize(output,scale_factor=1/(scale_factor/cv2_scale_factor),kernel='blurry_cubic_%f'%(blur_kernel['STD']),),0,1).astype(output.dtype)
     return output
 
-def arange_ims(ims_tensor_list,text,psnrs=[],fontScale=1):
+def calc_resize_crop_margins(im_shape,ds_factor):
+    crop_origs = any([v%(ds_factor) for v in im_shape])
+    marg2crop = None
+    if crop_origs:
+        marg2crop = np.zeros([2]).astype(np.int32)
+        for dim in [0,1]:
+            while (im_shape[dim]-2*marg2crop[dim])%(ds_factor):
+                marg2crop[dim] += 1
+                assert marg2crop[dim]<ds_factor,'Cannot find a suitable crop'
+    return marg2crop
+
+def arange_ims(ims_tensor_list,text,psnrs=[],): #fontScale=1):
     num_rows = lambda n_cols:   int(np.ceil(len(ims_tensor_list)/n_cols))
     num_cols = 1
     while num_cols*ims_tensor_list[0].shape[1]<num_rows(num_cols)*ims_tensor_list[0].shape[0]:
@@ -316,14 +327,14 @@ def arange_ims(ims_tensor_list,text,psnrs=[],fontScale=1):
         row.append(
             cast_to_image(
                 cv2.resize(np.array(255*im.cpu()).astype(np.uint8),dsize=(ims_size[1],ims_size[0]),interpolation=cv2.INTER_NEAREST),
-                img_text=text if im_num==0 else None,psnr=psnrs[im_num],fontScale=fontScale
+                img_text=text if im_num==0 else None,psnr=psnrs[im_num], #fontScale=fontScale
             ).transpose(1,2,0)
         )
     row = np.concatenate(row,1)
     rows.append(np.pad(row,((0,0),(0,num_cols*ims_size[1]-row.shape[1]),(0,0)),))
     return np.concatenate(rows,0).transpose(2,0,1)
 
-def cast_to_image(img,img_text=None,psnr=None,fontScale=1):
+def cast_to_image(img,img_text=None,psnr=None,): #fontScale=1):
     if isinstance(img,torch.Tensor):
         # Input tensor is (H, W, 3). Convert to (3, H, W).
         img = img.permute(2, 0, 1)
@@ -331,13 +342,13 @@ def cast_to_image(img,img_text=None,psnr=None,fontScale=1):
         img = np.array(torchvision.transforms.ToPILImage()(img.detach().cpu()))
     # Map back to shape (3, H, W), as tensorboard needs channels first.
     img = np.moveaxis(img, [-1], [0])
+    fontScale = max(1,cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_PLAIN,int(0.05*img.shape[1])))
     if img_text is not None:
         text_color = ((np.mean(img[:,:int(fontScale*img.shape[1]//24),:int(fontScale*15)],axis=(1,2)).astype(np.uint8)+[128,128,128])%256).tolist()
         img = cv2.putText(
             img.transpose(1,2,0),
             img_text,
             (0,int(fontScale*15)),
-            # (img.shape[1]-20*len(img_text),50),
             cv2.FONT_HERSHEY_PLAIN,
             fontScale=fontScale,
             color=text_color,#[255,255,255],
@@ -348,11 +359,10 @@ def cast_to_image(img,img_text=None,psnr=None,fontScale=1):
         img = cv2.putText(
             img.transpose(1,2,0),
             '%.2f'%(psnr),
-            (img.shape[2]//2,img.shape[1]),
-            # (img.shape[1]-20*len(img_text),50),
+            (max(0,img.shape[2]//2-int(fontScale*15)),img.shape[1]),
+            # (img.shape[2]//2,img.shape[1]),
             cv2.FONT_HERSHEY_PLAIN,
             fontScale=fontScale,
-            # color=[255,255,255],
             color=psnr_color,
             thickness=int(np.ceil(np.sqrt(fontScale))),
         ).transpose(2,0,1)

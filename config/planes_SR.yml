@@ -1,8 +1,8 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: Synt_Res29Sc200_27Sc800_32_LR100_400_fromDetachedLR_imConstLossFreq10nonSpatial
-  # id: Synt_Res29Sc200_27Sc800_32_LR100_400_detachedLR
+  # id: Synt_Res29Sc200_27Sc800_32_LR100_400_detachedLR_imConstLossFreq10nonSpatial
+  id: Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach579K_imConsistF10nonSpat_Lean_HrLr_paper4_GaussOnly
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -43,12 +43,14 @@ dataset:
   # auto_remove_val:  True
   dir:
     train:
-      2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] #mic,ship
+      2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] #mic,ship
       # 8,200,32:   ['mic','mic#1']
-      8,200,32,'synt',0:   ['ship','mic']
-      # 2,800,32:   ['mic']
+      # 8,200,32,'synt',0:   ['ship','mic','chair','lego']
+      8,200,32,'synt',0:   ['ship##Gauss2','mic##Gauss2','chair##Gauss2','lego##Gauss2']
+     # 2,800,32:   ['mic']
     val:
-      2,800,32:   ['mic','ship']
+      # 2,800,32:   ['mic','ship']
+      2,800,32:   ['ship##Gauss2','mic##Gauss2','chair##Gauss2','lego##Gauss2']
       # 2,800,32:   ['chair','lego']
       # 2,800,32:   ['mic']
       # 2,800,32:   ['ship']
@@ -81,7 +83,8 @@ models:
   # Model with 25 training scenes, without 'drums','ficus','hotdog','materials':
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_25Sc800_32_LR100_400_posFeatCatDecCh256_remainingFour_0
   # Model with 27 training scenes, without mic and ship, after fixing the bug that did not detach the coures model LR planes in SR iterations:
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy579K
 
 # Optimizer params.
 optimizer:
@@ -107,7 +110,7 @@ nerf:
     # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
     # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
     #  since HR images are not available for their training) (default: True):
-    # detach_LR_planes: False
+    detach_LR_planes: False
     # # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
     # spatial_sampling: 1.
     # Number of random rays to retain from each image.
@@ -160,7 +163,7 @@ super_resolution:
   apply_2_coarse: False #True # False
   # Super-resolve view-directions plane as well, or only positional planes:
   SR_viewdir: False
-  input_normalization:  True
+  # input_normalization:  True
   # consistency_loss_w: 0 # 0.001
   # plane_loss_w:  0 #1
   im_consistency_loss_w: 1 #1#0
@@ -172,7 +175,9 @@ super_resolution:
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
   model:
-    path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
+    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
+    path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy579K
+
     # Name of the torch.nn.Module class that implements the model.
     type: EDSR
     # Number of layers in the model.

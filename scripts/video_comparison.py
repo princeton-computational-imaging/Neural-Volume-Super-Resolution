@@ -76,6 +76,20 @@ SCRIPT = [
     # (0.1,('zoom',1.)),
     (0.,('effect','unhalf')),
 ]
+SCRIPT = [
+    (0.,('effect','half')),
+    (0,('left_view','ours')),
+    (0,('right_view','ours2')),
+    (0,('scene','mic')),
+    # (0.1,('zoom',1.5)),
+    # (0.5,('right_view','preSR')),
+    # (0.65,('scene','chair')),
+    # (1,('scene','ship')),
+    # (1,('scene','chair')),
+    # (0.4,('right_view','rstt')),
+    # (0.1,('zoom',1.)),
+    # (0.,('effect','unhalf')),
+]
 FPS = 20
 TRANSITION_TIMES = {'zoom':1,'fade':0.5,'half':1}
 
@@ -88,7 +102,8 @@ FRAME_NUM = False
 GIF_LIKE_SAVING = None
 
 OUR_RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/ours'
-OUR2_RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0'
+# OUR2_RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0'
+OUR2_RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromDetachedLR_imConsistLossFreq10nonSpatial_WOplanes_HrLr_micShip_0'
 # OUR_RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_andGauss_0'
 BSELINES_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/baselines'
 OUTPUT_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/comparisons'
@@ -96,7 +111,7 @@ SOURCES = {
     'GT':{'p_im':'(?<=\/r_)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'/test/*','path':'/scratch/gpfs/yb6751/datasets/Synthetic',},
     'LR':{'title':'Low-res.','p_im':'(?<=\/)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*LR/*'%(HR_DS_FACTOR*SR_FACTOR),'path':OUR_RESULTS_PATH,},
     'ours':{'title':'Ours','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
-    'ours2':{'title':'Ours','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR2_RESULTS_PATH},
+    'ours2':{'title':'Ours2','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR2_RESULTS_PATH},
     'naive':{'title':'Naive','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*fine/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
     'edsr':{'title':'EDSR','p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BSELINES_PATH},
     'edsr_pre':{'title':'EDSR (Data)','p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':lambda scene:scene+'/*','path':BSELINES_PATH},
