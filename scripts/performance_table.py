@@ -43,9 +43,10 @@ GT_AS_LR_INPUTS = False #True
 # SCENES = ['motorbike','bugatti','chair','donut','lego','materials','teddy'] # Plane resolution ablation study
 # SCENES = ['ship##Gauss2','mic##Gauss2'] #,'leaves','horns' Real scenes
 # SCENES = ['ship##Gauss2','mic##Gauss2','lego##Gauss2','chair##Gauss2']
-SCENES = ['ship','mic','lego','chair']
-# SCENES = ['mic'] #,'lego''chair','ship',
+# SCENES = ['ship','mic','lego','chair']
+SCENES = ['chair','mic','ship','lego'] #
 # SCENES = ['orchids','fern'] #,'chair','ship'
+DEGRADATION = 'Noise5' #None #'Gauss1'
 
 RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/'
 SAVE_BICUBIC = RESULTS_PATH+'bicubic_ours'
@@ -75,6 +76,9 @@ METHODS = OrderedDict({
     # 'GT_real':{'p_im':'(?<=\/image)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'/images_8/*','path':'/scratch/gpfs/yb6751/datasets/LLFF',},
     # 'LR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*fine/*'%(HR_DS_FACTOR*SR_FACTOR),'path':OUR_RESULTS_PATH,},
     'ours':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
+    # 'ours_noSR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:'noSR_'+scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
+    # 'ours_preICCV':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:'old_'+scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
+    # 'ours_noImConsist':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:'noImConsist_'+scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
     # 'ours2':{'title':'Ours','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*SR/*'%(HR_DS_FACTOR),'path':OUR2_RESULTS_PATH},
     'naive':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*fine/*'%(HR_DS_FACTOR),'path':OUR_RESULTS_PATH},
     # 'nerf':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)\.png$)','p_scene':lambda scene:'lr_nerf_'+scene+'_0/'+scene+'_DS%d/blind_fine/*'%(HR_DS_FACTOR),'path':os.path.join(BASELINES_PATH,'nerf'),'own_lr':True},
@@ -117,7 +121,9 @@ if 'LPIPS' in SCORES_2_SHOW:
     loss_fn_alex = lpips.LPIPS(net='alex').cuda()
 im_paths = defaultdict(dict)
 methods_2_load = list(METHODS.keys())
+SCENES = [sc+'##%s'%(DEGRADATION) if DEGRADATION is not None else sc for sc in SCENES]
 if USE_ALL_SCENES:
+    assert DEGRADATION is None
     SCENES = [sc[:sc.find('_DS')] for sc in os.listdir(METHODS['ours']['path']) if '_DS%d'%(HR_DS_FACTOR) in sc]
 for scene in SCENES:
     for i_method,method in enumerate(methods_2_load):

@@ -3,13 +3,14 @@ experiment:
   # Unique experiment identifier
   # id: planes_only_blurrySTD2
   # id: planes_only_258recovery
-  id: E2E_Synt_micShip_planesAndDecoder_withOrigScenes
+  # id: planesOnly_fromOther4NoPaper453K_paper4noised5_0
+  id: planesOnly_fromNoDetach579K_paper4
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 10 # 34  # 8239
   # Number of training iterations.
-  train_iters: 750000
+  train_iters: 250000
   # Number of training iterations after which to validate.
   validate_every: [0.1,5000] #50
   # Number of training iterations after which to checkpoint.
@@ -33,40 +34,40 @@ dataset:
     near: 0
     far:  1
     no_ndc: False
-  max_scenes_eval:  4
+  max_scenes_eval:  2
   # auto_remove_val:  True
   dir:
     train:
       # 8,200,32:   ['ship##1']
-      8,200,32,'synt',1:   ['mic','ship']
+      8,200,32:   ['mic##1','ship##1','chair##1','lego##1',] #'ficus##1','materials##1','hotdog##1','drums##1'
+      # 8,200,32:   ['mic##Noise5','ship##Noise5','chair##Noise5','lego##Noise5',]
+      # 8,200,32:   ['mic##Gauss1','ship##Gauss1','chair##Gauss1','lego##Gauss1',]
+      # 8,200,32,'synt',1:   ['mic','ship']
       # 8,200,32,'synt',1:   ['mic']
-      2,800,32,'synt',1:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
+      # 2,800,32,'synt',1:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon']
       # 2,800,32,'synt',1:   ['engine']
       # 8,200,32:   ['chair##Gauss2','drums##Gauss2','ficus##Gauss2','hotdog##Gauss2','lego##Gauss2','materials##Gauss2','mic##Gauss2','ship##Gauss2',]
     val:
-      2,800,32,'synt':   ['mic','ship']
+      2,800,32:   ['mic##1','ship##1','chair##1','lego##1',] #'ficus##1','materials##1','hotdog##1','drums##1'
+      # 2,800,32:   ['mic##Noise5','ship##Noise5','chair##Noise5','lego##Noise5',]
+      # 2,800,32:   ['mic##Gauss1','ship##Gauss1','chair##Gauss1','lego##Gauss1',]
+      # 2,800,32,'synt':   ['mic','ship']
       # 2,800,32,'synt':   ['mic']
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
   # For the Blender datasets (synthetic), optionally return images
   # at half the original resolution of 800 x 800, to save space.
-  # half_res: True
   # Stride (include one per "testskip" images in the dataset).
   testskip: 10
-  # Do not use NDC (normalized device coordinates). Usually True for
-  # synthetic (Blender) datasets.
-  # no_ndc: True
-  # Near clip plane (clip all depth values closer than this threshold).
-  # near: 2
-  # Far clip plane (clip all depth values farther than this threshold).
-  # far: 6
   llffhold: 2 #4
 
 # Model parameters.
 models:
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res27Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NOmicShip_0
-  use_existing_planes:  True # If true, use saved planes saved in the decoder model folder for the relevant scenes, WITHOUT updating them.
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy453K
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy579K
+  # use_existing_planes:  True # If true, use saved planes saved in the decoder model folder for the relevant scenes, WITHOUT updating them.
+  init_scenes_hack: True
 
 # Optimizer params.
 optimizer:
@@ -91,7 +92,8 @@ nerf:
   # # Encoding function for ray direction (theta, phi).
   # encode_direction_fn: None
   train:
-    what: ['LR_planes','decoder']
+    # what: ['LR_planes','decoder']
+    what: ['LR_planes',]
     # planes_only: True
     # End-to-end training of representation and SR models
     # train_end2end:  LR_planes # HR_planes #LR_planes
@@ -104,7 +106,8 @@ nerf:
     # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
     # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
     #  since HR images are not available for their training) (default: True):
-    # detach_LR_planes: False
+    detach_LR_planes: False
+    # seperate_SR_planes_opt: True
     # # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
     # spatial_sampling: 1.
     # Number of random rays to retain from each image.
@@ -117,7 +120,7 @@ nerf:
     # save_GPU_memory: True
     # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
     store_planes:
-      buffer_size:  5
+      # buffer_size:  5
       # buffer_size:  Makes no sense to use a buffer here since there is no point in alternating between scenes in this experiment (as decoder and SR model are fixed)
       steps_per_buffer: 5
     # Whether or not to perturb the sampled depth values.
@@ -180,6 +183,9 @@ super_resolution:
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
   # model:
-  #   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_1
-  #   path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res16Sc200_14Sc800_32_LR100_400_SepValSceneTrain_1
-  
+  # #   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_1
+    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy453K
+    # type: None
+    # hidden_size: 256 #128 #256
+    # n_blocks: 32
+

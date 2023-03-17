@@ -44,7 +44,7 @@ def pose_spherical(theta, phi, radius):
 
 FIGURE_IMAGES_MODE = False
 class BlenderDataset(torch.utils.data.Dataset):
-    def __init__(self,config,scene_id_func,add_val_scene_LR,eval_mode,scene_norm_coords=None) -> None: #,assert_LR_ver_of_val=False
+    def __init__(self,config,scene_id_func,add_val_scene_LR,eval_mode,scene_norm_coords=None,planes_logdir=None) -> None: #,assert_LR_ver_of_val=False
         ON_THE_FLY_SCENES_THRESHOLD = 2 if eval_mode else 20
         super(BlenderDataset,self).__init__()
         if FIGURE_IMAGES_MODE:  assert eval_mode
@@ -70,7 +70,8 @@ class BlenderDataset(torch.utils.data.Dataset):
         self.scene_id_plane_resolution = {}
         self.i_train,self.i_val,self.scene_probs = OrderedDict(),OrderedDict(),OrderedDict()
         self.scenes_set = set()
-        self.ds_kernels,self.scene_types,self.module_confinements = {},{},{}
+        self.degradations,self.scene_types,self.module_confinements = {},{},{},
+        # self.im_repeat_factor = {}
         # DTU scenes:
         DTU_config = dict(deepcopy(config))
         DTU_config['dir'] = dict([(k,dict([(k_in,v_in) for k_in,v_in in v.items() if "'DTU'" in k_in])) for k,v in DTU_config['dir'].items()])
@@ -121,14 +122,19 @@ class BlenderDataset(torch.utils.data.Dataset):
                 assert scene_type=='synt'
                 setattr(config,scene_type,{'root':config.root,'near':config.near,'far':config.far})
                 # scene_path = os.path.join(config.root,basedir)
-            # base_ds_factor = 1
             if search('##',basedir) is not None:
                 if search('##(\d)+',basedir) is not None:
                     scene_path = scene_path.replace(search('##(\d)+',basedir).group(0),'')
                 elif search('##Gauss(\d)+(\.)?(\d)*',basedir) is not None:
                     # assert not self.on_the_fly_load,"Blurring each image every time would be very slow (consider upgrading to PyTorch Dataloader if necessary)"
                     scene_path = scene_path.replace(search('##Gauss(\d)+(\.)?(\d)*',basedir).group(0),'')
-                    self.ds_kernels[scene_id] = {'base_factor':min(self.downsampling_factors),'STD':float(search('(?<=##Gauss)(\d)+(\.)?(\d)*(?=$)',basedir).group(0))}
+                    self.degradations[scene_id] = {'type':'blur','base_factor':min(self.downsampling_factors),'STD':float(search('(?<=##Gauss)(\d)+(\.)?(\d)*(?=$)',basedir).group(0))}
+                elif search('##Noise(\d)+(\.)?(\d)*',basedir) is not None:
+                    # assert not self.on_the_fly_load,"I want to keep the noise fixed per image, so need to solve this"
+                    scene_path = scene_path.replace(search('##Noise(\d)+(\.)?(\d)*',basedir).group(0),'')
+                    self.degradations[scene_id] = {'type':'noise','base_factor':min(self.downsampling_factors),
+                                                   'STD':float(search('(?<=##Noise)(\d)+(\.)?(\d)*(?=$)',basedir).group(0)),
+                                                   'path':os.path.join(planes_logdir,'degradations')}
             self.scene_types[scene_id] = scene_type
             if scene_type=='synt':
                 cur_images, cur_poses, cur_render_poses, cur_hwfDs, cur_i_split = load_blender_data(
@@ -138,20 +144,24 @@ class BlenderDataset(torch.utils.data.Dataset):
                     val_downsampling_factor=None,
                     splits2use=splits2use,
                     load_imgs=not self.on_the_fly_load,
-                    blur_kernel=self.ds_kernels[scene_id] if scene_id in self.ds_kernels else None,
+                    degradation=self.degradations[scene_id] if scene_id in self.degradations else None,
                 )
             elif scene_type=='llff':
-                assert scene_id not in self.ds_kernels,'Unsupported'
+                assert scene_id not in self.degradations,'Unsupported'
+                assert not hasattr(config.llff,'min_eval_frames') or eval_mode
                 cur_images, cur_poses, _, _, cur_i_split,load_params = load_llff.load_llff_data(
                     scene_path,
                     factor=ds_factor,
                     base_factor=min(self.downsampling_factors),
                     max_factor=max(self.downsampling_factors),
                     load_imgs=not self.on_the_fly_load,
+                    min_eval_frames=getattr(config.llff,'min_eval_frames',None)
                 )
                 if self.on_the_fly_load:    
                     self.base_factor = load_params[0]
                     self.marg2crop[scene_id] = load_params[1]
+                # if load_params[2] is not None:
+                #     self.im_repeat_factor[scene_id] = load_params[2]
                 cur_images = [im for im in cur_images]
                 cur_hwfDs = cur_poses[0, :3, -1]
                 cur_hwfDs = [int(cur_hwfDs[0]),int(cur_hwfDs[1]),cur_hwfDs[2].item(),ds_factor]
@@ -197,7 +207,15 @@ class BlenderDataset(torch.utils.data.Dataset):
             return self.DTU_dataset.item(index,device)
         cur_H,cur_W,cur_focal,cur_ds_factor = self.hwfDs[index]
         if self.on_the_fly_load:
-            img_target = imread(self.images[index])
+            im_path = self.images[index]
+            if im_path is None:
+                go_back = 1
+                while im_path is None:
+                    im_path = self.images[index-go_back]
+                    go_back += 1
+                img_target = float('nan')*imread(im_path)
+            else:
+                img_target = imread(im_path)
             # img_target = (imageio.imread(self.images[index])/ 255.0).astype(np.float32)
             if self.per_im_scene_id[index] in self.marg2crop:
                 marg2crop = self.marg2crop[self.per_im_scene_id[index]]
@@ -206,8 +224,13 @@ class BlenderDataset(torch.utils.data.Dataset):
             if hasattr(self,'base_factor'): #LLFF
                 resizing_factor //= self.base_factor
             if resizing_factor>1:
+                basedir = self.per_im_scene_id[index]
+                basedir = basedir.replace(search('_DS(\d).*',basedir).group(0),'')
+                if '##' in basedir: 
+                    basedir = basedir.replace(search('##.*',basedir).group(0),'')
                 img_target = im_resize(img_target, scale_factor=resizing_factor,
-                    blur_kernel=self.ds_kernels[self.per_im_scene_id[index]] if self.per_im_scene_id[index] in self.ds_kernels else None)
+                    degradation=self.degradations[self.per_im_scene_id[index]] if self.per_im_scene_id[index] in self.degradations else None,
+                    fname='%s_%s'%(basedir,im_path.split('/')[-1].replace('.png','')))
             img_target = torch.from_numpy(img_target)
         else:
             img_target = self.images[index]
@@ -257,7 +280,7 @@ class BlenderDataset(torch.utils.data.Dataset):
         return ds_factors,dir,plane_res,scene_ids,types,probs,module_confinements
 
 def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
-        downsampling_factor=1,val_downsampling_factor=None,cfg=None,splits2use=['train','val'],load_imgs=True,blur_kernel=None):
+        downsampling_factor=1,val_downsampling_factor=None,cfg=None,splits2use=['train','val'],load_imgs=True,degradation=None):
     # train_im_inds = None
     assert not half_res,'Depricated'
     if cfg is not None:
@@ -310,7 +333,7 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
                 # img = (imageio.imread(fname)/ 255.0).astype(np.float32)
                 H.append(img.shape[0])
                 W.append(img.shape[1])
-                resized_img = torch.from_numpy(im_resize(img, scale_factor=per_im_ds_factor,blur_kernel=blur_kernel))
+                resized_img = torch.from_numpy(im_resize(img, scale_factor=per_im_ds_factor,degradation=degradation,fname='%s_%s'%(basedir.split('/')[-1],frame["file_path"].split('/')[-1])))
             else:
                 im_dims = [int(v) for v in search('(\d+) x (\d+)', from_file(fname)).groups()]
                 assert len(im_dims)==2 and im_dims[0]==im_dims[1],"Should verify the order of H,W"

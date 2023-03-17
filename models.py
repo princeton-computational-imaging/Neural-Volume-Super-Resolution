@@ -809,7 +809,7 @@ class PlanesOptimizer(nn.Module):
                         params = self.load_scene_planes(model_name=model_name,scene=scene,save_location=copy_params_path,prefer_best=True)
                         cn = params['coords_normalization']
                         params = params['params']
-                    if not os.path.isdir(self.save_location.replace('/planes','')) or any(['.ckpt' in f for f in os.listdir(self.save_location.replace('/planes',''))]):
+                    if not os.path.isdir(self.save_location[-1].replace('/planes','')) or any(['.ckpt' in f for f in os.listdir(self.save_location[-1].replace('/planes',''))]):
                         assert not os.path.exists(self.param_path(model_name=model_name,scene=scene)),"Planes scene file %s already exists"%(self.param_path(model_name=model_name,scene=scene))
                     torch.save({'params':params,'coords_normalization':cn},self.param_path(model_name=model_name,scene=scene))
                     if model.plane_stats:
@@ -850,10 +850,16 @@ class PlanesOptimizer(nn.Module):
 
         self.cur_scenes = [scene]
 
-    def param_path(self,model_name,scene,save_location=None):
+    def param_path(self,model_name,scene,save_location=None,prefer_best=False):
+        path = lambda loc:  os.path.join(loc,"%s_%s.par"%(model_name,scene))
         if save_location is None:
-            save_location = self.save_location
-        return os.path.join(save_location,"%s_%s.par"%(model_name,scene))
+            for loc in self.save_location:
+                if os.path.isfile(path(loc).replace('.par','.par_best') if prefer_best else path(loc)):
+                    break
+            save_location = loc
+            # save_location = self.save_location[scene]
+        # return os.path.join(save_location,"%s_%s.par"%(model_name,scene))
+        return path(save_location)
 
     def get_plane_stats(self,viewdir=False,single_plane=True):
         model_name='coarse'
@@ -874,7 +880,8 @@ class PlanesOptimizer(nn.Module):
         assert self.optimize,'Why would you want to save if not optimizing?'
         model_name = 'coarse'
         model = self.models[model_name]
-        scenes_list = self.scenes if as_best else self.cur_scenes
+        # scenes_list = self.scenes if as_best else self.cur_scenes
+        scenes_list = self.training_scenes if as_best else self.cur_scenes
         scene_num = 0
         already_saved = []
         scenes2save_ = [sc for sc in scenes_list if sc not in self.frozen_scene_paths]
@@ -909,7 +916,7 @@ class PlanesOptimizer(nn.Module):
             file2load = self.frozen_scene_paths[scene]
             prefer_best = True
         else:
-            file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location)
+            file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location,prefer_best=prefer_best)
         loaded_params = safe_loading(file2load,suffix='par',best=prefer_best)
         return loaded_params
 

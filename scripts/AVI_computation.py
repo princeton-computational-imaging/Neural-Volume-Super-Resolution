@@ -26,6 +26,7 @@ BICUBIC = "bicubic"
 NAIVE = "naive"
 NAIVE_MIP = "naive_mip"
 COMPARE_WITH_GT = False
+PER_CHANNEL_NORMALIZATION = False
 
 BASELINES = [
     PRE_SR,
@@ -249,8 +250,10 @@ def compute_errors(idx, imgs, baseline_srs, vol_srs, forward_flows, backward_flo
     # baseline_sr_warped = normalize(baseline_sr_warped)
     # baseline_sr_ref = normalize(baseline_sr_ref)
     def im_std(im):
-        # return np.mean(np.std(im,1,keepdims=True),2,keepdims=True)
-        return np.std(im,1,keepdims=True)
+        if PER_CHANNEL_NORMALIZATION:
+            return np.std(im,1,keepdims=True)
+        else:
+            return np.mean(np.std(im,1,keepdims=True),2,keepdims=True)
     
     def error_fn(ref, comp,mask):
          ref_std = im_std(ref)

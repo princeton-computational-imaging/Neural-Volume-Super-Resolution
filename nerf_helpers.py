@@ -18,7 +18,7 @@ import imageio
 
 def safe_saving(file_name,content,suffix,best=False,run_time_signature=0):
     if run_time_signature:
-        run_folder = os.path.dirname(file_name).replace('/planes','')
+        run_folder = os.path.dirname(file_name).replace('/planes/','/')
         run_signature_file = os.path.join(run_folder,'time_sig.txt')
         if os.path.exists(run_signature_file):
             with open(run_signature_file,'r') as f:
@@ -292,12 +292,22 @@ def get_config(config_path):
         cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
         return CfgNode(cfg_dict)
 
-def im_resize(image,scale_factor,blur_kernel=None):
+def im_resize(image,scale_factor,degradation=None,fname=None):
     assert all([v%scale_factor==0 for v in image.shape[:2]]),'Currently not supporting downscaling to an ambiguous size.'
-    cv2_scale_factor = scale_factor if blur_kernel is None else blur_kernel['base_factor']
+    cv2_scale_factor = scale_factor if degradation is None else degradation['base_factor']
     output = cv2.resize(image, dsize=(image.shape[1]//cv2_scale_factor,image.shape[0]//cv2_scale_factor), interpolation=cv2.INTER_AREA)
-    if blur_kernel is not None and scale_factor>cv2_scale_factor:
-        output = np.clip(imresize(output,scale_factor=1/(scale_factor/cv2_scale_factor),kernel='blurry_cubic_%f'%(blur_kernel['STD']),),0,1).astype(output.dtype)
+    if degradation is not None and scale_factor>cv2_scale_factor:
+        assert degradation['type'] in ['blur','noise']
+        if degradation['type']=='blur':
+            output = np.clip(imresize(output,scale_factor=1/(scale_factor/cv2_scale_factor),kernel='blurry_cubic_%f'%(degradation['STD']),),0,1).astype(output.dtype)
+        elif degradation['type']=='noise':
+            output = imresize(output,scale_factor=1/(scale_factor/cv2_scale_factor)).astype(output.dtype)
+            if not os.path.isdir(degradation['path']):  os.mkdir(degradation['path'])
+            noise_file = os.path.join(degradation['path'],fname+'_%d.npz'%(degradation['STD']))
+            if not os.path.exists(noise_file):
+                noise = np.random.normal(scale=degradation['STD']/255,size=output.shape)
+                np.savez(noise_file,noise=noise)
+            output = np.clip(output+np.load(noise_file)['noise'],0,1).astype(output.dtype)
     return output
 
 def calc_resize_crop_margins(im_shape,ds_factor):
@@ -420,10 +430,9 @@ def cumprod_exclusive(tensor: torch.Tensor) -> torch.Tensor:
 
     return cumprod
 
-def get_focal(data,dim):
+def get_focal(data,dim:int):
     assert dim in ['H','W']
     if isinstance(data,list):
-        # return data[0] if dim=='H' else data[1]
         return data[1] if dim=='H' else data[0]
     else:
         return data

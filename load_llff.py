@@ -3,7 +3,7 @@ from nerf_helpers import im_resize,calc_resize_crop_margins
 import imageio
 import numpy as np
 import torch
-
+from scipy.interpolate import interp1d
 # Implementation from:
 # https://github.com/yenchenlin/nerf-pytorch/blob/master/load_llff.py
 # Slightly modified version of LLFF data loading code
@@ -67,18 +67,21 @@ def _minify(basedir, factors=[], resolutions=[]):
         print("Done")
 
 
-def _load_data(basedir, factor=None,base_factor=1,max_factor=1, width=None, height=None, load_imgs=True):
+def _load_data(basedir, factor=None,base_factor=1,max_factor=1, width=None, height=None, load_imgs=True,min_eval_frames=None,):
 
     poses_arr = np.load(os.path.join(basedir, "poses_bounds.npy"))
+    if min_eval_frames is not None:
+        min_eval_frames = int(np.ceil(min_eval_frames/(len(poses_arr)-1))*(len(poses_arr)-1)+1)
+        repeat_ims = (min_eval_frames-1)//(len(poses_arr)-1)
+        temp = 1*poses_arr
+        poses_arr = interp1d(np.arange(len(poses_arr)),poses_arr,axis=0)(np.linspace(start=0,stop=len(poses_arr)-1,num=min_eval_frames))
+        poses_arr[::repeat_ims,:] = temp
     poses = poses_arr[:, :-2].reshape([-1, 3, 5]).transpose([1, 2, 0])
     bds = poses_arr[:, -2:].transpose([1, 0])
-    # actual_base_factor = 1*base_factor
-    # base_factor = 1*factor
     while not os.path.isdir(os.path.join(basedir,"images%s"%('_%d'%(base_factor) if base_factor>1 else ''))):
         assert base_factor>=1
         base_factor //= 2
     images_subdir = "images%s"%('_%d'%(base_factor) if base_factor>1 else '')
-    # factor *= base_factor
     assert factor//base_factor==factor/base_factor
     img0 = [
         os.path.join(basedir, images_subdir, f)
@@ -98,6 +101,10 @@ def _load_data(basedir, factor=None,base_factor=1,max_factor=1, width=None, heig
         for f in sorted(os.listdir(imgdir))
         if f.endswith("JPG") or f.endswith("jpg") or f.endswith("png")
     ]
+    if min_eval_frames is not None:
+        imgfiles = [f_ for f in imgfiles for f_ in ([f]+(repeat_ims-1)*[None])][:-repeat_ims+1]
+    # else:
+    #     repeat_ims = None
     if poses.shape[-1] != len(imgfiles):
         print(
             "Mismatch between imgs {} and poses {} !!!!".format(
@@ -108,14 +115,6 @@ def _load_data(basedir, factor=None,base_factor=1,max_factor=1, width=None, heig
 
     sh = np.array(imageio.imread(imgfiles[0]).shape)
     marg2crop = calc_resize_crop_margins(sh,max_factor//base_factor)
-    # crop_origs = any([v%(max_factor//base_factor) for v in sh[:2]])
-    # marg2crop = None
-    # if crop_origs:
-    #     marg2crop = np.zeros([2]).astype(np.int32)
-    #     for dim in [0,1]:
-    #         while (sh[dim]-2*marg2crop[dim])%(max_factor//base_factor):
-    #             marg2crop[dim] += 1
-    #             assert marg2crop[dim]<max_factor//base_factor,'Cannot find a suitable crop'
     if marg2crop is not None:
         sh[:2] -= 2*marg2crop
     sh = (sh[0]//(factor//base_factor),sh[1]//(factor//base_factor),sh[2])
@@ -123,9 +122,6 @@ def _load_data(basedir, factor=None,base_factor=1,max_factor=1, width=None, heig
     poses[2, 4, :] = poses[2, 4, :] * 1.0 / factor
 
     if load_imgs:
-        # raise Exception('Unsupported')
-        # return poses, bds
-
         def imread(f):
             if f.endswith("png"):
                 return imageio.imread(f, ignoregamma=True)
@@ -139,11 +135,9 @@ def _load_data(basedir, factor=None,base_factor=1,max_factor=1, width=None, heig
             imgs = [im_resize(im, scale_factor=factor//base_factor) for im in imgs]
         imgs = np.stack(imgs, -1)
     else:
-        # assert not crop_origs,'Unsupported yet'
         imgs = imgfiles
 
-    # print("Loaded image data", imgs.shape, poses[:, -1, 0])
-    return poses, bds, imgs,(base_factor,marg2crop)
+    return poses, bds, imgs,(base_factor,marg2crop)#,repeat_ims
 
 
 def normalize(x):
@@ -286,11 +280,11 @@ def spherify_poses(poses, bds):
 
 
 def load_llff_data(
-    basedir, factor=8,base_factor=1,max_factor=1, recenter=True, bd_factor=0.75, spherify=False, path_zflat=False,load_imgs=True,
+    basedir, factor=8,base_factor=1,max_factor=1, recenter=True, bd_factor=0.75, spherify=False, path_zflat=False,load_imgs=True,min_eval_frames=None,
 ):
 
     poses, bds, imgs,load_params = _load_data(
-        basedir, factor=factor,base_factor=base_factor,max_factor=max_factor,load_imgs=load_imgs,
+        basedir, factor=factor,base_factor=base_factor,max_factor=max_factor,load_imgs=load_imgs,min_eval_frames=min_eval_frames,
     )  # factor=8 downsamples original imgs by 8x
     # print("Loaded", basedir, bds.min(), bds.max())
 
@@ -362,4 +356,5 @@ def load_llff_data(
     # images = images.astype(np.float32)
     poses = poses.astype(np.float32)
 
-    return torch.from_numpy(images.astype(np.float32)) if load_imgs else images, torch.from_numpy(poses), bds, render_poses, i_test,None if load_imgs else load_params
+    # return torch.from_numpy(images.astype(np.float32)) if load_imgs else images, torch.from_numpy(poses), bds, render_poses, i_test,None if load_imgs else load_params
+    return torch.from_numpy(images.astype(np.float32)) if load_imgs else images, torch.from_numpy(poses), bds, render_poses, i_test,load_params

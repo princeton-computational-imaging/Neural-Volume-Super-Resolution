@@ -129,7 +129,7 @@
             ]
         },
         {
-            "name": "train planes SR",
+            "name": "planes SR train",
             "type": "python",
             "request": "launch",
             "program": "train_nerf.py",
@@ -140,7 +140,7 @@
             ]
         },
         {
-            "name": "resume planes SR",
+            "name": "planes SR resume",
             "type": "python",
             "request": "launch",
             "program": "train_nerf.py",
@@ -149,6 +149,20 @@
             "args":[
                 "--config","config/planes_SR.yml",
                 "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
+            ]
+        },
+        {
+            "name": "planes SR EVAL",
+            "type": "python",
+            "request": "launch",
+            "program": "train_nerf.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--config","config/planes_SR.yml",
+                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
+                "--eval","images", //"video", //"images",
+                "--results_path","/tigress/yb6751/projects/NeuralMFSR/results"
             ]
         },
         {
@@ -218,20 +232,6 @@
             "justMyCode": true,
             "args":[
                 "--config","config/planes_internal_SR.yml"
-            ]
-        },
-        {
-            "name": "synt SR EVAL",
-            "type": "python",
-            "request": "launch",
-            "program": "train_nerf.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args":[
-                "--config","config/planes_SR.yml",
-                "--load-checkpoint","resume", //"/scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/SR_dirs_encoding_L4C256W0001_0"
-                "--eval","images", //"video", //"images",
-                "--results_path","/tigress/yb6751/projects/NeuralMFSR/results"
             ]
         },
         {

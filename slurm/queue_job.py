@@ -16,8 +16,8 @@ from tqdm import trange
 # CONFIG_FILE = "config/planes_SR.yml"
 # CONFIG_FILE = "config/planes_multiScene.yml"
 # CONFIG_FILE = "config/planes_internal_SR.yml"
-CONFIG_FILE = "config/planes_E2E.yml"
-# CONFIG_FILE = "config/Synt_planes_only.yml"
+# CONFIG_FILE = "config/planes_E2E.yml"
+CONFIG_FILE = "config/Synt_planes_only.yml"
 # CONFIG_FILE = "config/NeRF_LR.yml"
 # CONFIG_FILE = "config/DTU_E2E.yml"
 # CONFIG_FILE = "config/Real_planes_only.yml"
@@ -35,7 +35,7 @@ RESUME_TRAINING = None
 PARAM2SWEEP = None
 EVAL_WHITE = False
 
-RUN_TIME = 48 # 20 # 10 # Hours
+RUN_TIME = 24 # 20 # 10 # Hours
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True
 

@@ -66,7 +66,8 @@ def main():
     planes_model = not hasattr(cfg.models,'coarse') or cfg.models.coarse.type=="TwoDimPlanesModel"
     if eval_mode:
         import imageio
-        dataset_config4eval = cfg.dataset.dir.val
+        # dataset_config4eval = cfg.dataset.dir.val
+        dataset_config4eval = cfg.dataset
         config_file = os.path.join(cfg.experiment.logdir, cfg.experiment.id,"config.yml")
         results_dir = os.path.join(configargs.results_path, cfg.experiment.id)
         white_bg = getattr(cfg.nerf.validation,'white_background',False)
@@ -74,7 +75,8 @@ def main():
         print('Evaluation outputs will be saved into %s'%(results_dir))
         if planes_model:
             cfg = get_config(config_file)
-            cfg.dataset.dir.val = dataset_config4eval
+            # cfg.dataset.dir.val = dataset_config4eval
+            cfg.dataset = dataset_config4eval
             cfg.nerf.train.pop('zero_mean_planes_w',None)
             if hasattr(cfg,'super_resolution'): 
                 cfg.super_resolution.pop('consistency_loss_w',None)
@@ -122,10 +124,13 @@ def main():
 
     # load_saved_models = pretained_decoder_path is not None or resume_experiment
     load_saved_models = pretrained_model_folder is not None or resume_experiment
-    # init_new_scenes = not resume_experiment and any([m in ['LR_planes','HR_planes'] for m in what2train]) and pretained_decoder_path is None
-    init_new_scenes = not resume_experiment and any([m in ['LR_planes','HR_planes'] for m in what2train]) and pretrained_model_folder is None
-    # params_init_path = os.path.join(pretained_decoder_path,'planes') if pretained_decoder_path and any([m in ['LR_planes','HR_planes'] for m in what2train]) else None
-    params_init_path = os.path.join(pretrained_model_folder,'planes') if (pretrained_model_folder and not resume_experiment and any([m in ['LR_planes','HR_planes'] for m in what2train])) else None
+    init_new_scenes = not resume_experiment and any([m in ['LR_planes','HR_planes'] for m in what2train]) and (pretrained_model_folder is None or getattr(cfg.models,'init_scenes_hack',False))
+    # if not getattr(cfg.models,'init_scenes_hack',False) and not resume_experiment and getattr(cfg.models,'planes_path',None) is not None:
+    #     params_init_path = getattr(cfg.models,'planes_path')
+    if not getattr(cfg.models,'init_scenes_hack',False) and not resume_experiment and pretrained_model_folder and any([m in ['LR_planes','HR_planes'] for m in what2train]):
+        params_init_path = os.path.join(pretrained_model_folder,'planes')
+    else:
+        params_init_path = None
 
     # images, poses, render_poses, hwf, i_split = None, None, None, None, None
     H, W, focal, i_train, i_val, i_test = None, None, None, None, None, None
@@ -138,7 +143,7 @@ def main():
 
     sr_val_scenes_with_LR = getattr(cfg.nerf.train,'sr_val_scenes_with_LR',False)
     dataset = BlenderDataset(config=cfg.dataset,scene_id_func=models.get_scene_id,add_val_scene_LR=sr_val_scenes_with_LR,
-        eval_mode=eval_mode,scene_norm_coords=cfg.nerf if init_new_scenes else None) #,assert_LR_ver_of_val=im_consistency_loss
+        eval_mode=eval_mode,scene_norm_coords=cfg.nerf if init_new_scenes else None,planes_logdir=getattr(cfg.models,'planes_path',logdir)) #,assert_LR_ver_of_val=im_consistency_loss
     # font_scale = 4/min(dataset.downsampling_factors)
     # font_scale = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_PLAIN,0.05*dataset.getImageHeight())
     scene_ids = dataset.per_im_scene_id
@@ -157,12 +162,12 @@ def main():
     planes_updating = any(['planes' in m for m in what2train])
     # if planes_model and (not planes_updating or params_init_path):
     if planes_model and (not planes_updating or pretrained_model_folder):
-        available_scenes = []
+        # available_scenes = []
         for conf,scenes in [c for p in pretrained_model_config.dataset.dir.values() for c in p.items()]:
             conf=eval(conf)
             for sc in interpret_scene_list(scenes):
                 available_scenes.append(models.get_scene_id(sc,conf[0],(conf[1],conf[2] if len(conf)>2 else conf[1])))
-
+        available_scenes = list(set(available_scenes))
     scene_coupler = models.SceneCoupler(list(set(available_scenes+val_only_scene_ids)),planes_res=''.join([m[:2] for m in what2train if '_planes' in m]),
         num_pos_planes=getattr(cfg.models.coarse,'num_planes',3) if planes_model else 0,training_scenes=list(i_train.keys()),
         multi_im_res=SR_experiment=='model' or not planes_model)
@@ -287,13 +292,14 @@ def main():
     def write_scalar(name,new_value,iterOrScNum):
         RUNNING_MEAN = True
         if eval_mode:
+            if hasattr(cfg.dataset.llff,'min_eval_frames'): return
             folder_name = os.path.join(results_dir,evaluation_sequences[iterOrScNum])
             with open(os.path.join(folder_name,'metrics.txt'),'a') as f:
-                f.write('%s: %f\n'%(name,np.mean(new_value) if isinstance(new_value,list) else new_value))
+                f.write('%s: %f\n'%(name,np.nanmean(new_value) if isinstance(new_value,list) else new_value))
         else:
             val_set,metric = name.split('/')
             experiment_info['running_scores'][metric][val_set].append(new_value)
-            writer.add_scalar(name,np.mean(experiment_info['running_scores'][metric][val_set]) if RUNNING_MEAN else new_value,iterOrScNum)
+            writer.add_scalar(name,np.nanmean(experiment_info['running_scores'][metric][val_set]) if RUNNING_MEAN else new_value,iterOrScNum)
 
     def write_image(name,images,text,iter,psnrs=[],psnr_gains=[]): #fontscale=font_scale,
         if eval_mode:
@@ -554,7 +560,7 @@ def main():
         # initialize_from_trained = configargs.load_checkpoint=='' and end2end_training
         if SR_experiment and SR_model is not None:
             if SR_experiment=="model" and ('SR' not in what2train or resume_experiment or hasattr(cfg.super_resolution.model,'path')):
-                if resume_experiment:
+                if resume_experiment and 'SR' in what2train:
                     SR_checkpoint_path = configargs.load_checkpoint
                     if not eval_mode and legacy_info_tracking and 'decoder' not in what2train:
                         experiment_info['start_i'] = int(SR_checkpoint_path.split('/')[-1][len('SR_checkpoint'):-len('.ckpt')])+1
@@ -602,7 +608,7 @@ def main():
                 if ch_type=='dictionary_item_removed' and "['use_viewdirs']" in diff:  continue
                 elif ch_type=='dictionary_item_added':
                     if diff[:len("root['fine']")]=="root['fine']":  continue
-                    if diff=="root['use_existing_planes']": continue
+                    if diff in ["root['use_existing_planes']","root['init_scenes_hack']","root['planes_path']"]: continue
                 elif ch_type=='dictionary_item_removed' and "root['fine']" in str(config_diffs[ch_type]):   continue
                 elif not planes_model and ch_type=='values_changed' and 'include_input_xyz' in diff and cfg.nerf.encode_position_fn=="mip": continue
                 print(ch_type,diff)
@@ -669,6 +675,9 @@ def main():
         if eval_mode: assert os.path.isdir(planes_folder)
         if not os.path.isdir(planes_folder):
             os.mkdir(planes_folder)
+        planes_folder = [planes_folder]
+        if getattr(cfg.models,'planes_path',None) is not None:
+            planes_folder.insert(0,os.path.join(getattr(cfg.models,'planes_path'),'planes'))
         scenes_cycle_counter = Counter()
         optimize_planes = any(['planes' in m for m in what2train]) and not eval_mode
         lr_scheduler = getattr(cfg.optimizer,'lr_scheduler',None)
@@ -866,38 +875,41 @@ def main():
                     if not os.path.isdir(os.path.join(results_dir,evaluation_sequences[eval_cycle])):  os.mkdir(os.path.join(results_dir,evaluation_sequences[eval_cycle]))
                     with open(os.path.join(results_dir,evaluation_sequences[eval_cycle],'metrics.txt'),'w') as f:
                         f.write('Evaluated at '+str(datetime.datetime.now())+':\n')
+                        if hasattr(cfg.dataset.llff,'min_eval_frames'):
+                            f.write('Not saving metrics since viewing directions are interpolated')
+
                 for val_set in cur_val_sets:
                     sr_scene_inds = [i for i,im in enumerate(rgb_SR[val_set]) if im is not None]
                     writing_index = val_ind(val_set) if eval_mode else iter
                     if len(sr_scene_inds)>0: #SR_experiment and '_HRplanes' not in val_set:
-                        # SR_psnr_gain = np.mean([psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in sr_scene_inds])
+                        # SR_psnr_gain = np.nanmean([psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in sr_scene_inds])
                         SR_psnr_gain = [psnr[val_set][i]-mse2psnr(fine_loss[val_set][i]) for i in sr_scene_inds]
                         if not eval_mode:
-                            SR_psnr_gain = np.mean(SR_psnr_gain)
+                            SR_psnr_gain = np.nanmean(SR_psnr_gain)
                         write_scalar("%s/SR_psnr_gain"%(val_set),SR_psnr_gain,writing_index)
                         write_image(name="%s/rgb_SR"%(val_set),
                             images=[torch.zeros_like(rgb_fine[val_set][i]) if im is None else im for i,im in enumerate(rgb_SR[val_set])],
                             text=str(val_ind(val_set)),psnrs=[None if im is None else SR_psnr_gain[i] if eval_mode else psnr[val_set][i] for i,im in enumerate(rgb_SR[val_set])],
                             iter=iter,) #fontscale=cur_font_scale(val_set))
                         if val_set in consistency_loss:
-                            write_scalar("%s/inconsistency"%(val_set), np.mean(consistency_loss[val_set]), writing_index)
+                            write_scalar("%s/inconsistency"%(val_set), np.nanmean(consistency_loss[val_set]), writing_index)
                         if val_set in im_consistency_loss:
-                            write_scalar("%s/im_inconsistency"%(val_set), np.mean(im_consistency_loss[val_set]), writing_index)
+                            write_scalar("%s/im_inconsistency"%(val_set), np.nanmean(im_consistency_loss[val_set]), writing_index)
                         if val_set in planes_SR_loss:
-                            write_scalar("%s/planes_SR"%(val_set), np.mean(planes_SR_loss[val_set]), writing_index)
+                            write_scalar("%s/planes_SR"%(val_set), np.nanmean(planes_SR_loss[val_set]), writing_index)
                     if val_set in zero_mean_planes_loss:
-                        write_scalar("%s/zero_mean_planes_loss"%(val_set), np.mean(zero_mean_planes_loss[val_set]), writing_index)
-                    # write_scalar("%s/fine_loss"%(val_set), np.mean(fine_loss[val_set]), writing_index)
-                    write_scalar("%s/fine_psnr"%(val_set), np.mean([mse2psnr(l) for l in fine_loss[val_set]]), writing_index)
-                    write_scalar("%s/loss"%(val_set), np.mean(loss[val_set]), writing_index)
-                    write_scalar("%s/psnr"%(val_set), np.mean(psnr[val_set]), writing_index)
+                        write_scalar("%s/zero_mean_planes_loss"%(val_set), np.nanmean(zero_mean_planes_loss[val_set]), writing_index)
+                    # write_scalar("%s/fine_loss"%(val_set), np.nanmean(fine_loss[val_set]), writing_index)
+                    write_scalar("%s/fine_psnr"%(val_set), np.nanmean([mse2psnr(l) for l in fine_loss[val_set]]), writing_index)
+                    write_scalar("%s/loss"%(val_set), np.nanmean(loss[val_set]), writing_index)
+                    write_scalar("%s/psnr"%(val_set), np.nanmean(psnr[val_set]), writing_index)
                     if len(coarse_loss[val_set])>0:
-                        write_scalar("%s/coarse_loss"%(val_set), np.mean(coarse_loss[val_set]), writing_index)
+                        write_scalar("%s/coarse_loss"%(val_set), np.nanmean(coarse_loss[val_set]), writing_index)
                     if len(rgb_fine[val_set])>0:
                         if record_fine:
                             # recorded_iter = val_ind(val_set) if not planes_updating else iter
                             recorded_iter = writing_index if (planes_updating or decoder_training or not planes_model) else val_ind(val_set) 
-                            write_scalar("%s/fine_loss"%(val_set), np.mean(fine_loss[val_set]), recorded_iter)
+                            write_scalar("%s/fine_loss"%(val_set), np.nanmean(fine_loss[val_set]), recorded_iter)
                             if eval_mode and evaluation_sequences[val_ind(val_set)] in scene_coupler.downsample_couples.values():
                                 write_image(name="%s/rgb_bicubic"%(val_set),
                                     images=[torch.from_numpy(bicubic_interp(im.cpu().numpy(),sf=scene_coupler.ds_factor)) for im in rgb_fine[val_set]],
@@ -918,9 +930,9 @@ def main():
                     if not eval_mode:
                         tqdm.write(
                             "%s:\tValidation loss: "%(val_set)
-                            + str(np.mean(loss[val_set]))
+                            + str(np.nanmean(loss[val_set]))
                             + "\tValidation PSNR: "
-                            + str(np.mean(psnr[val_set]))
+                            + str(np.nanmean(psnr[val_set]))
                             + "\tTime: "
                             + str(time.time() - start)
                         )
@@ -1228,14 +1240,11 @@ def main():
                 print("================Best checkpoint is still %d, with average evaluation loss %.3e (recent average is %.3e)====================="%(experiment_info['best_loss'][0],experiment_info['best_loss'][1],recent_loss_avg))
             recently_saved = time.time()
             eval_loss_since_save = []
+            if planes_model and optimize_planes and save_as_best:
+                planes_opt.save_params(as_best=True)
             for model2save in models2save:
                 model_filename = '%scheckpoint'%('SR_' if model2save=='SR' else '')
                 checkpoint_dict = {}
-                # checkpoint_dict = {
-                #     "iter": iter,
-                #     "eval_counter": eval_counter,
-                #     "best_loss":best_loss,
-                # }
                 if model2save=="SR":
                     checkpoint_dict.update({"SR_model":SR_model.state_dict()})
                     if SR_optimizer is not None:
@@ -1249,16 +1258,14 @@ def main():
                             checkpoint_dict["model_fine_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_fine_state_dict"].items() if all([token not in k for token in (tokens_2_exclude+['rot_mats'])])])
                         if store_planes:
                             checkpoint_dict["model_coarse_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_coarse_state_dict"].items() if all([token not in k for token in tokens_2_exclude])])
-                            if optimize_planes and save_as_best:
-                                planes_opt.save_params(as_best=True)
+                            # if optimize_planes and save_as_best:
+                            #     planes_opt.save_params(as_best=True)
                         else:
                             checkpoint_dict.update({"coords_normalization": model_fine.box_coords})
                     if optimizer is not None:
                         checkpoint_dict.update({"optimizer": optimizer.state_dict()})
 
-                # ckpt_name = os.path.join(logdir, model_filename + str(iter).zfill(5) + ".ckpt")
                 ckpt_name = os.path.join(logdir, model_filename + "%s.ckpt")
-                # if (model2save=='decoder' and 'decoder' in what2train) or (model2save=='SR' and 'SR' in what2train):
                 safe_saving(ckpt_name%(str(iter).zfill(5)),content=checkpoint_dict,suffix='ckpt',best=False,run_time_signature=run_time_signature)
                 if len(experiment_info['last_saved'][model2save])>0:
                     chkp2remove = experiment_info['last_saved'][model2save].pop(0)
