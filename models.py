@@ -2,7 +2,7 @@ from collections import defaultdict,OrderedDict
 from distutils.log import debug
 import torch
 import torch.nn as nn
-from nerf_helpers import cart2az_el,rgetattr,rsetattr,safe_saving,safe_loading
+from nerf_helpers import cart2az_el,rgetattr,rsetattr,safe_saving,safe_loading,downsample_plane
 import math
 import numpy as np
 from scipy.interpolate import griddata
@@ -635,7 +635,8 @@ class TwoDimPlanesModel(nn.Module):
         return loss
 
     def downsample_plane(self,plane,antialias=False):
-        return torch.nn.functional.interpolate(plane,scale_factor=1/self.scene_coupler.ds_factor,mode=self.plane_interp,align_corners=self.align_corners,antialias=antialias)
+        return downsample_plane(plane,ds_factor=self.scene_coupler.ds_factor,plane_interp=self.plane_interp,alilgn_corners=self.align_corners,antialias=antialias)
+        # return torch.nn.functional.interpolate(plane,scale_factor=1/self.scene_coupler.ds_factor,mode=self.plane_interp,align_corners=self.align_corners,antialias=antialias)
 
     def assign_LR_planes(self,scene=None):
         for k in self.planes_:
@@ -655,12 +656,12 @@ class TwoDimPlanesModel(nn.Module):
             self.zero_mean_planes_loss = {}
         return loss
 
-    def return_im_consistency_loss(self,sr,gt_lr=None,gt_hr=None):
-        # loss = None
-        assert (gt_lr is None) ^ (gt_hr is None)
-        # if hasattr(self,'SR_model') and self.SR_model.im_consistency_loss_w is not None:
-        loss = torch.nn.functional.l1_loss(gt_lr if gt_hr is None else self.downsample_plane(gt_hr,antialias=True),self.downsample_plane(sr,antialias=True))
-        return loss
+    # def return_im_consistency_loss(self,sr,gt_lr=None,gt_hr=None):
+    #     # loss = None
+    #     assert (gt_lr is None) ^ (gt_hr is None)
+    #     # if hasattr(self,'SR_model') and self.SR_model.im_consistency_loss_w is not None:
+    #     loss = torch.nn.functional.l1_loss(gt_lr if gt_hr is None else self.downsample_plane(gt_hr,antialias=True),self.downsample_plane(sr,antialias=True))
+    #     return loss
 
 def create_plane(resolution,num_plane_channels,init_STD):
     if not isinstance(resolution,list):
@@ -1110,10 +1111,10 @@ class PlanesSR(nn.Module):
         if self.consistency_loss_w is not None:
             self.planes_diff = nn.L1Loss()
             self.consistentcy_loss = []
-        self.im_consistency_loss_w = sr_config.get("im_consistency_loss_w",None)
-        if self.im_consistency_loss_w is not None:
-            self.ims_diff = nn.L1Loss()
-            self.im_consistentcy_loss = []
+        # self.im_consistency_loss_w = sr_config.get("im_consistency_loss_w",None)
+        # if self.im_consistency_loss_w is not None:
+        #     self.ims_diff = nn.L1Loss()
+        #     self.im_consistentcy_loss = []
 
     def interpolate_LR(self,id):
         return torch.nn.functional.interpolate(self.LR_planes[id].cuda(),scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=self.align_corners)

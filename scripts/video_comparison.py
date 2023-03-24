@@ -10,171 +10,19 @@ from tqdm import trange
 SYNT_SCENES = ['chair','drums','ficus','hotdog','lego','materials','mic','ship','bugatti','materials','motorbike']
 LLFF_SCENES = ['orchids','fern','flower','fortress','horns','leaves','room','trex']
 # SCENE = 'ship'
-SCRIPT = [ # CVPR submission supplementary (I think...)
-    (0,('scene','lego')),
-    (0,('left_view','LR')),
-    (0.25,('zoom',1.8)),
-    (0.5,('left_view','ours')),
-    (0.25,('zoom',1.5)),
-    (0.0,('right_view','ours')),
-    (0.5,('effect','half50')),
-    (0.0,('right_view','edsr')),
-    (0.5,('right_view','srgan')),
-    # (0.5,('zoom',1.2)),
-    (0.5,('right_view','rstt')),
-    (0.5,('scene','donut')),
-    (1,('scene','dragon')),
-    (0.0,('zoom',1.2)),
-    (0.0,('right_view','swin')),
-    (0.5,('zoom',1)),
-    # (1,('scene','mic')),
-    # (0.5,('effect','half0')),
-#     ]
-# SCRIPT = [
-    (1.5,('scene','bugatti')),
-    # (0.0,('effect','half50')),
-    (0,('left_view','view')),
-    (0.0,('right_view','no_view')),
-    (1,('scene','materials')),
-    (1,('scene','motorbike')),
-    # (1,('scene','cola')),
-    (0.75,('effect','half0')),
-]
-SCRIPT = [
-    # (0,('left_view','ours')),
-    # (0,('right_view','edsr')),
-    # (0,('scene','dragon')),
-    # (0.1,('effect','half50')),
-    # (0.1,('zoom',1.5)),
-    # (0.4,('right_view','swin')),
-    # (0.5,('right_view','srgan')),
-    # (0,('scene','lego')),
-    # (0.4,('right_view','rstt')),
-    # (0.1,('zoom',1.)),
-    (0,('left_view','ours')),
-    (0,('right_view','edsr')),
-    (0,('scene','dragon')),
-    (0.1,('effect','half50')),
-    (0.1,('zoom',1.5)),
-    (0.8,('right_view','swin')),
-    (0.5,('scene','lego')),
-    (0.1,('zoom',1.)),
-    (0.5,('right_view','srgan')),
-    (0.5,('scene','ship')),
-    (0.5,('right_view','rstt')),
-    (0.7,('effect','half0')),
-]
-SCRIPT = [
-    (0,('left_view','LR')),
-    (0,('right_view','ours')),
-    (0,('scene','lego')),
-    # (0,('scene','fern')),
-    (0.1,('effect','half50')),
-    (0.5,('zoom',1.5)),
-    # (0.5,('right_view','preSR')),
-    (1.4,('scene','ship')),
-    (0.2,('effect','half100')),
-    (0,('left_view','edsr')),
-    (0.8,('scene','mic')),
-    (0.2,('zoom',1)),
-    (0.3,('effect','half50')),
-    # (1,('scene','mic')),
-    # (1,('scene','ship')),
-    # (1,('scene','orchids')),
-    # (0.4,('right_view','rstt')),
-    # (0.1,('zoom',1.)),
-    # (0.6,('effect','half100')),
-]
-FPS = 20
-SCRIPT = [ #Real scenes for ICCV supplementary
-    (0,('left_view','LR')),
-    (0,('right_view','ours')),
-    (0,('scene','orchids')),
-    (0.1,('effect','half50')),
-    (0.8,('effect','half100')),
-    (0.9,('left_view','mip_nerf')),
-    (0.1,('effect','half50')),
-    (1.1,('scene','fern')),
-    (0.,('left_view','LR')),
-    (0.,('effect','half0')),
-    (0.2,('effect','half50')),
-    (0.2,('left_view','mip_nerf')),
-    (0.5,('effect','half100')),
-    (0.1,('scene','flower')),
-    (0.,('left_view','LR')),
-    (0.,('effect','half0')),
-    (0.2,('effect','half50')),
-    (0.4,('left_view','rstt')),
-    (0.7,('effect','half100')),
-    (0.7,('scene','fortress')),
-    (0.,('left_view','LR')),
-    (0.,('effect','half0')),
-    (0.2,('effect','half50')),
-    (0.5,('effect','half100')),
-    (0.3,('scene','room')),
-    (0.,('left_view','LR')),
-    (0.,('effect','half0')),
-    (0.2,('effect','half50')),
-    (0.5,('effect','half100')),
-    (0.3,('scene','horns')),
-    (0.,('left_view','LR')),
-    (0.,('effect','half0')),
-    (0.2,('effect','half50')),
-    (0.4,('left_view','mip_nerf')),
-    (0.5,('effect','half100')),
-]
-FPS = 15
-SCRIPT = [ #Synthetic scenes for ICCV supplementary
-    (0,('left_view','LR')),
-    (0,('right_view','ours')),
-    (0,('scene','lego')),
-    (0.1,('effect','half50')),
-    (0.6,('effect','half100')),
-    (0.4,('left_view','rstt')),
-    (0.1,('effect','half50')),
-    (0.7,('left_view','swin')),
-    (0.8,('left_view','edsr')),
-    (0.3,('scene','ship')),
-    (0.,('left_view','LR')),
-    (0.,('effect','half0')),
-    (0.2,('effect','half50')),
-    (0.3,('zoom',1.5)),
-    (0.2,('left_view','preSRscratch')),
-    (0.8,('effect','half100')),
-    (0.2,('zoom',1.)),
-    (0.3,('scene','mic')),
-    (0.,('left_view','LR')),
-    (0.,('effect','half0')),
-    (0.2,('effect','half50')),
-    (0.4,('left_view','mip_nerf')),
-    (0.7,('effect','half100')),
-    (0.7,('scene','chair')),
-    (0.,('left_view','LR')),
-    (0.,('effect','half0')),
-    (0.2,('effect','half50')),
-    (0.3,('left_view','srgan')),
-    (0.4,('effect','half100')),
-]
-SCRIPT = [
-    (0.1,('scene','bugatti')),
-    (0.,('effect','half50')),
-    (0,('left_view','view')),
-    (0.0,('right_view','no_view')),
-    (0.3,('scene','materials')),
-    (0.3,('scene','motorbike')),
-    # (0.75,('effect','half0')),
-]
 
+SCRIPT_FILE = 'scripts/video_scipts/presentation.txt'
+FPS = 15
 TRANSITION_TIMES = {'zoom':1,'fade':0.5,'half':1}
 
 HR_DS_FACTOR = dict([(sc,2) for sc in SYNT_SCENES])
 HR_DS_FACTOR.update(dict([(sc,8) for sc in LLFF_SCENES]))
 SR_FACTOR = 4 # On top of HR_DS_FACTOR
-HIGH_RES_OUTPUT = True
+HIGH_RES_OUTPUT = False
 EXCLUDE_TITLE = False #False #
 FRAME_NUM = False
-# GIF_LIKE_SAVING = [36,67]
-GIF_LIKE_SAVING = None
+GIF_LIKE_SAVING = [36,67]
+# GIF_LIKE_SAVING = None
 SEPARATOR_WIDTH = 2
 FONT_SCALE = 2#3
 THICKNESS = 2#3
@@ -186,6 +34,7 @@ X_OFFSET = 30
 RESULTS_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/'
 OUTPUT_PATH = '/tigress/yb6751/projects/NeuralMFSR/results/comparisons'
 EXPERIMENT_ID = 'ours_ICCV_perSceneRefine'
+POST_2D_SR_TITLE_TEMPLATE = '%s' # 'post. 2D SR (%s)'
 # EXPERIMENT_ID = 'ours_gaussian'
 OUR_RESULTS_PATH = RESULTS_PATH+EXPERIMENT_ID
 BASELINES_PATH = RESULTS_PATH+'baselines'
@@ -202,16 +51,16 @@ SOURCES = {
     # 'nerf':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)\.png$)','p_scene':lambda scene:'lr_nerf_'+scene+'_0/'+scene+'_DS%d/blind_fine/*'%(HR_DS_FACTOR[scene]),'path':os.path.join(BASELINES_PATH,'nerf'),'own_lr':True},
     'mip_nerf':{'title':'Mip-NeRF','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d/blind_fine/*'%(HR_DS_FACTOR[scene]),'path':os.path.join(RESULTS_PATH,'baselines/MipNeRF')}, # New pre-SR baseline configuration, using Mip-NeRF representation model trained on images super-resolved using a pre-trained SwinIR model.
     # 'rstt_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_RSTT_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
-    'rstt':{'title':'post. 2D (video) SR','p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_RSTT_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    'rstt':{'title':POST_2D_SR_TITLE_TEMPLATE%('Video-SR'),'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_RSTT_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
     # 'swin_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SWIN_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
     # 'srgan_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SRGAN_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
     # 'edsr_pre':{'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Pretrained_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
-    'swin':{'title':'post. 2D SR (SwinIR)','p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SWIN_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
-    'srgan':{'title':'post. 2D SR (SRGAN)','p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SRGAN_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
-    'edsr':{'title':'post. 2D SR (EDSR)','p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    'swin':{'title':POST_2D_SR_TITLE_TEMPLATE%('SwinIR'),'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SWIN_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    'srgan':{'title':POST_2D_SR_TITLE_TEMPLATE%('SRGAN'),'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_SRGAN_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
+    'edsr':{'title':POST_2D_SR_TITLE_TEMPLATE%('EDSR'),'p_im':'(?<=\/)(\d)+(?=(_PSNR.*)?_EDSR_Scratch_upscaleX%d\.png$)'%(SR_FACTOR),'p_scene':postSR_pattern,'path':POST_SR_PATH},
     # 'preSR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2_PlRes*/blind_fine/*','path':'/tigress/yb6751/projects/NeuralMFSR/results/planes_on_SR_Res800_32_0'}, # Old pre-SR baseline configuration, using planes representation model trained on images super-resolved using a trained-from-scratch EDSR model
     # 'preSR':{'p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS2/blind_fine/*','path':os.path.join(RESULTS_PATH,'baselines/MipNeRF_preSR')}, # New pre-SR baseline configuration, using Mip-NeRF representation model trained on images super-resolved using a pre-trained SwinIR model.
-    'preSRscratch':{'title':'pre. 2D SR','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d/blind_fine/*'%(HR_DS_FACTOR[scene]),'path':os.path.join(RESULTS_PATH,'baselines/MipNeRF_preSRscratch')}, # New pre-SR baseline configuration, using Mip-NeRF representation model trained on images super-resolved using a SwinIR model trained from scratch on our scene training set.
+    'preSRscratch':{'title':'pre.2D SR','p_im':'(?<=\/)(\d)+(?=_PSNR.*\.png$)','p_scene':lambda scene:scene+'_DS%d/blind_fine/*'%(HR_DS_FACTOR[scene]),'path':os.path.join(RESULTS_PATH,'baselines/MipNeRF_preSRscratch')}, # New pre-SR baseline configuration, using Mip-NeRF representation model trained on images super-resolved using a SwinIR model trained from scratch on our scene training set.
     # Old:
     # 'GT':{'p_im':'(?<=\/r_)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'/test/*','path':'/scratch/gpfs/yb6751/datasets/Synthetic',},
     # 'LR':{'title':'Low-res.','p_im':'(?<=\/)(\d)+(?=\.png$)','p_scene':lambda scene:scene+'_DS%d_PlRes*/*LR/*'%(HR_DS_FACTOR[scene]*SR_FACTOR),'path':OUR_RESULTS_PATH,},
@@ -237,6 +86,16 @@ SOURCES = {
 
 cur_scene,cur_left,cur_right = None,None,None
 method_scene_pairs = []
+SCRIPT = []
+with open(SCRIPT_FILE,'r') as f:
+    in_comment = False
+    for l in f.readlines():
+        if search('^( )*\*\*\*',l) is not None:
+            in_comment = not in_comment
+        if in_comment or search('^( )*#',l) is not None or search('^( )*(\*)*\n$',l) is not None:  continue
+        SCRIPT.append(eval(l.replace(',\n','').replace('***','')))
+
+# last_scene_time,last_duration = 0,0
 for sc in SCRIPT:
     if cur_scene is not None and cur_left is not None and sc[0]>0:
         method_scene_pairs.append((cur_left,cur_scene))
@@ -244,14 +103,19 @@ for sc in SCRIPT:
         method_scene_pairs.append((cur_right,cur_scene))
     if sc[1][0]=='scene':
         cur_scene = sc[1][1]
+        last_scene_time = 0
     if 'left_view'==sc[1][0]:
         cur_left = sc[1][1]
     if 'right_view'==sc[1][0]:
         cur_right = sc[1][1]
-if cur_scene is not None and cur_left is not None and sc[1][0] in ['scene','left_view']:
-    method_scene_pairs.append((cur_left,cur_scene))
-if cur_scene is not None and cur_right is not None and sc[1][0] in ['scene','right_view']:
-    method_scene_pairs.append((cur_right,cur_scene))
+    # last_scene_time += last_duration
+    # last_duration = sc[0]
+if cur_scene is not None:
+    if cur_left is not None and (sc[1][0] in ['scene','left_view'] or (cur_left,cur_scene) not in method_scene_pairs):# last_scene_time==0):
+        method_scene_pairs.append((cur_left,cur_scene))
+    if cur_right is not None and (sc[1][0] in ['scene','right_view'] or (cur_right,cur_scene) not in method_scene_pairs):# last_scene_time==0):
+        method_scene_pairs.append((cur_right,cur_scene))
+
 
 
 included_baselines = list(set([v[1][1] for v in SCRIPT if v[1][0] in ['right_view','left_view']]))
@@ -262,7 +126,8 @@ synt_scenes = all([sc in SYNT_SCENES for sc in scenes])
 im_paths = defaultdict(dict)
 # for scene in scenes:
 #     for i_method,method in enumerate(methods_2_load):
-num_frames = None
+# num_frames = None
+num_frames = OrderedDict()
 f_num_dict = {}
 for i_method,(method,scene) in enumerate(set(method_scene_pairs)):
     if 'path' not in SOURCES[method]:    continue
@@ -270,74 +135,63 @@ for i_method,(method,scene) in enumerate(set(method_scene_pairs)):
     path_filter = path_filter%('4video_') if scene in LLFF_SCENES and len(glob(path_filter%('4video_')))>0 else path_filter%('')
     im_paths[method][scene] = [f for f in glob(path_filter) if search(SOURCES[method]['p_im'],f) is not None]
     im_paths[method][scene] = OrderedDict(sorted([(int(search(SOURCES[method]['p_im'],f).group(0)),f) for f in im_paths[method][scene]],key=lambda x:x[0]))
-    if num_frames is not None and scene in SYNT_SCENES:
-    # if i_method>0: #Not the first method for this scene, assert the number of images is bigger than 0 and the same
-        assert len(im_paths[method][scene])==num_frames
-    elif scene in LLFF_SCENES:
-        assert len(im_paths[method][scene])>0
-        if num_frames is None:
-            num_frames = len(im_paths[method][scene])
-        else:
-            num_frames = max(num_frames,len(im_paths[method][scene]))
+    if scene in num_frames:
+        assert num_frames[scene]==len(im_paths[method][scene])
     else:
-        num_frames = len(im_paths[method][scene])
-        assert num_frames>0
-    f_num_dict[scene] = np.arange(len(im_paths[method][scene]))
-num_frames = min(200,num_frames)
-# f_num_dict = defaultdict(list)
-# for scene in scenes:
-#     num_existing_frames = len(im_paths['ours'][scene])
-#     i,going_up = 0,True
-#     for _ in range(num_frames):
-#         f_num_dict[scene].append(i)
-#         if going_up:
-#             if i==(num_existing_frames-1):  going_up = False
-#         else:
-#             if i==0:    going_up = True
-#         i += 1 if going_up else -1
-# f_num_dict = dict([(sc,np.arange(len(im_paths['ours'][sc]))) for sc in scenes])
+        num_frames[scene] = len(im_paths[method][scene])
+        assert num_frames[scene]>0
+        f_num_dict[scene] = list(np.arange(len(im_paths[method][scene])))
+        f_num_dict[scene].extend(f_num_dict[scene][::-1][1:-1])
+
 script,n_frames = [],0
 zoomin,fade,right_views,left_views,scene2show,halfing = [],[],[],[],[],[]
 latest_zoom,latest_disp_portion = 1,0
+num_frames = [num_frames[scene] for scene in [sc[1][1] for sc in SCRIPT if sc[1][0]=='scene']]
+# num_frames = list(num_frames.values())
+scene_num,this_scene_frames = 0,0
 for sc in SCRIPT:
+    n_frames += sc[0]*num_frames[scene_num]
+    this_scene_frames += sc[0]*num_frames[scene_num]
     if sc[1][0]=='effect':
         if 'half' in sc[1][1]:
             disp_portion = int(search('(?<=half)(\d)+$',sc[1][1]).group(0))/100
             # if n_frames+sc[0]*num_frames==0:
-            if (n_frames+sc[0]*num_frames,1) in fade or n_frames==0:
-                halfing.append((n_frames+sc[0]*num_frames,disp_portion))
+            if (int(np.round(n_frames)),1) in fade or n_frames==0:
+                halfing.append((n_frames,disp_portion))
             else:
                 halfing.extend(list(zip(
-                    [int(np.round(n_frames+sc[0]*num_frames-FPS*TRANSITION_TIMES['half']/2+i)) for i in range(int(np.round(FPS*TRANSITION_TIMES['half'])))],
+                    [int(np.round(n_frames-FPS*TRANSITION_TIMES['half']/2+i)) for i in range(int(np.round(FPS*TRANSITION_TIMES['half'])))],
                     np.linspace(latest_disp_portion,disp_portion,FPS*TRANSITION_TIMES['half']))))
-                # halfing.extend(list(zip(
-                #     [int(n_frames+sc[0]*num_frames-FPS*TRANSITION_TIMES['half']/2+i) for i in range(int(FPS*TRANSITION_TIMES['half']))],
-                #     np.linspace(0,2*disp_portion,FPS*TRANSITION_TIMES['half'])[::(1 if sc[1][1]=='half' else -1)])))
             latest_disp_portion = 1*disp_portion
         else:
             raise Exception
     elif sc[1][0]=='zoom':
         zoomin.extend(list(zip(
-            [int(np.round(n_frames+sc[0]*num_frames-FPS*TRANSITION_TIMES['zoom']/2+i)) for i in range(int(np.round(FPS*TRANSITION_TIMES['zoom'])))],
+            [int(np.round(n_frames-FPS*TRANSITION_TIMES['zoom']/2+i)) for i in range(int(np.round(FPS*TRANSITION_TIMES['zoom'])))],
             np.linspace(latest_zoom,sc[1][1],FPS*TRANSITION_TIMES['zoom']))))
         latest_zoom = sc[1][1]
     elif sc[1][0]=='scene':
+        # if n_frames>FPS*TRANSITION_TIMES['fade']/2:
         if n_frames>FPS*TRANSITION_TIMES['fade']/2:
             fade.extend(list(zip(
-                [int(np.round(n_frames+sc[0]*num_frames-FPS*TRANSITION_TIMES['fade']/2+i)) for i in range(int(np.round(FPS*TRANSITION_TIMES['fade'])))],
+                [int(np.round(n_frames-FPS*TRANSITION_TIMES['fade']/2+i)) for i in range(int(np.round(FPS*TRANSITION_TIMES['fade'])))],
                 np.concatenate([np.linspace(0,1,int(np.round(FPS*TRANSITION_TIMES['fade']/2))),np.linspace(1,0,int(np.round(FPS*TRANSITION_TIMES['fade']/2)))]))))
-        scene2show.append((n_frames+sc[0]*num_frames,sc[1][1]))
+        if len(scene2show)>0:   scene_num += 1
+        scene2show.append((n_frames,sc[1][1]))
+        this_scene_frames = 0
     elif sc[1][0]=='right_view':
-        right_views.append((n_frames+sc[0]*num_frames,sc[1][1]))
+        right_views.append((n_frames,sc[1][1]))
     elif sc[1][0]=='left_view':
-        left_views.append((n_frames+sc[0]*num_frames,sc[1][1]))
+        left_views.append((n_frames,sc[1][1]))
     else:
         raise Exception
-    n_frames += sc[0]*num_frames
+    # n_frames += sc[0]*num_frames[scene_num]
 # total_frames = int(scene2show[-1][0]+num_frames)
-if sc[1][0]=='scene':
-    n_frames += sc[0]*num_frames
-total_frames = int(max(1,np.ceil(n_frames/num_frames))*num_frames)
+# if sc[1][0]=='scene':
+#     # n_frames += sc[0]*num_frames
+#     n_frames += num_frames[scene_num]
+# total_frames = int(max(1,np.ceil(n_frames/num_frames))*num_frames)
+total_frames = int(np.ceil(n_frames-this_scene_frames))+num_frames[scene_num]
 frames = []
 def read_image(path):
     return imageio.imread(path)
@@ -363,13 +217,18 @@ def im_path(method,scene,f_num):
     #     return im_paths[method][scene][f_num]
     # else:
     #     return im_paths[method][scene][num_frames-f_num]
-    return im_paths[method][scene][f_num_dict[scene][f_num]]
+    return im_paths[method][scene][f_num_dict[scene][f_num%len(f_num_dict[scene])]]
 
+# scene_num = -1
+# num_frames.insert(0,num_frames[0])
+frame_in_scene = 0
 for f_num in trange(total_frames):
     if len(left_views)>0 and f_num>=left_views[0][0]:
         cur_left = left_views.pop(0)[1]
     if len(scene2show)>0 and f_num>=scene2show[0][0]:
         cur_scene = scene2show.pop(0)[1]
+        # num_frames.pop(0)
+        frame_in_scene = 0
     if len(right_views)>0 and f_num>=right_views[0][0]:
         cur_right = right_views.pop(0)[1]
     if len(fade)>0 and f_num>=fade[0][0]:
@@ -380,7 +239,8 @@ for f_num in trange(total_frames):
         cur_disp_portion = halfing.pop(0)[1]
     new_frame = []
     if cur_disp_portion<1:
-        left = read_image(im_path(cur_left,cur_scene,f_num%num_frames))
+        # left = read_image(im_path(cur_left,cur_scene,f_num%num_frames[0]))
+        left = read_image(im_path(cur_left,cur_scene,frame_in_scene))
         if cur_left=='GT' and HR_DS_FACTOR[cur_scene]>1:
             left = cv2.resize(left, dsize=(0,0),fx=1/HR_DS_FACTOR[cur_scene],fy=1/HR_DS_FACTOR[cur_scene], interpolation=cv2.INTER_AREA)
         if cur_zoom>1:
@@ -405,7 +265,8 @@ for f_num in trange(total_frames):
         separator = 255*np.ones([1080 if HIGH_RES_OUTPUT else frame_shape[0],SEPARATOR_WIDTH,3])
         new_frame.append(separator)
     if cur_disp_portion>0:
-        right = read_image(im_path(cur_right,cur_scene,f_num%num_frames))
+        # right = read_image(im_path(cur_right,cur_scene,f_num%num_frames[0]))
+        right = read_image(im_path(cur_right,cur_scene,frame_in_scene))
         if cur_left=='GT' and HR_DS_FACTOR[cur_scene]>1:
             right = cv2.resize(right, dsize=(0,0),fx=1/HR_DS_FACTOR[cur_scene],fy=1/HR_DS_FACTOR[cur_scene], interpolation=cv2.INTER_AREA)
         if cur_zoom>1:
@@ -447,11 +308,12 @@ for f_num in trange(total_frames):
         #     separator,
         #     right[:,-(1+max(SEPARATOR_WIDTH,(int(frame_shape[1]*(1-cur_half/2)-SEPARATOR_WIDTH/2)))):,:]]
         .astype(np.uint8))
-
+    frame_in_scene += 1
 
 
 
 vid_path = os.path.join(OUTPUT_PATH,'%s_B%s_FPS%d%s.mp4'%('_'.join(sorted(scenes)),'_'.join(sorted(included_baselines)),FPS,'gif_like' if GIF_LIKE_SAVING is not None else ''))
+print('Saving video file %s'%(vid_path))
 if GIF_LIKE_SAVING is not None:
     frames = frames[GIF_LIKE_SAVING[0]:GIF_LIKE_SAVING[1]+1]+frames[GIF_LIKE_SAVING[1]-1:GIF_LIKE_SAVING[0]-1:-1]
 imageio.mimwrite(vid_path, frames, fps = FPS, macro_block_size = 8)  # pip install imageio-ffmpeg

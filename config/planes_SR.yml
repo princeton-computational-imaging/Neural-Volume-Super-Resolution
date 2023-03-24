@@ -133,6 +133,11 @@ nerf:
     num_fine: 64
     # Whether to render models using a white background.
     white_background: False
+    im_consistency_loss_w: 1 #1#0
+    # blind_only_im_consistency:  True
+    im_consistency_iters_freq:  10
+    antialias_rendered_downsampling:  False
+    nonspatial_sampling4im_consistency: True
     # Standard deviation of noise to be added to the radiance field when
     # performing volume rendering.
     radiance_field_noise_std: 0.2
@@ -167,11 +172,11 @@ super_resolution:
   # input_normalization:  True
   # consistency_loss_w: 0 # 0.001
   # plane_loss_w:  0 #1
-  im_consistency_loss_w: 1 #1#0
-  blind_only_im_consistency:  True
-  im_consistency_iters_freq:  10
-  antialias_rendered_downsampling:  False
-  nonspatial_sampling4im_consistency: True
+  # im_consistency_loss_w: 1 #1#0
+  # # blind_only_im_consistency:  True
+  # im_consistency_iters_freq:  10
+  # antialias_rendered_downsampling:  False
+  # nonspatial_sampling4im_consistency: True
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic

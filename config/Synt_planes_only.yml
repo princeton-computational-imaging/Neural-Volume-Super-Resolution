@@ -4,13 +4,13 @@ experiment:
   # id: planes_only_blurrySTD2
   # id: planes_only_258recovery
   # id: planesOnly_fromOther4NoPaper453K_paper4noised5_0
-  id: planesOnly_fromNoDetach579K_paper4
+  id: planesOnly_fromNoDetach579K_paper4_8xLR
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 10 # 34  # 8239
   # Number of training iterations.
-  train_iters: 250000
+  train_iters: 750000
   # Number of training iterations after which to validate.
   validate_every: [0.1,5000] #50
   # Number of training iterations after which to checkpoint.
@@ -74,7 +74,8 @@ optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
   # Learning rate.
-  lr: 5.E-4 #1.E-3 #5.0E-3
+  # lr: 5.E-4 #The original LR used in the end-2-end training
+  lr: 4.E-3 # The x8 LR which I found to work best
   # lr_scheduler:
   #   patience: 5000
   #   factor: 0.5
