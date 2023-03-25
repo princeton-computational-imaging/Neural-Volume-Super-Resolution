@@ -211,10 +211,11 @@ def main():
         if len(dataset.module_confinements[bare_id])>0: tags.append('Fixed_'+'_'.join(dataset.module_confinements[bare_id]))
         if dataset.scene_types[bare_id]=='llff': tags.append('real')
         val_strings.append('_'.join(tags))
-    important_loss_terms = [tag for tag in val_strings if 'blind_validation' in tag]
-    if len(important_loss_terms)==0:        important_loss_terms = [tag for tag in val_strings if ('validation' in tag and '_LR' not in tag)]
-    if len(important_loss_terms)==0:        important_loss_terms = [tag for tag in val_strings if 'validation' in tag]
-    important_loss_terms = set(important_loss_terms)
+    # loss_groups4_best = [tag for tag in val_strings if 'blind_validation' in tag]
+    # if len(loss_groups4_best)==0:        
+    loss_groups4_best = [tag for tag in val_strings if ('validation' in tag and '_LR' not in tag)]
+    if len(loss_groups4_best)==0:        loss_groups4_best = [tag for tag in val_strings if 'validation' in tag]
+    loss_groups4_best = list(set(loss_groups4_best))
     loss4best = 'fine_loss' if all([v not in what2train for v in ['decoder','SR']]) else 'loss'
 
     def print_scenes_list(title,scenes):
@@ -424,7 +425,6 @@ def main():
             SR_factor = int(np.sqrt(scene_coupler.ds_factor))
         else:
             SR_factor = sf_config
-        # seperate_SR_planes_opt = getattr(cfg.nerf.train,'seperate_SR_planes_opt',False)
         assert not getattr(cfg.super_resolution.model,'single_plane',True) or getattr(cfg.super_resolution,'all_planes_dss_layers',None) is None
         if cfg.super_resolution.model.type!='None':
             SR_model = models.PlanesSR(
@@ -433,12 +433,10 @@ def main():
                 out_channels=plane_channels*(1 if getattr(cfg.super_resolution.model,'single_plane',True) else model_fine.num_density_planes),
                 sr_config=cfg.super_resolution,
                 plane_interp=getattr(cfg.super_resolution,'plane_resize_mode',model_fine.plane_interp),
-                # detach_LR_planes=getattr(cfg.nerf.train,'detach_LR_planes',True)
             )
             print("SR model: %d parameters"%(num_parameters(SR_model)))
             SR_model.to(device)
             if not eval_mode and 'SR' in what2train:
-            # if not (eval_mode or train_planes_only):   
                 SR_optimizer = getattr(torch.optim, cfg.optimizer.type)(
                     [p for k,p in SR_model.named_parameters() if 'NON_LEARNED' not in k],
                     lr=getattr(cfg.super_resolution,'lr',cfg.optimizer.lr)
@@ -481,20 +479,15 @@ def main():
         models2save = (['decoder'] if 'decoder' in what2train else [])+(['SR'] if SR_experiment and 'SR' in what2train and SR_model is not None else [])
     else:
         models2save = ['decoder']
-    # best_saved = (0,np.finfo(np.float32).max)
     experiment_info.update({'start_i':0,'eval_counter':0,'best_loss':(0,np.finfo(np.float32).max),'last_saved':dict(zip(models2save,[[] for i in models2save]))})
     experiment_info_file = os.path.join(logdir, "exp_info.pkl")
-    # params_init_path = None
     if load_saved_models:
         if resume_experiment and not eval_mode:
             legacy_info_tracking = not os.path.exists(experiment_info_file)
             if not legacy_info_tracking:
                 experiment_info = deep_update(experiment_info,safe_loading(experiment_info_file,suffix='pkl'))
 
-        # load_best = eval_mode or train_planes_only
-        # load_best = eval_mode or init_new_scenes or pretained_decoder_path is not None
         load_best = eval_mode or not resume_experiment
-        # initialize_from_trained = configargs.load_checkpoint=='' and end2end_training
         if SR_experiment and SR_model is not None:
             if SR_experiment and ('SR' not in what2train or resume_experiment or hasattr(cfg.super_resolution.model,'path')):
                 if resume_experiment and 'SR' in what2train:
@@ -552,7 +545,6 @@ def main():
                 ok = False
         if not (ok or eval_mode): # Not abort the run in eval_mode because then the configuration is copied from the existing one anyway. They can differ if the model configuration is changed by the code at some stage.
             raise Exception('Inconsistent model config')
-        # if not (ok or train_planes_only):  raise Exception('Inconsistent model config')
 
         def load_saved_parameters(model,saved_params,reduced_set=False):
             if not all([search('density_dec\.(\d)+\.(\d)+\.',p) is not None for p in saved_params if 'density_dec' in p]):
@@ -1119,7 +1111,7 @@ def main():
             start_time = time.time()
             # loss,psnr = evaluate()
             loss = evaluate()
-            eval_loss_since_save.extend([v for term in important_loss_terms for v in loss[term]])
+            eval_loss_since_save.extend([v for term in loss_groups4_best for v in loss[term]])
             evaluation_time = time.time()-start_time
             if store_planes and not eval_mode:
                 if not jump_start_phase or iter==0:
@@ -1164,8 +1156,8 @@ def main():
         # save_now &= iter>0
         if save_now:
             save_as_best = False
-            if len(experiment_info['running_scores'][loss4best][list(important_loss_terms)[0]])==val_ims_per_scene:
-                recent_loss_avg = np.mean([l for term in important_loss_terms for l in experiment_info['running_scores'][loss4best][term]])
+            if len(experiment_info['running_scores'][loss4best][loss_groups4_best[0]])==val_ims_per_scene:
+                recent_loss_avg = np.mean([l for term in loss_groups4_best for l in experiment_info['running_scores'][loss4best][term]])
                 if recent_loss_avg<experiment_info['best_loss'][1]:
                     experiment_info['best_loss'] = (iter,recent_loss_avg)
                     save_as_best = True
