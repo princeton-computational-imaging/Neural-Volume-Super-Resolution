@@ -118,8 +118,6 @@ def predict_and_render_radiance(
         pts = ro[..., None, :] + rd[..., None, :] * z_vals[..., :, None]
         # SR_CHUNK_REDUCE = 2
         chunksize = getattr(options.nerf, mode).chunksize
-        if 'della-' in socket.gethostname():
-            chunksize *= 5 #10
         radiance_field = run_network(
             model_coarse,
             pts,
@@ -316,7 +314,6 @@ def run_one_iter_of_nerf(
         viewdirs = ray_directions
         viewdirs = viewdirs / viewdirs.norm(p=2, dim=-1).unsqueeze(-1)
         viewdirs = viewdirs.reshape((-1, 3))
-    ray_shapes = ray_directions.shape  # Cache now, to restore later.
     if scene_config.no_ndc is False:
         ro, rd = ndc_rays(H, W, focal, 1.0, ray_origins, ray_directions)
         ro = ro.reshape((-1, 3))
@@ -324,29 +321,17 @@ def run_one_iter_of_nerf(
     else:
         ro = ray_origins.reshape((-1, 3))
         rd = ray_directions.reshape((-1, 3))
-    # near = options.nerf.near * torch.ones_like(rd[..., :1])
-    # far = options.nerf.far * torch.ones_like(rd[..., :1])
     near = scene_config.near * torch.ones_like(rd[..., :1])
     far = scene_config.far * torch.ones_like(rd[..., :1])
     rays = torch.cat((ro, rd, near, far), dim=-1)
     if options.nerf.use_viewdirs:
         rays = torch.cat((rays, viewdirs), dim=-1)
 
-    # chunk_size = getattr(options.nerf, mode).chunksize*64//max([getattr(options.nerf, mode).num_coarse,getattr(options.nerf, mode).num_fine])
     chunk_size = getattr(options.nerf, mode).chunksize
-    # print('!!!!!!WARNING!!!!!!!!')
     if isinstance(model_coarse,models.TwoDimPlanesModel):
         chunk_size = int(chunk_size/(model_coarse.num_density_planes/3))
-    if 'della-' in socket.gethostname():
-        chunk_size *= 2
-    # if not rays.requires_grad:
-    #     chunk_size *=2
     if (SR_model is not None or hasattr(model_fine,'SR_model')):
         chunk_size //= 10 #5 #(2*int(np.ceil(np.log2(model_fine.SR_model.n_blocks))))
-        # if model_fine.SR_model.per_channel_sr and model_fine.SR_model.training:
-        #     chunk_size //= 100
-        # if model_fine.SR_model.training:
-        #     chunk_size //= int(2*np.ceil(np.log2(model_fine.SR_model.n_blocks)))
     if spatial_margin is not None: # and not hasattr(model_fine,'SR_model'):
         rays = rays.reshape([H+2*spatial_margin,W+2*spatial_margin,-1])
     elif hasattr(options.nerf,'encode_position_fn') and options.nerf.encode_position_fn=="mip":
@@ -355,8 +340,6 @@ def run_one_iter_of_nerf(
     batch_shapes = [tuple(b.shape[:-1]) for b in batches]
     if spatial_margin is not None:
         batches = [b.reshape([-1,b.shape[-1]]) for b in batches]
-    # TODO: Init a list, keep appending outputs to that list,
-    # concat everything in the end.
     rgb_coarse, disp_coarse, acc_coarse = [], [], []
     rgb_fine, disp_fine, acc_fine,rgb_SR, disp_SR, acc_SR = None, None, None,None, None, None
     def append2list(item,to_list):

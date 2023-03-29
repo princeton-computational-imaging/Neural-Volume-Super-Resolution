@@ -22,7 +22,6 @@ import socket
 import datetime
 
 def main():
-    if 'della-' in socket.gethostname():    print('Adjusting memory settings to running on "Della" cluster.')
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config", type=str, help="Path to (.yml) config file."
@@ -61,7 +60,7 @@ def main():
     else:
         config_file = configargs.config
     cfg = get_config(config_file)
-    planes_model = not hasattr(cfg.models,'coarse') or cfg.models.coarse.type=="TwoDimPlanesModel"
+    planes_model = not hasattr(cfg.models,'coarse') or cfg.models.coarse.type=="TwoDimPlanesModel" # Whether using our feature-plane model. Set to False when running the Mip-NeRF baseline
     if eval_mode:
         import imageio
         dataset_config4eval = cfg.dataset
@@ -74,7 +73,6 @@ def main():
             cfg.dataset = dataset_config4eval
     print('Using configuration file %s'%(config_file))
     print(("Evaluating" if eval_mode else "Running") + " experiment %s"%(cfg.experiment.id))
-    SR_experiment = None
     im_consistency_loss_w = getattr(cfg.nerf.train,'im_consistency_loss_w',0)
     SR_experiment = "super_resolution" in cfg
     what2train = getattr(cfg.nerf.train,'what',[])
@@ -93,26 +91,22 @@ def main():
             os.makedirs(logdir, exist_ok=True)
         # Write out config parameters.
         with open(os.path.join(logdir, "config%s.yml"%('_Eval' if eval_mode else '')), "w") as f:
-            f.write(cfg.dump())  # cfg, f, default_flow_style=False)
+            f.write(cfg.dump())
     resume_experiment = os.path.exists(configargs.load_checkpoint)
     if configargs.load_checkpoint!='':
-        assert resume_experiment
+        assert resume_experiment,'Experiment to resume was not found in %s'%(configargs.load_checkpoint)
     pretrained_model_folder = getattr(cfg.models,'path',None)
     if planes_model and (not decoder_training or pretrained_model_folder):
         if os.path.isfile(pretrained_model_folder):   pretrained_model_folder = "/".join(pretrained_model_folder.split("/")[:-1])
         pretrained_model_config = get_config(os.path.join(pretrained_model_folder,"config.yml"))
         set_config_defaults(source=pretrained_model_config.models,target=cfg.models)
-    if not eval_mode:   writer = SummaryWriter(logdir)
+    if not eval_mode:   writer = SummaryWriter(logdir) #Setting TensorBoard logger
 
     load_saved_models = pretrained_model_folder is not None or resume_experiment
     init_new_scenes = not resume_experiment and ('LR_planes' in what2train) and (pretrained_model_folder is None or getattr(cfg.models,'init_scenes_hack',False))
 
-    H, W, focal, i_train, i_val, i_test = None, None, None, None, None, None
     # Load dataset
-    if getattr(cfg.nerf.train,'plane_dropout',0)>0: assert cfg.models.coarse.proj_combination=='avg' and cfg.models.coarse.num_planes>3
-
-    sr_val_scenes_with_LR = getattr(cfg.nerf.train,'sr_val_scenes_with_LR',False)
-    dataset = BlenderDataset(config=cfg.dataset,scene_id_func=models.get_scene_id,add_val_scene_LR=sr_val_scenes_with_LR,
+    dataset = BlenderDataset(config=cfg.dataset,scene_id_func=models.get_scene_id,
         eval_mode=eval_mode,scene_norm_coords=cfg.nerf if init_new_scenes else None,planes_logdir=getattr(cfg.models,'planes_path',logdir)) #,assert_LR_ver_of_val=im_consistency_loss
     scene_ids = dataset.per_im_scene_id
     i_val = dataset.i_val
@@ -124,7 +118,7 @@ def main():
     eval_training_too = not eval_mode
     available_scenes = list(scenes_set)
 
-    planes_updating = any(['planes' in m for m in what2train])
+    planes_updating = 'LR_planes' in what2train
     if planes_model and (not planes_updating or pretrained_model_folder):
         for conf,scenes in [c for p in pretrained_model_config.dataset.dir.values() for c in p.items()]:
             conf=eval(conf)
@@ -178,7 +172,6 @@ def main():
         for sc in scenes_set:  
             if sc not in scene_coupler.downsample_couples:  continue
             if init_new_scenes:
-                # if dataset_type=='llff':
                 if dataset.scene_types[sc]=='llff':
                     print("!!! Warning: Using val images to determine coord normalization on real images !!!")
                     coords_normalization[sc] = torch.stack([coords_normalization[sc],coords_normalization[scene_coupler.downsample_couples[sc]]],-1)
@@ -568,12 +561,12 @@ def main():
     spatial_sampling = spatial_padding_size>0 or cfg.nerf.train.get("spatial_sampling",False)
     spatial_sampling4im_consistency = im_consistency_loss_w and not getattr(cfg.nerf.train,'nonspatial_sampling4im_consistency',False)
     assert SR_model is None or (not im_consistency_loss_w) or (not getattr(cfg.nerf.train,'antialias_rendered_downsampling',True)) or spatial_sampling4im_consistency
-    if spatial_padding_size>0 or spatial_sampling or sr_val_scenes_with_LR or spatial_sampling4im_consistency:
+    if spatial_padding_size>0 or spatial_sampling or spatial_sampling4im_consistency:
         SAMPLE_PATCH_BY_CONTENT = True
         patch_size = chunksize_to_2D(cfg.nerf.train.num_random_rays)
         if len(scene_coupler.HR_planes_LR_ims_scenes)>0 or im_consistency_loss_w:
             patch_size = patch_size//scene_coupler.ds_factor*scene_coupler.ds_factor
-        optional_size_divider = scene_coupler.ds_factor if sr_val_scenes_with_LR or im_consistency_loss_w else 1
+        optional_size_divider = scene_coupler.ds_factor if im_consistency_loss_w else 1
         if SAMPLE_PATCH_BY_CONTENT:
             assert getattr(cfg.nerf.train,'spatial_patch_sampling','background_est') in ['background_est','STD']
             if getattr(cfg.nerf.train,'spatial_patch_sampling','background_est')=='STD':
@@ -644,7 +637,7 @@ def main():
     else:
         spatial_margin = 0
     virtual_batch_size = getattr(cfg.nerf.train,'virtual_batch_size',1)
-    if sr_val_scenes_with_LR or (im_consistency_loss_w and spatial_sampling4im_consistency):
+    if im_consistency_loss_w and spatial_sampling4im_consistency:
         def downsample_rendered_pixels(pixels,antialias=True):
             im2downsample = pixels.permute(1,0).reshape([1,3,patch_size,patch_size])
             assert all([sz//scene_coupler.ds_factor==sz/scene_coupler.ds_factor for sz in im2downsample.shape[2:]])
@@ -1092,13 +1085,9 @@ def main():
 
     training_time,last_evaluated = 0,1*experiment_info['start_i']
     recently_saved, = time.time(),
-    # eval_loss_since_save, = []
     print_cycle_loss,print_cycle_psnr = [],[],
     evaluation_time = 0
     recent_loss_avg = np.nan
-    jump_start_phase = isinstance(getattr(cfg.nerf.train,'jump_start',False),list) and experiment_info['start_i']==0
-    if jump_start_phase:
-        n_jump_start_scenes = planes_opt.jump_start(config=cfg.nerf.train.jump_start)
     for iter in trange(experiment_info['start_i'],cfg.experiment.train_iters):
         # Validation
         if isinstance(cfg.experiment.validate_every,list):
@@ -1106,20 +1095,15 @@ def main():
         else:
             evaluate_now = iter % cfg.experiment.validate_every == 0
         evaluate_now |= iter == cfg.experiment.train_iters - 1
-        if iter>0:  evaluate_now &= not jump_start_phase
         if evaluate_now:
             last_evaluated = 1*iter
             start_time = time.time()
-            # loss,psnr = evaluate()
             loss = evaluate()
-            # eval_loss_since_save.extend([v for term in loss_groups4_best for v in loss[term]])
             evaluation_time = time.time()-start_time
             if planes_model and not eval_mode:
-                if not jump_start_phase or iter==0:
-                    planes_opt.draw_scenes(assign_LR_planes=not SR_experiment or not optimize_planes)
-                    new_drawn_scenes = planes_opt.cur_scenes
-                    if jump_start_phase:    new_drawn_scenes = new_drawn_scenes[:n_jump_start_scenes]
-                    image_sampler.update_active(new_drawn_scenes)
+                planes_opt.draw_scenes(assign_LR_planes=not SR_experiment or not optimize_planes)
+                new_drawn_scenes = planes_opt.cur_scenes
+                image_sampler.update_active(new_drawn_scenes)
             elif not planes_model:
                 image_sampler.update_active(training_scenes)
             training_time = 0
@@ -1131,7 +1115,6 @@ def main():
         loss,psnr,new_drawn_scenes = train()
         if new_drawn_scenes is not None:
             image_sampler.update_active(new_drawn_scenes)
-            # available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
 
         if psnr is not None:
             print_cycle_loss.append(loss)
@@ -1139,13 +1122,6 @@ def main():
         training_time += time.time()-start_time
 
         if iter % cfg.experiment.print_every == 0 or iter == cfg.experiment.train_iters - 1:
-            if iter>0 and jump_start_phase:
-                if np.mean(print_cycle_loss)<=cfg.nerf.train.jump_start[1]:
-                    jump_start_phase = False
-                    new_drawn_scenes = planes_opt.jump_start(on=False)
-                    # available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
-                    image_sampler.update_active(new_drawn_scenes)
-
             tqdm.write("[TRAIN] Iter: " + str(iter) + " Loss: " + str(np.mean(print_cycle_loss)) + " PSNR: " + str(np.mean(print_cycle_psnr)))
             if planes_model:
                 planes_opt.lr_scheduler_step(np.mean(print_cycle_loss))
@@ -1154,7 +1130,6 @@ def main():
         save_now |= iter % cfg.experiment.save_every == 0 if isinstance(cfg.experiment.save_every,int) else (time.time()-recently_saved)/60>cfg.experiment.save_every
         save_now |= iter == cfg.experiment.train_iters - 1
         if '/slurm/code/' in os.getcwd(): save_now |= iter==0   # Assuming not debugging when called from a slurm code folder.
-        # save_now &= iter>0
         if save_now:
             save_as_best = False
             if len(experiment_info['running_scores'][loss4best][loss_groups4_best[0]])==val_ims_per_scene:
@@ -1167,7 +1142,6 @@ def main():
             else:
                 print("================Best checkpoint is still %d, with average evaluation loss %.3e (recent average is %.3e)====================="%(experiment_info['best_loss'][0],experiment_info['best_loss'][1],recent_loss_avg))
             recently_saved = time.time()
-            # eval_loss_since_save = []
             if planes_model and optimize_planes and save_as_best:
                 planes_opt.save_params(as_best=True)
             for model2save in models2save:
@@ -1182,14 +1156,8 @@ def main():
                     checkpoint_dict.update({"model_coarse_state_dict": model_coarse.state_dict()})
                     if model_fine:  checkpoint_dict.update({"model_fine_state_dict": model_fine.state_dict()})
                     if planes_model:
-                        # if store_planes or getattr(cfg.models.fine,'use_coarse_planes',False):
                         checkpoint_dict["model_fine_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_fine_state_dict"].items() if all([token not in k for token in (tokens_2_exclude+['rot_mats'])])])
-                        # if store_planes:
                         checkpoint_dict["model_coarse_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_coarse_state_dict"].items() if all([token not in k for token in tokens_2_exclude])])
-                            # if optimize_planes and save_as_best:
-                            #     planes_opt.save_params(as_best=True)
-                        # else:
-                        #     checkpoint_dict.update({"coords_normalization": model_fine.box_coords})
                     if optimizer is not None:
                         checkpoint_dict.update({"optimizer": optimizer.state_dict()})
 

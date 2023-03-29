@@ -44,13 +44,13 @@ def pose_spherical(theta, phi, radius):
 
 FIGURE_IMAGES_MODE = False
 class BlenderDataset(torch.utils.data.Dataset):
-    def __init__(self,config,scene_id_func,add_val_scene_LR,eval_mode,scene_norm_coords=None,planes_logdir=None) -> None: #,assert_LR_ver_of_val=False
+    def __init__(self,config,scene_id_func,eval_mode,scene_norm_coords=None,planes_logdir=None) -> None: #,assert_LR_ver_of_val=False
         ON_THE_FLY_SCENES_THRESHOLD = 2 if eval_mode else 20
         super(BlenderDataset,self).__init__()
         if FIGURE_IMAGES_MODE:  assert eval_mode
         self.get_scene_id = scene_id_func
         prob_assigned2scene_groups = getattr(config,'prob_assigned2scene_groups',True)
-        train_dirs = self.get_scene_configs(getattr(config.dir,'train',{}),add_val_scene_LR=add_val_scene_LR,prob_assigned2scene_groups=prob_assigned2scene_groups)
+        train_dirs = self.get_scene_configs(getattr(config.dir,'train',{}),prob_assigned2scene_groups=prob_assigned2scene_groups)
         val_scenes_dict = getattr(config.dir,'val',{})
         self.downsampling_factors,self.all_scenes,plane_resolutions,val_ids,scene_types,scene_probs,module_confinements = self.get_scene_configs(val_scenes_dict)
         assert sum([p for p in scene_probs])==1 if prob_assigned2scene_groups else all([p==1 for p in scene_probs]),'Why assign sampling probabilities to validation scenes?'
@@ -241,19 +241,10 @@ class BlenderDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.images)
 
-    def get_scene_configs(self,config_dict,add_val_scene_LR=False,excluded_scene_ids=[],prob_assigned2scene_groups=True):
+    def get_scene_configs(self,config_dict,excluded_scene_ids=[],prob_assigned2scene_groups=True):
         # PROB_ASSIGNED_TO_SCENE_GROUPS = True # When True, the probability value reflects the chance of sampling A (any) SCENE IN THE GROUP, and not the probabiliy of sampling any specific scene.
         ds_factors,dir,plane_res,scene_ids,types,probs,module_confinements = [],[],[],[],[],[],[]
         config_dict = dict(config_dict)
-        if add_val_scene_LR:
-            assert len(config_dict)==2
-            assert len(excluded_scene_ids)==0,'Unsupported'
-            conf_HR_planes,conf_LR_planes = config_dict.keys()
-            if len(config_dict[conf_HR_planes])>len(config_dict[conf_LR_planes]):
-                conf_HR_planes,conf_LR_planes = conf_LR_planes,conf_HR_planes
-            assert conf_HR_planes.split(',')[2]==conf_LR_planes.split(',')[2]
-            config_dict.update({','.join([conf_LR_planes.split(',')[0],conf_HR_planes.split(',')[1],conf_LR_planes.split(',')[2]]):
-                [sc for sc in config_dict[conf_LR_planes] if sc not in config_dict[conf_HR_planes]]})
         for conf,scenes in config_dict.items():
             conf = list(eval(conf))
             if len(conf)<2: conf.append(None) # Positional planes resolution. Setting None for non-planes model (e.g. NeRF)
