@@ -126,12 +126,6 @@ def main():
     # load_saved_models = pretained_decoder_path is not None or resume_experiment
     load_saved_models = pretrained_model_folder is not None or resume_experiment
     init_new_scenes = not resume_experiment and any([m in ['LR_planes','HR_planes'] for m in what2train]) and (pretrained_model_folder is None or getattr(cfg.models,'init_scenes_hack',False))
-    # if not getattr(cfg.models,'init_scenes_hack',False) and not resume_experiment and getattr(cfg.models,'planes_path',None) is not None:
-    #     params_init_path = getattr(cfg.models,'planes_path')
-    if not getattr(cfg.models,'init_scenes_hack',False) and not resume_experiment and pretrained_model_folder and any([m in ['LR_planes','HR_planes'] for m in what2train]):
-        params_init_path = os.path.join(pretrained_model_folder,'planes')
-    else:
-        params_init_path = None
 
     # images, poses, render_poses, hwf, i_split = None, None, None, None, None
     H, W, focal, i_train, i_val, i_test = None, None, None, None, None, None
@@ -161,7 +155,6 @@ def main():
     available_scenes = list(scenes_set)
 
     planes_updating = any(['planes' in m for m in what2train])
-    # if planes_model and (not planes_updating or params_init_path):
     if planes_model and (not planes_updating or pretrained_model_folder):
         # available_scenes = []
         for conf,scenes in [c for p in pretrained_model_config.dataset.dir.values() for c in p.items()]:
@@ -272,8 +265,8 @@ def main():
         val_strings.append('_'.join(tags))
     # loss_groups4_best = [tag for tag in val_strings if 'blind_validation' in tag]
     # if len(loss_groups4_best)==0:        
-    loss_groups4_best = [tag for tag in val_strings if ('validation' in tag and '_LR' not in tag)]
-    if len(loss_groups4_best)==0:        loss_groups4_best = [tag for tag in val_strings if 'validation' in tag]
+    loss_groups4_best = [tag for tag in val_strings if ('validation' in tag and '_LR' not in tag and 'blind' not in tag)]
+    if len(loss_groups4_best)==0:        loss_groups4_best = [tag for tag in val_strings if 'validation' in tag and 'blind' not in tag]
     loss_groups4_best = list(set(loss_groups4_best))
     loss4best = 'fine_loss' if all([v not in what2train for v in ['decoder','SR']]) else 'loss'
 
@@ -551,7 +544,6 @@ def main():
     # best_saved = (0,np.finfo(np.float32).max)
     experiment_info.update({'start_i':0,'eval_counter':0,'best_loss':(0,np.finfo(np.float32).max),'last_saved':dict(zip(models2save,[[] for i in models2save]))})
     experiment_info_file = os.path.join(logdir, "exp_info.pkl")
-    # params_init_path = None
     if load_saved_models:
         if resume_experiment and not eval_mode:
             legacy_info_tracking = not os.path.exists(experiment_info_file)
@@ -675,13 +667,27 @@ def main():
             single_plane=getattr(cfg.super_resolution.model,'single_plane',True))
     run_time_signature = time.time()
     if store_planes:
-        planes_folder = os.path.join(pretrained_model_folder if not planes_updating else logdir,'planes')
-        if eval_mode: assert os.path.isdir(planes_folder)
-        if not os.path.isdir(planes_folder):
-            os.mkdir(planes_folder)
-        planes_folder = [planes_folder]
-        if getattr(cfg.models,'planes_path',None) is not None:
-            planes_folder.insert(0,os.path.join(getattr(cfg.models,'planes_path'),'planes'))
+        planes_folder = []
+        if planes_updating: planes_folder.append(logdir)
+        if getattr(cfg.models,'planes_path',None) is not None:  planes_folder.append(getattr(cfg.models,'planes_path'))
+        if pretrained_model_folder is not None: planes_folder.append(pretrained_model_folder)
+        planes_folder = [os.path.join(f,'planes') for f in planes_folder]
+        if eval_mode: assert os.path.isdir(planes_folder[0])
+        if not os.path.isdir(planes_folder[0]):
+            os.mkdir(planes_folder[0])
+        # planes_folder = os.path.join(pretrained_model_folder if not planes_updating else logdir,'planes')
+        # if eval_mode: assert os.path.isdir(planes_folder)
+        # if not os.path.isdir(planes_folder):
+        #     os.mkdir(planes_folder)
+        # planes_folder = [planes_folder]
+        # if getattr(cfg.models,'planes_path',None) is not None:
+        #     planes_folder.insert(0,os.path.join(getattr(cfg.models,'planes_path'),'planes'))
+        if not getattr(cfg.models,'init_scenes_hack',False) and not resume_experiment and pretrained_model_folder and any([m in ['LR_planes','HR_planes'] for m in what2train]):
+            params_init_path = [os.path.join(pretrained_model_folder,'planes')]
+            if getattr(cfg.models,'planes_path',None) is not None:
+                params_init_path.insert(0,os.path.join(getattr(cfg.models,'planes_path'),'planes'))
+        else:
+            params_init_path = None
         scenes_cycle_counter = Counter()
         optimize_planes = any(['planes' in m for m in what2train]) and not eval_mode
         lr_scheduler = getattr(cfg.optimizer,'lr_scheduler',None)
@@ -1170,7 +1176,8 @@ def main():
 
     training_time,last_evaluated = 0,1*experiment_info['start_i']
     recently_saved, = time.time(),
-    eval_loss_since_save,print_cycle_loss,print_cycle_psnr = [],[],[]
+    # eval_loss_since_save, = []
+    print_cycle_loss,print_cycle_psnr = [],[],
     evaluation_time = 0
     recent_loss_avg = np.nan
     jump_start_phase = isinstance(getattr(cfg.nerf.train,'jump_start',False),list) and experiment_info['start_i']==0
@@ -1196,7 +1203,7 @@ def main():
             start_time = time.time()
             # loss,psnr = evaluate()
             loss = evaluate()
-            eval_loss_since_save.extend([v for term in loss_groups4_best for v in loss[term]])
+            # eval_loss_since_save.extend([v for term in loss_groups4_best for v in loss[term]])
             evaluation_time = time.time()-start_time
             if store_planes and not eval_mode:
                 if not jump_start_phase or iter==0:
@@ -1254,7 +1261,7 @@ def main():
             else:
                 print("================Best checkpoint is still %d, with average evaluation loss %.3e (recent average is %.3e)====================="%(experiment_info['best_loss'][0],experiment_info['best_loss'][1],recent_loss_avg))
             recently_saved = time.time()
-            eval_loss_since_save = []
+            # eval_loss_since_save = []
             if planes_model and optimize_planes and save_as_best:
                 planes_opt.save_params(as_best=True)
             for model2save in models2save:
