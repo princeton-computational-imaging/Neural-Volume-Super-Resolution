@@ -1180,9 +1180,9 @@ def main():
     print_cycle_loss,print_cycle_psnr = [],[],
     evaluation_time = 0
     recent_loss_avg = np.nan
-    jump_start_phase = isinstance(getattr(cfg.nerf.train,'jump_start',False),list) and experiment_info['start_i']==0
-    if jump_start_phase:
-        n_jump_start_scenes = planes_opt.jump_start(config=cfg.nerf.train.jump_start)
+    # jump_start_phase = isinstance(getattr(cfg.nerf.train,'jump_start',False),list) and experiment_info['start_i']==0
+    # if jump_start_phase:
+    #     n_jump_start_scenes = planes_opt.jump_start(config=cfg.nerf.train.jump_start)
     for iter in trange(experiment_info['start_i'],cfg.experiment.train_iters):
         # Validation
         if isinstance(cfg.experiment.validate_every,list):
@@ -1190,7 +1190,7 @@ def main():
         else:
             evaluate_now = iter % cfg.experiment.validate_every == 0
         evaluate_now |= iter == cfg.experiment.train_iters - 1
-        if iter>0:  evaluate_now &= not jump_start_phase
+        # if iter>0:  evaluate_now &= not jump_start_phase
         if True and DEBUG_MODE and evaluate_now:
             print('!!!!!!!!!!WARNING!!!!!!!!!!!')
             evaluate_now = False
@@ -1206,14 +1206,14 @@ def main():
             # eval_loss_since_save.extend([v for term in loss_groups4_best for v in loss[term]])
             evaluation_time = time.time()-start_time
             if store_planes and not eval_mode:
-                if not jump_start_phase or iter==0:
-                    # planes_opt.draw_scenes(assign_LR_planes=not end2end_training)
-                    planes_opt.draw_scenes(assign_LR_planes=SR_experiment!="model" or not optimize_planes)
-                    # planes_opt.draw_scenes(assign_LR_planes='SR' not in what2train)
-                    new_drawn_scenes = planes_opt.cur_scenes
-                    if jump_start_phase:    new_drawn_scenes = new_drawn_scenes[:n_jump_start_scenes]
-                    image_sampler.update_active(new_drawn_scenes)
-                    # available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
+                # if not jump_start_phase or iter==0:
+                # planes_opt.draw_scenes(assign_LR_planes=not end2end_training)
+                planes_opt.draw_scenes(assign_LR_planes=SR_experiment!="model" or not optimize_planes)
+                # planes_opt.draw_scenes(assign_LR_planes='SR' not in what2train)
+                new_drawn_scenes = planes_opt.cur_scenes
+                # if jump_start_phase:    new_drawn_scenes = new_drawn_scenes[:n_jump_start_scenes]
+                image_sampler.update_active(new_drawn_scenes)
+                # available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
             elif not store_planes:
                 image_sampler.update_active(training_scenes)
             training_time = 0
@@ -1233,12 +1233,12 @@ def main():
         training_time += time.time()-start_time
 
         if iter % cfg.experiment.print_every == 0 or iter == cfg.experiment.train_iters - 1:
-            if iter>0 and jump_start_phase:
-                if np.mean(print_cycle_loss)<=cfg.nerf.train.jump_start[1]:
-                    jump_start_phase = False
-                    new_drawn_scenes = planes_opt.jump_start(on=False)
-                    # available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
-                    image_sampler.update_active(new_drawn_scenes)
+            # if iter>0 and jump_start_phase:
+            #     if np.mean(print_cycle_loss)<=cfg.nerf.train.jump_start[1]:
+            #         jump_start_phase = False
+            #         new_drawn_scenes = planes_opt.jump_start(on=False)
+            #         # available_train_inds = [i for i in i_train if scene_ids[i] in new_drawn_scenes]
+            #         image_sampler.update_active(new_drawn_scenes)
 
             tqdm.write("[TRAIN] Iter: " + str(iter) + " Loss: " + str(np.mean(print_cycle_loss)) + " PSNR: " + str(np.mean(print_cycle_psnr)))
             if planes_model:

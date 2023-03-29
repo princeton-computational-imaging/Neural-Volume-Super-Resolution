@@ -144,3 +144,4 @@ src/ResizeRight/__init__.py
 logs_archive/*
 train_nerf_copy.py
 reference_scores.pkl
+scripts/video_scipts
