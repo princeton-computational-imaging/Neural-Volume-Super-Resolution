@@ -106,10 +106,6 @@ def main():
 
     load_saved_models = pretrained_model_folder is not None or resume_experiment
     init_new_scenes = not resume_experiment and ('LR_planes' in what2train) and (pretrained_model_folder is None or getattr(cfg.models,'init_scenes_hack',False))
-    if not getattr(cfg.models,'init_scenes_hack',False) and not resume_experiment and pretrained_model_folder and 'LR_planes' in what2train:
-        params_init_path = os.path.join(pretrained_model_folder,'planes')
-    else:
-        params_init_path = None
 
     H, W, focal, i_train, i_val, i_test = None, None, None, None, None, None
     # Load dataset
@@ -213,8 +209,8 @@ def main():
         val_strings.append('_'.join(tags))
     # loss_groups4_best = [tag for tag in val_strings if 'blind_validation' in tag]
     # if len(loss_groups4_best)==0:        
-    loss_groups4_best = [tag for tag in val_strings if ('validation' in tag and '_LR' not in tag)]
-    if len(loss_groups4_best)==0:        loss_groups4_best = [tag for tag in val_strings if 'validation' in tag]
+    loss_groups4_best = [tag for tag in val_strings if ('validation' in tag and '_LR' not in tag and 'blind' not in tag)]
+    if len(loss_groups4_best)==0:        loss_groups4_best = [tag for tag in val_strings if 'validation' in tag and 'blind' not in tag]
     loss_groups4_best = list(set(loss_groups4_best))
     loss4best = 'fine_loss' if all([v not in what2train for v in ['decoder','SR']]) else 'loss'
 
@@ -306,11 +302,11 @@ def main():
         if getattr(cfg.nerf,'viewdir_mapping',False): assert getattr(cfg.nerf,'use_viewdirs',True)
         if hasattr(cfg.nerf.train,'viewdir_downsampling'):  assert hasattr(cfg.nerf.train,'max_plane_downsampling')
         assert not getattr(cfg.models.coarse,'force_planes_consistency',False),"Depricated"
-        store_planes = hasattr(cfg.nerf.train,'store_planes')
-        if store_planes:    assert not getattr(cfg.nerf.train,'save_GPU_memory',False),'I think this is unnecessary.'
+        # store_planes = hasattr(cfg.nerf.train,'store_planes')
+        # if store_planes:    assert not getattr(cfg.nerf.train,'save_GPU_memory',False),'I think this is unnecessary.'
         model_coarse = models.TwoDimPlanesModel(
             use_viewdirs=cfg.nerf.use_viewdirs,
-            coords_normalization = None if store_planes else coords_normalization,
+            # coords_normalization = None if store_planes else coords_normalization,
             dec_density_layers=getattr(cfg.models.coarse,'dec_density_layers',4),
             dec_rgb_layers=getattr(cfg.models.coarse,'dec_rgb_layers',4),
             dec_channels=getattr(cfg.models.coarse,'dec_channels',128),
@@ -364,7 +360,7 @@ def main():
                 set_config_defaults(source=cfg.models.coarse,target=cfg.models.fine)
                 model_fine = models.TwoDimPlanesModel(
                     use_viewdirs=cfg.nerf.use_viewdirs,
-                    coords_normalization = None if store_planes else coords_normalization,
+                    # coords_normalization = None if store_planes else coords_normalization,
                     dec_density_layers=getattr(cfg.models.fine,'dec_density_layers',4),
                     dec_rgb_layers=getattr(cfg.models.fine,'dec_rgb_layers',4),
                     dec_channels=getattr(cfg.models.fine,'dec_channels',128),
@@ -373,7 +369,7 @@ def main():
                     num_viewdir_plane_channels=getattr(cfg.models.fine,'num_viewdir_plane_channels',None),
                     rgb_dec_input=getattr(cfg.models.fine,'rgb_dec_input','projections'),
                     proj_combination=getattr(cfg.models.fine,'proj_combination','sum'),
-                    planes=model_coarse.planes_ if (not store_planes and getattr(cfg.models.fine,'use_coarse_planes',False)) else None,
+                    # planes=model_coarse.planes_ if (not store_planes and getattr(cfg.models.fine,'use_coarse_planes',False)) else None,
                     plane_interp=getattr(cfg.models.fine,'plane_interp','bilinear'),
                     align_corners=getattr(cfg.models.fine,'align_corners',True),
                     interp_viewdirs=getattr(cfg.models.fine,'interp_viewdirs',None),
@@ -399,9 +395,9 @@ def main():
             print("Fine model: %d parameters"%num_parameters(model_fine))
             model_fine.to(device)
 
-    if planes_model and getattr(cfg.nerf.train,'save_GPU_memory',False):
-        model_coarse.planes2cpu()
-        model_fine.planes2cpu()
+    # if planes_model and getattr(cfg.nerf.train,'save_GPU_memory',False):
+    #     model_coarse.planes2cpu()
+    #     model_fine.planes2cpu()
 
     rendering_loss_w = 1
     SR_model,SR_optimizer = None,None
@@ -458,7 +454,7 @@ def main():
                     return plane_params
                 else:
                     return params
-            trainable_parameters_ = collect_params(model_coarse,filter='non_planes' if store_planes else 'all')
+            trainable_parameters_ = collect_params(model_coarse,filter='non_planes' if planes_model else 'all')
             if model_fine is not None:
                 if planes_model:
                     if cfg.models.fine.type!="use_same":
@@ -551,12 +547,12 @@ def main():
                 saved_params = OrderedDict([(k if 'NON_LEARNED' in k else k.replace('.','.0.',1),v) for k,v in saved_params.items()])
             mismatch = model.load_state_dict(saved_params,strict=False)
             allowed_missing = []
-            if store_planes:    allowed_missing.append('planes_.sc')
+            if planes_model:    allowed_missing.append('planes_.sc')
             if reduced_set: allowed_missing.append('rot_mats')
             assert (len(mismatch.missing_keys)==0 or all([any([tok in k for tok in allowed_missing]) for k in mismatch.missing_keys]))\
                 and all(['planes_.sc' in k for k in mismatch.unexpected_keys])
-            if planes_model and not store_planes:
-                model.box_coords = checkpoint["coords_normalization"]
+            # if planes_model and not store_planes:
+            #     model.box_coords = checkpoint["coords_normalization"]
 
         if planes_model:
             checkpoint["model_coarse_state_dict"] = model_coarse.rot_mat_backward_support(checkpoint["model_coarse_state_dict"])
@@ -587,7 +583,7 @@ def main():
                 
     assert isinstance(spatial_sampling,bool) or spatial_sampling==1,'Unsupported'
     if planes_model and SR_model is not None:
-        save_RAM_memory = not store_planes and len(model_coarse.planes_)>=10
+        # save_RAM_memory = not store_planes and len(model_coarse.planes_)>=10
         if getattr(cfg.super_resolution,'apply_2_coarse',False):
             model_coarse.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,
                 plane_dropout=getattr(cfg.super_resolution,'plane_dropout',0),
@@ -599,14 +595,21 @@ def main():
             plane_dropout=getattr(cfg.super_resolution,'plane_dropout',0),
             single_plane=getattr(cfg.super_resolution.model,'single_plane',True))
     run_time_signature = time.time()
-    if store_planes:
-        planes_folder = os.path.join(pretrained_model_folder if not planes_updating else logdir,'planes')
-        if eval_mode: assert os.path.isdir(planes_folder)
-        if not os.path.isdir(planes_folder):
-            os.mkdir(planes_folder)
-        planes_folder = [planes_folder]
-        if getattr(cfg.models,'planes_path',None) is not None:
-            planes_folder.insert(0,os.path.join(getattr(cfg.models,'planes_path'),'planes'))
+    if planes_model:
+        planes_folder = []
+        if planes_updating: planes_folder.append(logdir)
+        if getattr(cfg.models,'planes_path',None) is not None:  planes_folder.append(getattr(cfg.models,'planes_path'))
+        if pretrained_model_folder is not None: planes_folder.append(pretrained_model_folder)
+        planes_folder = [os.path.join(f,'planes') for f in planes_folder]
+        if eval_mode: assert os.path.isdir(planes_folder[0])
+        if not os.path.isdir(planes_folder[0]):
+            os.mkdir(planes_folder[0])
+        if not getattr(cfg.models,'init_scenes_hack',False) and not resume_experiment and pretrained_model_folder and any([m in ['LR_planes','HR_planes'] for m in what2train]):
+            params_init_path = [os.path.join(pretrained_model_folder,'planes')]
+            if getattr(cfg.models,'planes_path',None) is not None:
+                params_init_path.insert(0,os.path.join(getattr(cfg.models,'planes_path'),'planes'))
+        else:
+            params_init_path = None
         scenes_cycle_counter = Counter()
         optimize_planes = any(['planes' in m for m in what2train]) and not eval_mode
         lr_scheduler = getattr(cfg.optimizer,'lr_scheduler',None)
@@ -616,6 +619,7 @@ def main():
             use_frozen_planes = ''
         if lr_scheduler is not None:
             lr_scheduler['patience'] = int(np.ceil(lr_scheduler['patience']/cfg.experiment.print_every))
+
         planes_opt = models.PlanesOptimizer(optimizer_type=cfg.optimizer.type,
             scene_id_plane_resolution=scene_id_plane_resolution,options=cfg.nerf.train.store_planes,save_location=planes_folder,
             lr=getattr(cfg.optimizer,'planes_lr',cfg.optimizer.lr),model_coarse=model_coarse,model_fine=model_fine,
@@ -629,7 +633,6 @@ def main():
             lr_scheduler=lr_scheduler,use_frozen_planes=use_frozen_planes,
         )
 
-    if planes_model:    assert not (hasattr(cfg.models.coarse,'plane_resolutions') or hasattr(cfg.models.coarse,'viewdir_plane_resolution')),'Depricated.'
     if SR_experiment and getattr(cfg.super_resolution,'input_normalization',False) and not resume_experiment:
         #Initializing a new SR model that uses input normalization
         SR_model.normalization_params(planes_opt.get_plane_stats(viewdir=getattr(cfg.super_resolution,'SR_viewdir',False),single_plane=SR_model.single_plane))
@@ -701,7 +704,7 @@ def main():
                     ray_origins, ray_directions = get_ray_bundle(
                         cur_H, cur_W, cur_focal, pose_target,padding_size=spatial_padding_size,downsampling_offset=downsampling_offset(cur_ds_factor),
                     )
-                    if store_planes and (not eval_mode or eval_num==0):
+                    if planes_model and (not eval_mode or eval_num==0):
                         planes_opt.load_scene(cur_scene_id,load_best=not optimize_planes)
                         planes_opt.cur_id = cur_scene_id
                     rgb_coarse_, _, _, rgb_fine_, _, _,rgb_SR_,_,_ = eval_nerf(
@@ -799,8 +802,8 @@ def main():
                     psnr[val_strings[scene_num]].append(mse2psnr(fine_loss[val_strings[scene_num]][-1] if loss[val_strings[scene_num]][-1] is None else loss[val_strings[scene_num]][-1]))
                     if planes_model and SR_model is not None:
                         last_scene_eval = img_idx==img_indecis[eval_cycle][-1]
-                        if (store_planes and (not eval_mode or last_scene_eval)) or save_RAM_memory:
-                            SR_model.clear_SR_planes(all_planes=store_planes)
+                        if (planes_model and (not eval_mode or last_scene_eval)):
+                            SR_model.clear_SR_planes(all_planes=True)
                             planes_opt.generated_planes.clear()
                             planes_opt.downsampled_planes.clear()
                 SAVE_COARSE_IMAGES = False
@@ -921,7 +924,6 @@ def main():
                 dim=-1,
             )
 
-        # if spatial_padding_size>0 or spatial_sampling or HR_plane_LR_im or im_consistency_iter:
         if spatial_padding_size>0 or spatial_sampling or HR_plane_LR_im or (im_consistency_iter and spatial_sampling4im_consistency):
             if SAMPLE_PATCH_BY_CONTENT:
                 patches_vacancy_dist = im_2_sampling_dist(img_target[...,:3])
@@ -933,8 +935,6 @@ def main():
             cropped_inds =\
                 coords[upper_left_corner[1]:upper_left_corner[1]+patch_size//optional_size_divider,\
                 upper_left_corner[0]:upper_left_corner[0]+patch_size//optional_size_divider]
-            # if im_consistency_iter:
-            #     cropped_inds = torch.div(cropped_inds[::scene_coupler.ds_factor,::scene_coupler.ds_factor,:], scene_coupler.ds_factor, rounding_mode='floor')
             cropped_inds = cropped_inds.reshape([-1,2])
             if HR_plane_LR_im or im_consistency_iter:
                 upper_left_corner *= scene_coupler.ds_factor
@@ -969,7 +969,7 @@ def main():
                 optimizer.zero_grad()
             if SR_optimizer is not None:
                 SR_optimizer.zero_grad()
-        if store_planes:
+        if planes_model:
             planes_opt.cur_id = cur_scene_id
             planes_opt.zero_grad()
         if hasattr(model_fine,'SR_model') and sr_iter:
@@ -1066,7 +1066,7 @@ def main():
 
         loss.backward()
         new_drawn_scenes = None
-        if store_planes:
+        if planes_model:
             new_drawn_scenes = planes_opt.step()
         if last_v_batch_iter:
             if optimizer is not None:
@@ -1092,7 +1092,8 @@ def main():
 
     training_time,last_evaluated = 0,1*experiment_info['start_i']
     recently_saved, = time.time(),
-    eval_loss_since_save,print_cycle_loss,print_cycle_psnr = [],[],[]
+    # eval_loss_since_save, = []
+    print_cycle_loss,print_cycle_psnr = [],[],
     evaluation_time = 0
     recent_loss_avg = np.nan
     jump_start_phase = isinstance(getattr(cfg.nerf.train,'jump_start',False),list) and experiment_info['start_i']==0
@@ -1111,15 +1112,15 @@ def main():
             start_time = time.time()
             # loss,psnr = evaluate()
             loss = evaluate()
-            eval_loss_since_save.extend([v for term in loss_groups4_best for v in loss[term]])
+            # eval_loss_since_save.extend([v for term in loss_groups4_best for v in loss[term]])
             evaluation_time = time.time()-start_time
-            if store_planes and not eval_mode:
+            if planes_model and not eval_mode:
                 if not jump_start_phase or iter==0:
                     planes_opt.draw_scenes(assign_LR_planes=not SR_experiment or not optimize_planes)
                     new_drawn_scenes = planes_opt.cur_scenes
                     if jump_start_phase:    new_drawn_scenes = new_drawn_scenes[:n_jump_start_scenes]
                     image_sampler.update_active(new_drawn_scenes)
-            elif not store_planes:
+            elif not planes_model:
                 image_sampler.update_active(training_scenes)
             training_time = 0
             experiment_info['eval_counter'] += 1
@@ -1149,7 +1150,7 @@ def main():
             if planes_model:
                 planes_opt.lr_scheduler_step(np.mean(print_cycle_loss))
             print_cycle_loss,print_cycle_psnr = [],[]
-        save_now = scenes_cycle_counter.check_and_reset() if (store_planes and decoder_training) else False
+        save_now = scenes_cycle_counter.check_and_reset() if (planes_model and decoder_training) else False
         save_now |= iter % cfg.experiment.save_every == 0 if isinstance(cfg.experiment.save_every,int) else (time.time()-recently_saved)/60>cfg.experiment.save_every
         save_now |= iter == cfg.experiment.train_iters - 1
         if '/slurm/code/' in os.getcwd(): save_now |= iter==0   # Assuming not debugging when called from a slurm code folder.
@@ -1166,7 +1167,7 @@ def main():
             else:
                 print("================Best checkpoint is still %d, with average evaluation loss %.3e (recent average is %.3e)====================="%(experiment_info['best_loss'][0],experiment_info['best_loss'][1],recent_loss_avg))
             recently_saved = time.time()
-            eval_loss_since_save = []
+            # eval_loss_since_save = []
             if planes_model and optimize_planes and save_as_best:
                 planes_opt.save_params(as_best=True)
             for model2save in models2save:
@@ -1181,14 +1182,14 @@ def main():
                     checkpoint_dict.update({"model_coarse_state_dict": model_coarse.state_dict()})
                     if model_fine:  checkpoint_dict.update({"model_fine_state_dict": model_fine.state_dict()})
                     if planes_model:
-                        if store_planes or getattr(cfg.models.fine,'use_coarse_planes',False):
-                            checkpoint_dict["model_fine_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_fine_state_dict"].items() if all([token not in k for token in (tokens_2_exclude+['rot_mats'])])])
-                        if store_planes:
-                            checkpoint_dict["model_coarse_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_coarse_state_dict"].items() if all([token not in k for token in tokens_2_exclude])])
+                        # if store_planes or getattr(cfg.models.fine,'use_coarse_planes',False):
+                        checkpoint_dict["model_fine_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_fine_state_dict"].items() if all([token not in k for token in (tokens_2_exclude+['rot_mats'])])])
+                        # if store_planes:
+                        checkpoint_dict["model_coarse_state_dict"] = OrderedDict([(k,v) for k,v in checkpoint_dict["model_coarse_state_dict"].items() if all([token not in k for token in tokens_2_exclude])])
                             # if optimize_planes and save_as_best:
                             #     planes_opt.save_params(as_best=True)
-                        else:
-                            checkpoint_dict.update({"coords_normalization": model_fine.box_coords})
+                        # else:
+                        #     checkpoint_dict.update({"coords_normalization": model_fine.box_coords})
                     if optimizer is not None:
                         checkpoint_dict.update({"optimizer": optimizer.state_dict()})
 

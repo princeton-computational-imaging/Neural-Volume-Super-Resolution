@@ -144,7 +144,7 @@ nerf:
     # Dropout some planes during training (only when using more than 3 planes and proj_combination is set to 'avg'):
     # plane_dropout: 0.5
     # Train on only one scene until loss 
-    jump_start: [0.1,0.04] #[# scene (or portion of) training scenes to use in this phase, average loss threshold]
+    # jump_start: [0.1,0.04] #[# scene (or portion of) training scenes to use in this phase, average loss threshold]
   # Validation-specific parameters.
   validation:
     # Number of random rays to retain from each image.

@@ -261,7 +261,7 @@ class TwoDimPlanesModel(nn.Module):
     def __init__(
         self,
         use_viewdirs,
-        coords_normalization,
+        # coords_normalization,
         dec_density_layers=4,
         dec_rgb_layers=4,
         dec_channels=128,
@@ -270,7 +270,7 @@ class TwoDimPlanesModel(nn.Module):
         num_viewdir_plane_channels=None,
         rgb_dec_input='projections',
         proj_combination='sum',
-        planes=None,
+        # planes=None,
         plane_interp='bilinear',
         align_corners=True,
         interp_viewdirs=None,
@@ -291,7 +291,8 @@ class TwoDimPlanesModel(nn.Module):
         # self.PLANES_2_INFER = [self.num_density_planes]
 
         super(TwoDimPlanesModel, self).__init__()
-        self.box_coords = coords_normalization
+        # self.box_coords = coords_normalization
+        self.box_coords = None
         self.use_viewdirs = use_viewdirs
         assert use_viewdirs or (viewdir_proj_combination is None and num_viewdir_plane_channels is None)
         self.point_coords_noise = point_coords_noise
