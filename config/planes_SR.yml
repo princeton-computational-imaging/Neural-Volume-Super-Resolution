@@ -176,7 +176,6 @@ super_resolution:
   # # blind_only_im_consistency:  True
   # im_consistency_iters_freq:  10
   # antialias_rendered_downsampling:  False
-  # nonspatial_sampling4im_consistency: True
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic

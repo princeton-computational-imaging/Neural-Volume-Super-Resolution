@@ -535,21 +535,7 @@ def main():
             optimizer.load_state_dict(checkpoint["optimizer"])
         del checkpoint # Importent: Releases GPU memory occupied by loaded data.
 
-    spatial_sampling4im_consistency = im_consistency_loss_w and not getattr(cfg.nerf.train,'nonspatial_sampling4im_consistency',False)
-    assert SR_model is None or (not im_consistency_loss_w) or (not getattr(cfg.nerf.train,'antialias_rendered_downsampling',True)) or spatial_sampling4im_consistency
-    if spatial_sampling4im_consistency:
-        SAMPLE_PATCH_BY_CONTENT = True
-        patch_size = chunksize_to_2D(cfg.nerf.train.num_random_rays)
-        if len(scene_coupler.HR_planes_LR_ims_scenes)>0 or im_consistency_loss_w:
-            patch_size = patch_size//scene_coupler.ds_factor*scene_coupler.ds_factor
-        optional_size_divider = scene_coupler.ds_factor if im_consistency_loss_w else 1
-        if SAMPLE_PATCH_BY_CONTENT:
-            assert getattr(cfg.nerf.train,'spatial_patch_sampling','background_est') in ['background_est','STD']
-            if getattr(cfg.nerf.train,'spatial_patch_sampling','background_est')=='STD':
-                im_2_sampling_dist = image_STD_2_distribution(patch_size=patch_size//optional_size_divider)
-            else:
-                im_2_sampling_dist = estimated_background_2_distribution(patch_size=patch_size//optional_size_divider)
-                
+    assert SR_model is None or (not im_consistency_loss_w) or (not getattr(cfg.nerf.train,'antialias_rendered_downsampling',True))
     if planes_model and SR_model is not None:
         if getattr(cfg.super_resolution,'apply_2_coarse',False):
             model_coarse.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,
@@ -607,12 +593,7 @@ def main():
     downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor)
     saved_target_ims = dict(zip(set(val_strings),[set() for i in set(val_strings)]))#set()
     virtual_batch_size = getattr(cfg.nerf.train,'virtual_batch_size',1)
-    if im_consistency_loss_w and spatial_sampling4im_consistency:
-        def downsample_rendered_pixels(pixels,antialias=True):
-            im2downsample = pixels.permute(1,0).reshape([1,3,patch_size,patch_size])
-            assert all([sz//scene_coupler.ds_factor==sz/scene_coupler.ds_factor for sz in im2downsample.shape[2:]])
-            return model_fine.downsample_plane(im2downsample,antialias=antialias).reshape([3,-1]).permute(1,0)
-    elif im_consistency_loss_w:
+    if im_consistency_loss_w:
         def avg_downsampling(pixels):
             return torch.mean(pixels.reshape(-1,scene_coupler.ds_factor,scene_coupler.ds_factor,3),dim=(1,2))
 
@@ -864,7 +845,7 @@ def main():
             cur_focal *= scene_coupler.ds_factor
             if im_consistency_iter: cur_ds_factor //= scene_coupler.ds_factor # I'm not sure anymore about the HR_plane_LR_im functionality, but it didn't have this line so I'm only adding it to the im_consistency_iter case.
         ray_origins, ray_directions = get_ray_bundle(cur_H, cur_W, cur_focal, pose_target,downsampling_offset=downsampling_offset(cur_ds_factor),)
-        if im_consistency_iter and not spatial_sampling4im_consistency:
+        if im_consistency_iter:
             coords = torch.stack(
                 meshgrid_xy(torch.arange(img_target.shape[0]).to(device), torch.arange(img_target.shape[1]).to(device)),
                 dim=-1,
@@ -875,7 +856,7 @@ def main():
                 dim=-1,
             )
 
-        if HR_plane_LR_im or (im_consistency_iter and spatial_sampling4im_consistency):
+        if HR_plane_LR_im:
             if SAMPLE_PATCH_BY_CONTENT:
                 patches_vacancy_dist = im_2_sampling_dist(img_target[...,:3])
                 upper_left_corner = torch.argwhere(torch.rand([])<torch.cumsum(patches_vacancy_dist.reshape([-1]),0))[0].item()
@@ -896,7 +877,7 @@ def main():
             target_s = img_target[cropped_inds[:, 0], cropped_inds[:, 1], :]
         else:
             coords = coords.reshape((-1, 2))
-            if im_consistency_iter: # and not spatial_sampling4im_consistency:
+            if im_consistency_iter:
                 select_inds = np.random.choice(
                     img_target.shape[0]*img_target.shape[1], size=(min(img_target.shape[0]*img_target.shape[1],cfg.nerf.train.num_random_rays//(scene_coupler.ds_factor**2))), replace=False
                 )
@@ -964,7 +945,7 @@ def main():
             fine_loss_weights[torch.logical_not(gt_background_pixels)] = fine_loss_weights[torch.logical_not(gt_background_pixels)]*\
                 (len(gt_background_pixels)-fine_loss_weights[gt_background_pixels].sum())/(len(gt_background_pixels)-gt_background_pixels.sum())
         target_ray_values = target_s
-        if HR_plane_LR_im or (im_consistency_iter and spatial_sampling4im_consistency):
+        if HR_plane_LR_im:
             antialiasing = getattr(cfg.nerf.train,'antialias_rendered_downsampling',True)
             rgb_coarse,rgb_fine = downsample_rendered_pixels(rgb_coarse,antialias=antialiasing),downsample_rendered_pixels(rgb_fine,antialias=antialiasing)
         elif im_consistency_iter:
