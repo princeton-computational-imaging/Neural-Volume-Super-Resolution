@@ -274,13 +274,10 @@ class TwoDimPlanesModel(nn.Module):
         plane_interp='bilinear',
         align_corners=True,
         interp_viewdirs=None,
-        viewdir_downsampling=True,
         viewdir_proj_combination=None,
         num_planes_or_rot_mats=3,
-        viewdir_mapping=False,
         plane_stats=False,
         detach_LR_planes=True,
-        plane_loss_w=None,
         scene_coupler=None,
         point_coords_noise=0,
         zero_mean_planes_w=None,
@@ -305,7 +302,6 @@ class TwoDimPlanesModel(nn.Module):
         assert interp_viewdirs in ['bilinear','bicubic',None]
         assert interp_viewdirs is None,'Depricated'
         self.interp_from_learned = interp_viewdirs
-        self.viewdir_downsampling = viewdir_downsampling
         self.align_corners = align_corners
         assert rgb_dec_input in ['projections','features','projections_features']
         self.rgb_dec_input = rgb_dec_input
@@ -317,26 +313,15 @@ class TwoDimPlanesModel(nn.Module):
         self.proj_combination = proj_combination
         self.viewdir_proj_combination = viewdir_proj_combination
         self.plane_interp = plane_interp
-        self.planes_ds_factor = 1
         self.skip_connect_every = skip_connect_every # if skip_connect_every is not None else max(dec_rgb_layers,dec_density_layers)
         self.coord_projector = CoordProjector(self.num_density_planes,rot_mats=None if isinstance(num_planes_or_rot_mats,int) else num_planes_or_rot_mats)
-        self.viewdir_mapping = viewdir_mapping
-        self.plane_loss_w = plane_loss_w
         self.scene_coupler = scene_coupler
-        if self.plane_loss_w is not None:
-            if len(scene_coupler.HR_planes)>0:
-                self.planes_diff = nn.L1Loss()
-                self.plane_loss = []
-            else:
-                assert self.plane_loss_w==0,'Cannot penalize for plane differences when using HR planes'
-                self.plane_loss_w = None
         self.zero_mean_planes_w = zero_mean_planes_w
         if self.zero_mean_planes_w is not None:
             self.zero_mean_planes_loss = {}
 
         # DSS module:
         self.dss_module = None if dec_dss_layers is None else DSS(n_layers=dec_dss_layers,n_channels=dec_channels,num_features=num_plane_channels,combine=proj_combination)
-        if dec_dss_layers is not None:  assert ensemble_size==1,'Unsupported'
         # Density (alpha) decoder:
         self.density_dec = nn.ModuleDict([(str(i),nn.ModuleList()) for i in range(ensemble_size)])
         self.debug = {'max_norm':defaultdict(lambda: torch.finfo(torch.float32).min),'min_norm':defaultdict(lambda: torch.finfo(torch.float32).max)}
@@ -425,7 +410,6 @@ class TwoDimPlanesModel(nn.Module):
 
     def eval(self):
         super(TwoDimPlanesModel, self).eval()
-        self.use_downsampled_planes(1)
         self.SR_planes2drop = []
         self.planes2drop = []
         
@@ -451,9 +435,6 @@ class TwoDimPlanesModel(nn.Module):
         self.debug['min_norm'][scene_name] = np.minimum(self.debug['min_norm'][scene_name],normalized_coords.min(0)[0].cpu().numpy())
         return normalized_coords
 
-    def use_downsampled_planes(self,ds_factor:int): # USed for debug
-        self.planes_ds_factor = ds_factor
-
     def planes(self,dim_num:int,super_resolve:bool,grid:torch.tensor=None)->torch.tensor:
         plane_name = get_plane_name(self.cur_id,dim_num)
         detach = self.detach_LR_planes and plane_name2scene(plane_name) in self.scene_coupler.downsample_couples and not self.scene_coupler.use_HR_planes
@@ -465,17 +446,9 @@ class TwoDimPlanesModel(nn.Module):
                 roi = torch.stack([grid.min(1)[0].squeeze(),grid.max(1)[0].squeeze()],0)
                 roi = torch.stack([roi[:,1],roi[:,0]],1) # Converting from (x,y) to (y,x) on the columns dimension
                 SR_input = (SR_input,roi)
-            compute_plane_loss = self.plane_loss_w is not None and plane_name not in self.SR_model.SR_planes and plane_name in self.scene_coupler.upsample_planes.values()
             plane = self.SR_model(SR_input)
-            if compute_plane_loss:
-                plane_mask = torch.logical_not(torch.isnan(plane))
-                self.plane_loss.append(self.planes_diff(plane[plane_mask],self.raw_plane(plane_name).to(plane.device)[plane_mask]))
         else:
-            if self.planes_ds_factor>1 and (self.viewdir_downsampling or dim_num<self.num_density_planes): # Used for debug or enforcing loss
-                plane = nn.functional.interpolate(self.raw_plane(plane_name,downsample_plane),scale_factor=1/self.planes_ds_factor,
-                    align_corners=self.align_corners,mode=self.plane_interp,antialias=True)
-            else:
-                plane = self.raw_plane(plane_name,downsample_plane,detach=detach)
+            plane = self.raw_plane(plane_name,downsample_plane,detach=detach)
         return plane.cuda()
 
     def skip_SR(self,skip):
@@ -593,7 +566,6 @@ class TwoDimPlanesModel(nn.Module):
         x = self.normalize_coords(x)
         pos_projections = self.project_xyz(x[..., : 3])
         projected_xyz = self.combine_pos_planes(pos_projections)
-        # projected_xyz = projected_xyz.squeeze(0).squeeze(-1).permute(1,0)
 
         if self.use_viewdirs:
             projected_views = self.project_viewdir(x[...,3:])
@@ -628,16 +600,8 @@ class TwoDimPlanesModel(nn.Module):
 
         return torch.cat((rgb, alpha), dim=-1)
 
-    def return_planes_SR_loss(self):
-        loss = None
-        if self.plane_loss_w is not None and len(self.plane_loss)>0:
-            loss = torch.mean(torch.stack(self.plane_loss))
-            self.plane_loss = []
-        return loss
-
     def downsample_plane(self,plane,antialias=False):
         return downsample_plane(plane,ds_factor=self.scene_coupler.ds_factor,plane_interp=self.plane_interp,alilgn_corners=self.align_corners,antialias=antialias)
-        # return torch.nn.functional.interpolate(plane,scale_factor=1/self.scene_coupler.ds_factor,mode=self.plane_interp,align_corners=self.align_corners,antialias=antialias)
 
     def assign_LR_planes(self,scene=None):
         for k in self.planes_:
@@ -1081,7 +1045,6 @@ class PlanesSR(nn.Module):
         self.input_noise = getattr(sr_config,'sr_input_noise',0)
         self.output_noise = getattr(sr_config,'sr_output_noise',0)
         self.single_plane = getattr(sr_config.model,'single_plane',True)
-        self.all_planes_dss_layers = getattr(sr_config,'all_planes_dss_layers',None)
         self.per_channel_sr = getattr(sr_config.model,'per_channel_sr',False)
         if self.per_channel_sr:
             in_channels = out_channels = 1

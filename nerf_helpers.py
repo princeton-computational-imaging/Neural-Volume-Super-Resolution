@@ -281,7 +281,6 @@ def get_minibatches(inputs: torch.Tensor, chunksize: Optional[int] = 1024 * 8,sp
     """
     if spatial_margin is not None:
         chunksize = chunksize_to_2D(chunksize)
-        # return [inputs[max(0,i-spatial_margin):i+chunksize+spatial_margin,max(0,j-spatial_margin):j+chunksize+spatial_margin,...].reshape([-1,inputs.shape[-1]]) \
         return [inputs[i-spatial_margin:i+chunksize+spatial_margin,j-spatial_margin:j+chunksize+spatial_margin,...] \
             for i in range(spatial_margin,inputs.shape[0]-2*spatial_margin, chunksize) for j in range(spatial_margin,inputs.shape[1]-2*spatial_margin, chunksize)]
     else:

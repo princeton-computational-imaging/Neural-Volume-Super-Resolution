@@ -199,8 +199,6 @@ optimizer:
 nerf:
   # Use viewing directions as input, in addition to the X, Y, Z coordinates.
   use_viewdirs: True #False #True
-  # Map view-direction plane coordinates to efficiently exploit the view-directions plane:
-  # viewdir_mapping:  True
   # Normalize elevation angle range to the range observed across training image frames
   # adjust_elevation_range: 1 #True
   # adjust_azimuth_range: True
@@ -263,9 +261,6 @@ nerf:
     radiance_field_noise_std: 0.2
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
-    # Randomly downsamples plane during training to enforce multi-resolution loss:
-    # max_plane_downsampling: 12 #12
-    # viewdir_downsampling: False
     # Dropout some planes during training (only when using more than 3 planes and proj_combination is set to 'avg'):
     # plane_dropout: 0.5
     # Train on only one scene until loss 
@@ -309,7 +304,6 @@ super_resolution:
   # rendering_loss: 0
   # plane_dropout:  0.5
   # plane_resize_mode:  bicubic
-  # all_planes_dss_layers: 4
   model:
     # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
     # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy579K

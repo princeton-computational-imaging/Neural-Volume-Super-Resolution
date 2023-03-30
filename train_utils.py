@@ -83,7 +83,6 @@ def predict_and_render_radiance(
     encode_direction_fn=None,
     SR_model=None,
     ds_factor_or_id=1,
-    spatial_width=1,
 ):
     # TESTED
     mip_nerf = getattr(options.nerf,'encode_position_fn',None)=="mip"
@@ -161,15 +160,6 @@ def predict_and_render_radiance(
         z_samples = z_samples.detach()
 
         z_vals, _ = torch.sort(torch.cat((z_vals, z_samples), dim=-1), dim=-1)
-        spatial_margin = SR_model.receptive_field//2 if SR_model is not None else 0
-        if spatial_margin>0:
-            z_margin_diffs = torch.diff(z_vals,dim=-1)
-            z_vals = torch.cat([
-                z_vals[:,:1]-torch.flip(torch.cumsum(z_margin_diffs[:,:spatial_margin],dim=1),[1]),
-                z_vals,
-                z_vals[:,-1:]+torch.cumsum(torch.flip(z_margin_diffs[:,-spatial_margin:],[1]),dim=1),
-            ],1)
-        # pts -> (N_rays, N_samples + N_importance, 3)
         pts = ro[..., None, :] + rd[..., None, :] * z_vals[..., :, None]
         num_grads_2_return = 0
         if SR_model is not None:
@@ -212,19 +202,6 @@ def predict_and_render_radiance(
             else:
                 SR_inputs.insert(0,radiance_field)
             SR_inputs = torch.cat(SR_inputs,-1)
-        if spatial_width>1:
-            def crop_spatial_margins(tensor,third_dim):
-                tensor = tensor.reshape([-1,spatial_width]+list(tensor.shape[1:]))
-                if third_dim:
-                    tensor = tensor[spatial_margin:-spatial_margin,spatial_margin:-spatial_margin,spatial_margin:-spatial_margin,...]
-                else:
-                    tensor = tensor[spatial_margin:-spatial_margin,spatial_margin:-spatial_margin,...]
-                return tensor.reshape([tensor.shape[0]*tensor.shape[1]]+list(tensor.shape[2:]))
-
-            radiance_field = crop_spatial_margins(radiance_field,True)
-            z_vals = crop_spatial_margins(z_vals,True)
-            rd = crop_spatial_margins(rd,False)
-            rgb_coarse, disp_coarse, acc_coarse = crop_spatial_margins(rgb_coarse,False),crop_spatial_margins(disp_coarse,False),crop_spatial_margins(acc_coarse,False)
 
         rgb_fine, disp_fine, acc_fine, _, _ = volume_render_radiance_field(
             radiance_field,
@@ -238,36 +215,8 @@ def predict_and_render_radiance(
         )
         if SR_model is not None:
             SR_input_shape = list(SR_inputs.shape)
-            if spatial_width==1:
-                residual = SR_model(SR_inputs.reshape([SR_input_shape[0]*SR_input_shape[1],-1]))
-            else:
-                residual = SR_model(SR_inputs.permute([2,1,0]).reshape([1,SR_input_shape[2],SR_input_shape[1],-1,spatial_width]))
-                residual = residual[0].permute([2,3,1,0])
-            # radiance_field = radiance_field + options.super_resolution.model.get("weight",1)*residual.reshape(SR_input_shape[:-1]+[4])
+            residual = SR_model(SR_inputs.reshape([SR_input_shape[0]*SR_input_shape[1],-1]))
             radiance_field = radiance_field + options.super_resolution.model.get("weight",1)*residual.reshape(radiance_field.shape)
-            if False:
-                # Plotting STD of SR input channels across rays:
-                from matplotlib import pyplot as plt
-                plt.clf()
-                legends = []
-                STDs2plot = SR_inputs.detach().std(1).mean(0).cpu().numpy()
-                OMIT_FIRST = 0
-                output_labels = ["R","G","B","sigma"]
-                color_order = ["r","g","b","k"]
-                if options.super_resolution.model.get("consistent_density",False):
-                    # STDs2plot = np.concatenate([STDs2plot[-3:],STDs2plot[:1],STDs2plot[1:1+num_xyz_coords],STDs2plot[1+num_xyz_coords+3*num_grads_2_return:-3],\
-                    #     STDs2plot[1+num_xyz_coords:1+num_xyz_coords+3*num_grads_2_return]])
-                    STDs2plot = np.concatenate([STDs2plot[-3:],STDs2plot[:1],STDs2plot[1:1+num_xyz_coords],STDs2plot[-3-num_grads_2_return+num_xyz_coords:-3],\
-                        STDs2plot[1+num_xyz_coords:1+num_xyz_coords+3*num_grads_2_return]])
-                # plt.plot(STDs2plot[:4]);  legends = ["".join(output_labels)]
-                for i in range(4):
-                    if OMIT_FIRST==0:
-                        plt.plot(STDs2plot[i],"+"+color_order[i]);  legends.append(output_labels[i])
-                    plt.plot(STDs2plot[4+i*num_grads_2_return+OMIT_FIRST:4+(i+1)*num_grads_2_return],color_order[i])
-                    legends.append("d%s"%(output_labels[i]))
-                plt.legend(legends)
-                plt.savefig("SR_inputs_STD.png")
-
             rgb_SR, disp_SR, acc_SR, _, _ = volume_render_radiance_field(
                 radiance_field,
                 z_vals,
@@ -295,7 +244,6 @@ def run_one_iter_of_nerf(
     encode_direction_fn=None,
     SR_model=None,
     ds_factor_or_id=1,
-    spatial_margin=None,
     scene_config={},
 ):
     if encode_position_fn is None:
@@ -332,14 +280,10 @@ def run_one_iter_of_nerf(
         chunk_size = int(chunk_size/(model_coarse.num_density_planes/3))
     if (SR_model is not None or hasattr(model_fine,'SR_model')):
         chunk_size //= 10 #5 #(2*int(np.ceil(np.log2(model_fine.SR_model.n_blocks))))
-    if spatial_margin is not None: # and not hasattr(model_fine,'SR_model'):
-        rays = rays.reshape([H+2*spatial_margin,W+2*spatial_margin,-1])
     elif hasattr(options.nerf,'encode_position_fn') and options.nerf.encode_position_fn=="mip":
         chunk_size //= 4 # For some reason I get memory problems when using MipNeRF, so I'm using this arbitrary factor of 4.
-    batches = get_minibatches(rays, chunksize=chunk_size,spatial_margin=spatial_margin)
+    batches = get_minibatches(rays, chunksize=chunk_size)
     batch_shapes = [tuple(b.shape[:-1]) for b in batches]
-    if spatial_margin is not None:
-        batches = [b.reshape([-1,b.shape[-1]]) for b in batches]
     rgb_coarse, disp_coarse, acc_coarse = [], [], []
     rgb_fine, disp_fine, acc_fine,rgb_SR, disp_SR, acc_SR = None, None, None,None, None, None
     def append2list(item,to_list):
@@ -361,7 +305,6 @@ def run_one_iter_of_nerf(
             encode_direction_fn=encode_direction_fn,
             SR_model=SR_model,
             ds_factor_or_id=ds_factor_or_id,
-            spatial_width=1 if (spatial_margin is None or spatial_margin==0) else batch_shapes[b_num][-1]
         )
         rgb_coarse.append(rc)
         disp_coarse.append(dc)
@@ -375,10 +318,7 @@ def run_one_iter_of_nerf(
 
     def cat_list(list_2_cat):
         if list_2_cat is None:  return None
-        if spatial_margin is not None:
-            return spatial_batch_merge(list_2_cat,batch_shapes=[np.array(b)-2*spatial_margin for b in  batch_shapes],im_shape=np.array(rays.shape[:2])-2*spatial_margin)
-        else:
-            return torch.cat(list_2_cat, dim=0)
+        return torch.cat(list_2_cat, dim=0)
 
     rgb_coarse_ = cat_list(rgb_coarse)
     disp_coarse_ = cat_list(disp_coarse)
@@ -407,7 +347,6 @@ def eval_nerf(
     encode_direction_fn=None,
     SR_model=None,
     ds_factor_or_id=1,
-    spatial_margin=None,
     scene_config={},
 ):
     r"""Evaluate a NeRF by synthesizing a full image (as opposed to train mode, where
@@ -434,7 +373,6 @@ def eval_nerf(
         encode_direction_fn=encode_direction_fn,
         SR_model=None if isinstance(model_coarse,models.TwoDimPlanesModel) else SR_model,
         ds_factor_or_id=ds_factor_or_id,
-        spatial_margin=spatial_margin,
         scene_config=scene_config,
     )
     rgb_coarse = rgb_coarse.reshape([height,width,-1])
