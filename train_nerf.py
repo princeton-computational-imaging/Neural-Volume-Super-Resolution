@@ -1,24 +1,20 @@
 import argparse
-import glob
 import os
 import time
 from collections import OrderedDict, defaultdict
 import numpy as np
 import torch
-# import yaml
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 from re import search
 import models
 from load_blender import load_blender_data,BlenderDataset
-import load_DTU
 from nerf_helpers import *
 from train_utils import eval_nerf, run_one_iter_of_nerf,find_latest_checkpoint
 from mip import IntegratedPositionalEncoding
 from deepdiff import DeepDiff
 from copy import deepcopy
 from shutil import copyfile
-import socket
 import datetime
 
 def main():
@@ -52,7 +48,8 @@ def main():
     )
     configargs = parser.parse_args()
     eval_mode = configargs.eval
-    # Read config file.
+    
+    # Read config file:
     assert (configargs.config is None) ^ (configargs.resume is None)
     cfg = None
     if configargs.config is None:
@@ -61,7 +58,7 @@ def main():
         config_file = configargs.config
     cfg = get_config(config_file)
     planes_model = not hasattr(cfg.models,'coarse') or cfg.models.coarse.type=="TwoDimPlanesModel" # Whether using our feature-plane model. Set to False when running the Mip-NeRF baseline
-    if eval_mode:
+    if eval_mode: # When running in evaluation mode, overriding some configuration settings with those used for training:
         import imageio
         dataset_config4eval = cfg.dataset
         config_file = os.path.join(cfg.experiment.logdir, cfg.experiment.id,"config.yml")
@@ -82,6 +79,7 @@ def main():
     # Setup logging.
     logdir = os.path.join(cfg.experiment.logdir, cfg.experiment.id)
     if not eval_mode:   print('Logs and models will be saved into %s'%(logdir))
+
     if configargs.load_checkpoint=="resume":
         configargs.load_checkpoint = logdir
     else:
@@ -95,6 +93,8 @@ def main():
     resume_experiment = os.path.exists(configargs.load_checkpoint)
     if configargs.load_checkpoint!='':
         assert resume_experiment,'Experiment to resume was not found in %s'%(configargs.load_checkpoint)
+
+    # Using a pre-trained model:
     pretrained_model_folder = getattr(cfg.models,'path',None)
     if planes_model and (not decoder_training or pretrained_model_folder):
         if os.path.isfile(pretrained_model_folder):   pretrained_model_folder = "/".join(pretrained_model_folder.split("/")[:-1])
@@ -105,7 +105,7 @@ def main():
     load_saved_models = pretrained_model_folder is not None or resume_experiment
     init_new_scenes = not resume_experiment and ('LR_planes' in what2train) and (pretrained_model_folder is None or getattr(cfg.models,'init_scenes_hack',False))
 
-    # Load dataset
+    # Preparing dataset:
     dataset = BlenderDataset(config=cfg.dataset,scene_id_func=models.get_scene_id,
         eval_mode=eval_mode,scene_norm_coords=cfg.nerf if init_new_scenes else None,planes_logdir=getattr(cfg.models,'planes_path',logdir)) #,assert_LR_ver_of_val=im_consistency_loss
     scene_ids = dataset.per_im_scene_id
@@ -115,10 +115,12 @@ def main():
     coords_normalization = dataset.coords_normalization
     scene_id_plane_resolution = dataset.scene_id_plane_resolution
     val_only_scene_ids = dataset.val_only_scene_ids
-    eval_training_too = not eval_mode
+    eval_training_too = getattr(cfg.nerf.validation,'eval_train_scenes',False) and not eval_mode # Whether to add full training views to evaluation (different from the sparse ray sampling from these views during training)
     available_scenes = list(scenes_set)
 
     planes_updating = 'LR_planes' in what2train
+
+    # Constructing the scene_coupler, which holds the information the pairs of matching LR-HR scenes in the dataset (including in the dataset used for training the pre-trained model, if using one):
     if planes_model and (not planes_updating or pretrained_model_folder):
         for conf,scenes in [c for p in pretrained_model_config.dataset.dir.values() for c in p.items()]:
             conf=eval(conf)
@@ -128,24 +130,28 @@ def main():
     scene_coupler = models.SceneCoupler(list(set(available_scenes+val_only_scene_ids)),planes_res=''.join([m[:2] for m in what2train if '_planes' in m]),
         num_pos_planes=getattr(cfg.models.coarse,'num_planes',3) if planes_model else 0,training_scenes=list(i_train.keys()),
         multi_im_res=SR_experiment or not planes_model)
+
+    # Assigning logging titles to different evaluation subsets:
     val_strings = []
     ASSUME_LR_IF_NO_COUPLES = True
-    ASSUME_LR_IF_NO_COUPLES = ASSUME_LR_IF_NO_COUPLES and (len(scene_coupler.downsample_couples)==0 and SR_experiment)
-
+    only_LR_eval = ASSUME_LR_IF_NO_COUPLES and (len(scene_coupler.downsample_couples)==0 and SR_experiment)
     for id in i_val:
         tags = []
         if id in val_only_scene_ids:    tags.append('blind_validation')
         else:   tags.append('validation')
         if '##Gauss' in id:    tags.append('Gauss')
-        if id in scene_coupler.downsample_couples.values() or ASSUME_LR_IF_NO_COUPLES: tags.append('LR')
+        if id in scene_coupler.downsample_couples.values() or only_LR_eval: tags.append('LR')
         if len(dataset.module_confinements[id])>0: tags.append('Fixed_'+'_'.join(dataset.module_confinements[id]))
         if dataset.scene_types[id]=='llff': tags.append('real')
         val_strings.append('_'.join(tags))
 
     if hasattr(cfg.dataset,'max_scenes_eval') and not eval_mode:
+        # Pruning some evaluation scenes:
         scenes2keep = subsample_dataset(max_scenes=cfg.dataset.max_scenes_eval,scene_types=val_strings,pick_first=True)
         i_val = OrderedDict([item for i,item in enumerate(i_val.items()) if i in scenes2keep])
+
     if not eval_mode:
+        # Asserting all scenes have the same number of evaluation views:
         val_ims_per_scene = [len(v) for v in i_val.values()]
         assert all([max(val_ims_per_scene)%v==0 for v in val_ims_per_scene]),"Need to be able to repeat scene eval sets to have the same number of eval images for all scnenes."
         val_ims_per_scene = max(val_ims_per_scene)
@@ -158,34 +164,38 @@ def main():
             im_freq = len(i_train[id])//val_ims_per_scene
             if id in i_val.keys(): #Avoid evaluating training images for scenes which were discarded for evaluation due to max_scenes_eval
                 i_val[id+'_train'] = [i_train[id][i] for i in sorted([(i+im_freq//2)%len(i_train[id]) for i in  np.unique(np.round(np.linspace(0,len(i_train[id])-1,val_ims_per_scene)).astype(int))])]
+
     if not eval_mode and im_consistency_loss_w:
+        # Adding LR views corresponding to evaluation scenes to training dictionary to facilitate using the consistency loss term:
         for k in val_only_scene_ids:
             i_train.update({k:i_train[scene_coupler.downsample_couples[k]]})
             dataset.scene_probs[k] = getattr(cfg.nerf.train,'im_consistency_iters_freq')/(len(val_only_scene_ids) if getattr(cfg.dataset,'prob_assigned2scene_groups',True) else 1)
             scene_coupler.upsample_couples[scene_coupler.downsample_couples[k]] = k
     training_scenes = list(i_train.keys())
-    if planes_model:
-        if 'SR' in what2train and len(what2train)==1:
-            assert all([sc not in scene_coupler.downsample_couples.values() or dataset.scene_probs[sc]==0 for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
+    if planes_model and 'SR' in what2train and len(what2train)==1:
+        assert all([sc not in scene_coupler.downsample_couples.values() or dataset.scene_probs[sc]==0 for sc in training_scenes]),'Why train on LR scenes when training only the SR model?'
     if SR_experiment:
         for sc in scenes_set:  
             if sc not in scene_coupler.downsample_couples:  continue
             if init_new_scenes:
+                # Unifying spatial coordinates normalization across scene pairs:
                 if dataset.scene_types[sc]=='llff':
-                    print("!!! Warning: Using val images to determine coord normalization on real images !!!")
+                    print("Note: Using validation images to determine coord normalization on real images(!)")
                     coords_normalization[sc] = torch.stack([coords_normalization[sc],coords_normalization[scene_coupler.downsample_couples[sc]]],-1)
                     coords_normalization[sc] = torch.stack([torch.min(coords_normalization[sc][0],-1)[0],torch.max(coords_normalization[sc][1],-1)[0]],0)
                     coords_normalization[scene_coupler.downsample_couples[sc]] = 1*coords_normalization[sc]
                 else:
                     coords_normalization[sc] = 1*coords_normalization[scene_coupler.downsample_couples[sc]]
+            # Filtering out HR scenes from the list of feature plane sets, as those use feature planes from their corresponding LR scenes:
             if sc in scene_id_plane_resolution:
                 temp = scene_id_plane_resolution.pop(sc)
                 if pretrained_model_folder is not None:
                     scene_id_plane_resolution[scene_coupler.downsample_couples[sc]] = (temp[0]//scene_coupler.ds_factor,temp[1])
 
     evaluation_sequences = list(i_val.keys())
-    val_strings = []
 
+    # Repeat logging title assignment to different evaluation subsets, after possibly prunning or adding evaluation scenes:
+    val_strings = []
     for id in evaluation_sequences:
         bare_id = id.replace('_train','').replace('_HRplane','')
         tags = []
@@ -193,17 +203,19 @@ def main():
         elif '_train' in id:    tags.append('train_imgs')
         else:   tags.append('validation')
         if '##Gauss' in bare_id:    tags.append('Gauss')
-        if bare_id in scene_coupler.downsample_couples.values() or ASSUME_LR_IF_NO_COUPLES: tags.append('LR')
+        if bare_id in scene_coupler.downsample_couples.values() or only_LR_eval: tags.append('LR')
         elif '_HRplane' in id:  tags.append('HRplanes')
         if len(dataset.module_confinements[bare_id])>0: tags.append('Fixed_'+'_'.join(dataset.module_confinements[bare_id]))
         if dataset.scene_types[bare_id]=='llff': tags.append('real')
         val_strings.append('_'.join(tags))
 
+    # Which tracked values to consider when determining the best model to use for evaluation or as initialization for subsequent training:
     loss_groups4_best = [tag for tag in val_strings if ('validation' in tag and '_LR' not in tag and 'blind' not in tag)]
     if len(loss_groups4_best)==0:        loss_groups4_best = [tag for tag in val_strings if 'validation' in tag and 'blind' not in tag]
     loss_groups4_best = list(set(loss_groups4_best))
-    loss4best = 'fine_loss' if all([v not in what2train for v in ['decoder','SR']]) else 'loss'
+    loss4best = 'im_inconsistency' if im_consistency_loss_w else 'fine_loss' if all([v not in what2train for v in ['decoder','SR']]) else 'loss'
 
+    # Printing scenes used for each stage and initializing score tracking:
     def print_scenes_list(title,scenes):
         print('\n%d %s scenes:'%(len(scenes),title))
         print(scenes)
@@ -218,8 +230,10 @@ def main():
         assert all([val_ims_per_scene==len(i_val[id]) for id in evaluation_sequences]),'Assuming all scenes have the same number of evaluation images'
         running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','fine_loss','fine_psnr','loss','coarse_loss','inconsistency','loss_sr','loss_lr','im_inconsistency']
         experiment_info['running_scores'] = dict([(score,dict([(cat,deque(maxlen=len(training_scenes) if cat=='train' else val_ims_per_scene)) for cat in list(set(val_strings))+['train']])) for score in running_mean_logs])
-    image_sampler = ImageSampler(i_train,dataset.scene_probs)
 
+    image_sampler = ImageSampler(i_train,dataset.scene_probs) # Initializaing training images sampler
+
+    # Tensorboard logger functions:
     def write_scalar(name,new_value,iterOrScNum):
         RUNNING_MEAN = True
         if eval_mode:
@@ -253,7 +267,7 @@ def main():
             writer.add_image(name,arange_ims(images,text,psnrs=psnrs),iter)
 
 
-    # Seed experiment for repeatability
+    # Seed experiment for reproducability:
     seed = cfg.experiment.randomseed
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -264,6 +278,7 @@ def main():
     else:
         device = "cpu"
 
+    # Not used for our feature-planes based model:
     if getattr(cfg.nerf,"encode_position_fn",None) is not None:
         assert not planes_model,"Should not require positional encoding"
         assert cfg.nerf.encode_position_fn in ["mip","positional_encoding"]
@@ -289,6 +304,8 @@ def main():
     else:
         encode_position_fn = None
         encode_direction_fn = None
+
+    # Initializing coarse-resolution decoder model:
     if planes_model:
         model_coarse = models.TwoDimPlanesModel(
             use_viewdirs=cfg.nerf.use_viewdirs,
@@ -311,7 +328,6 @@ def main():
         )
         
     else: # For training a Mip-NeRF or a regular NeRF model:
-        # Initialize a coarse-resolution model.
         if cfg.nerf.encode_position_fn=="mip" and cfg.models.coarse.include_input_xyz:
             cfg.models.coarse.include_input_xyz = False
             cfg.models.fine.include_input_xyz = False
@@ -326,10 +342,11 @@ def main():
             include_input_dir=cfg.models.coarse.include_input_dir,
             use_viewdirs=cfg.nerf.use_viewdirs,
         )
-    model_coarse.optional_no_grad = null_with
+    model_coarse.optional_no_grad = null_with # A trick to allow using no_grad upon demand.
     print("Coarse model: %d parameters"%num_parameters(model_coarse))
     model_coarse.to(device)
-    # If a fine-resolution model is specified, initialize it.
+    
+    # Initializing a fine-resolution model, if specified:
     model_fine = None
     if hasattr(cfg.models, "fine"):
         if cfg.models.fine.type=="use_same":
@@ -370,16 +387,17 @@ def main():
 
     rendering_loss_w = 1
     SR_model,SR_optimizer = None,None
-    if SR_experiment:
+    if SR_experiment: # For experiments involving rendering HR views based on learning from LR views (not necessarily using a dedicated SR model):
         if 'SR' not in what2train:
-            assert not (hasattr(cfg.super_resolution,'model') and hasattr(cfg.super_resolution.model,'path'))
+            assert not (hasattr(cfg.super_resolution,'model') and hasattr(cfg.super_resolution.model,'path')),'Should not specify a pre-trained SR model path if not training the SR model. Using the same path used for the decoder model in such case.'
             if not hasattr(cfg.super_resolution,'model'):   setattr(cfg.super_resolution,'model',CfgNode())
             rsetattr(cfg.super_resolution,'model.path',pretrained_model_folder)
             SR_model_config = get_config(os.path.join(cfg.super_resolution.model.path,"config.yml"))
             set_config_defaults(source=SR_model_config.super_resolution,target=cfg.super_resolution)
         rendering_loss_w = getattr(cfg.super_resolution,'rendering_loss',1)
         plane_channels = getattr(cfg.models.coarse,'num_plane_channels',48)
-        if not eval_mode:   saved_rgb_fine = dict(zip(evaluation_sequences,[{} for i in evaluation_sequences]))
+        if not eval_mode:   saved_rgb_fine = dict(zip(evaluation_sequences,[{} for i in evaluation_sequences])) # Saving pre-SR evaluation images to avoid re-rendering them each time.
+
         # Determining the FEATURE PLANES super-resolution scale factor:
         sf_config = getattr(cfg.super_resolution.model,'scale_factor','linear')
         assert sf_config in ['linear','sqrt','one'] or isinstance(sf_config,int)
@@ -391,7 +409,9 @@ def main():
             SR_factor = int(np.sqrt(scene_coupler.ds_factor))
         else:
             SR_factor = sf_config
+
         if cfg.super_resolution.model.type!='None':
+            # Initializing the SR model (and optimizer):
             SR_model = models.PlanesSR(
                 model_arch=getattr(models, cfg.super_resolution.model.type),scale_factor=SR_factor,
                 in_channels=plane_channels,
@@ -407,7 +427,9 @@ def main():
                     lr=getattr(cfg.super_resolution,'lr',cfg.optimizer.lr)
                 )
             else:
-                assert all([sc not in scene_coupler.downsample_couples.keys() for sc in training_scenes]),"Why train on SR scenes when training only the planes? Currently not assigning the SR model's LR planes during training."
+                assert all([sc not in scene_coupler.downsample_couples.keys() for sc in training_scenes]),"Why train on HR scenes when training only the planes? Currently not assigning the SR model's LR planes during training."
+
+    # Collecting optimizable parameters list:
     if decoder_training or not planes_model:
         if not eval_mode:
             def collect_params(model,filter='all'):
@@ -432,13 +454,15 @@ def main():
                             trainable_parameters_ += collect_params(model_fine,filter='all')
                 else: 
                     trainable_parameters_ += list(model_fine.parameters())
+
     if not eval_mode and (decoder_training or not planes_model):
-        # Initialize optimizer.
+        # Initializing decoder optimizer:
         optimizer = getattr(torch.optim, cfg.optimizer.type)(
             trainable_parameters_, lr=cfg.optimizer.lr
         )
     else:
         optimizer = None
+
     if planes_model:
         models2save = (['decoder'] if 'decoder' in what2train else [])+(['SR'] if SR_experiment and 'SR' in what2train and SR_model is not None else [])
     else:
@@ -447,20 +471,15 @@ def main():
     experiment_info_file = os.path.join(logdir, "exp_info.pkl")
 
     if load_saved_models:
+        # Loading saved models, either when resuming training or when initializing from pre-trained models:
         if resume_experiment and not eval_mode:
-            legacy_info_tracking = not os.path.exists(experiment_info_file)
-            if not legacy_info_tracking:
-                experiment_info = deep_update(experiment_info,safe_loading(experiment_info_file,suffix='pkl'))
+            experiment_info = deep_update(experiment_info,safe_loading(experiment_info_file,suffix='pkl'))
 
         load_best = eval_mode or not resume_experiment
         if SR_experiment and SR_model is not None:
             if SR_experiment and ('SR' not in what2train or resume_experiment or hasattr(cfg.super_resolution.model,'path')):
                 if resume_experiment and 'SR' in what2train:
                     SR_checkpoint_path = configargs.load_checkpoint
-                    if not eval_mode and legacy_info_tracking and 'decoder' not in what2train:
-                        experiment_info['start_i'] = int(SR_checkpoint_path.split('/')[-1][len('SR_checkpoint'):-len('.ckpt')])+1
-                        experiment_info['eval_counter'] = SR_model_checkpoint['eval_counter']
-                        experiment_info['best_loss'] = SR_model_checkpoint['best_loss'] if 'best_loss' in SR_model_checkpoint else SR_model_checkpoint['best_saved']
                 elif getattr(cfg.super_resolution.model,'path',None) is not None:
                     SR_checkpoint_path = cfg.super_resolution.model.path
                 else:
@@ -487,10 +506,6 @@ def main():
         else:
             checkpoint_filename = find_latest_checkpoint(configargs.load_checkpoint,sr=False,find_best=load_best or (planes_model and 'decoder' not in what2train))
             checkpoint = safe_loading(checkpoint_filename,suffix='ckpt_best' if load_best else 'ckpt')
-            if not eval_mode and legacy_info_tracking:
-                experiment_info['start_i'] = int(checkpoint_filename.split('/')[-1][len('checkpoint'):-len('.ckpt')])+1
-                experiment_info['eval_counter'] = checkpoint['eval_counter']
-                experiment_info['best_loss'] = checkpoint['best_loss'] if 'best_loss' in checkpoint else checkpoint['best_saved']
             print("Resuming training on model %s"%(checkpoint_filename))
         checkpoint_config = get_config(os.path.join('/'.join(checkpoint_filename.split('/')[:-1]),'config.yml'))
         config_diffs = DeepDiff(checkpoint_config.models,cfg.models)
@@ -528,18 +543,22 @@ def main():
         if "optimizer" in checkpoint and optimizer is not None:
             print("Loading optimizer's checkpoint")
             optimizer.load_state_dict(checkpoint["optimizer"])
-        del checkpoint # Importent: Releases GPU memory occupied by loaded data.
+        del checkpoint # Importent: Releasing GPU memory occupied by loaded data.
 
-    assert SR_model is None or (not im_consistency_loss_w) or (not getattr(cfg.nerf.train,'antialias_rendered_downsampling',True))
+    assert SR_model is None or (not im_consistency_loss_w) or (not getattr(cfg.nerf.train,'antialias_rendered_downsampling',False)),'Using aliased downsampling of rendered HR images for calculating the consistency loss term. This works better.'
     if planes_model and SR_model is not None:
         if getattr(cfg.super_resolution,'apply_2_coarse',False):
+            # If super-resolving feature planes to be used by the coarse-resolution decoder too (default is no):
             model_coarse.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,)
         else:
-            assert getattr(cfg.super_resolution.training,'loss','both')=='fine'
+            assert getattr(cfg.super_resolution.training,'loss','fine')=='fine',"Shouldn't use the ourput of coarse decoder for training the SR model when not feeding it with super-resolved feature planes."
             if not decoder_training:  model_coarse.optional_no_grad = torch.no_grad
         model_fine.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,)
-    run_time_signature = time.time()
+
+    run_time_signature = time.time() # A trick to allow starting new training jobs that would automatically cause the old jobs to exit
+
     if planes_model:
+        # Determining folder paths where feature planes are stored. Creating a paths hierarchy to allow using existing feature planes for some scenes while training new planes for other:
         planes_folder = []
         if planes_updating: planes_folder.append(logdir)
         if getattr(cfg.models,'planes_path',None) is not None:  planes_folder.append(getattr(cfg.models,'planes_path'))
@@ -554,10 +573,11 @@ def main():
                 params_init_path.insert(0,os.path.join(getattr(cfg.models,'planes_path'),'planes'))
         else:
             params_init_path = None
-        scenes_cycle_counter = Counter()
+        scenes_cycle_counter = Counter() # Keeping track of cycling through the different scenes in the dataset
         optimize_planes = any(['planes' in m for m in what2train]) and not eval_mode
         lr_scheduler = getattr(cfg.optimizer,'lr_scheduler',None)
         if getattr(cfg.models,'use_existing_planes',False):
+            # Using feature planes from pre-trained model, without updating them:
             use_frozen_planes = os.path.join(pretrained_model_folder,'planes')
         else:
             use_frozen_planes = ''
@@ -581,11 +601,12 @@ def main():
         #Initializing a new SR model that uses input normalization
         SR_model.normalization_params(planes_opt.get_plane_stats(viewdir=getattr(cfg.super_resolution,'SR_viewdir',False)))
 
-    downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor)
-    saved_target_ims = dict(zip(set(val_strings),[set() for i in set(val_strings)]))#set()
+    downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor) # Importent: Detrmining the rendered rays offset to match the sub-pixel offset caused by downsampling the input images.
+    saved_target_ims = dict(zip(set(val_strings),[set() for i in set(val_strings)])) # Keeping track of target images logged so far to avoid re-logging them.
     virtual_batch_size = getattr(cfg.nerf.train,'virtual_batch_size',1)
     if im_consistency_loss_w:
         def avg_downsampling(pixels):
+            # For the downsampling consistency loss term (enforced w.r.t. LR views corresponding to validation scenes), downsampling the rendered HR images using simple averaging over image patches of size (scale_factor X scale_facotr), without any antialias filtering. Found this to work best.
             return torch.mean(pixels.reshape(-1,scene_coupler.ds_factor,scene_coupler.ds_factor,3),dim=(1,2))
 
     def mse_loss(x,y,weights=None):

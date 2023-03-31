@@ -7,11 +7,12 @@ experiment:
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_NoHRinfoBug_noPlnDetach_micShip
   # id: E2E_Synt_Res29Sc200_27Sc1600_32_LR100_800_imConsistLossFreq10nonSpatial_micShip
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach579K_imConsistF10nonSpat_Lean_HrLr_paper4_GaussOnly #_micShip #_PZerMean1 #_chairLego
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach579K_imConsistF10nonSpat_Lean_HrLr_chair_0
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach1572K_imConsistInfFnonSpat_Lean_HrLr_lego_0
+  id: E2E_Synt_Res1Sc200_0Sc800_32_LR100_400_imConsistInfFnonSpat_Lean_HrLr_lego
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach579K_imConsistF10nonSpat_noSR_Lean_HrLr_mic
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_800_noDetach_imConsistLossFreq10nonSpatial_paper4
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetachother4_imConsistF10nonSpat_Lean_HrLr_donut
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach579K_imConsistTwiceFnonSpat_Lean_HrLr_lego##1
+  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach1572KwPlanes_imConsist8xFnonSpat_Lean_HrLr_lego##1
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromOther4NoPaper453K_imConsistF10nonSpat_Lean_HrLr_chairNoised5
   id: E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss
@@ -69,6 +70,8 @@ dataset:
       # 8,200,32,'synt',None,['decoder']:   ['motorbike','ship']      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
       # 2,800,32:   ['house','robot','chair','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #mic,ship
       # 2,800,32:   ['house','robot','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #'lego','chair',mic,ship
+      # 2,800,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops',] #'ficus','materials','hotdog','drums','lego','chair','mic','ship',
+      # 2,800,32:   ['house','robot','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #'lego','chair',mic,ship
       2,800,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops',] #'ficus','materials','hotdog','drums','lego','chair','mic','ship',
       # 2,800,32,'synt',None,['decoder']:   ['bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums',] #mic,ship
       # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #'chair','lego',
@@ -79,9 +82,9 @@ dataset:
       # 2,800,32,'synt',None,['decoder']:   ['motorbike'] #mic,ship
       # 8,200,32,'synt',0:   ['mic','ship','chair','lego','ship##Gauss2','mic##Gauss2','chair##Gauss2','lego##Gauss2']
       # 8,200,32,'synt',0:   ['mic','ship','chair','lego']
-      # 8,200,32,'synt',0:   ['ship##Gauss2','mic##Gauss2','chair##Gauss2','lego##Gauss2']
+      8,200,32,'synt',0:   ['lego'] ##Gauss2','mic##Gauss2','chair##Gauss2','lego##Gauss2
       # 8,200,32,'synt',0:   ['ship##Noise5'] #,'lego'
-      # 8,200,32,'synt',0:   ['ship##1'] #,'lego'
+      # 8,200,32,'synt',0:   ['lego##1'] #,'lego'
       # 8,200,32,'synt',10:   ['mic','ship']
       # 2,800,32:   ['mic']
     val:
@@ -102,11 +105,11 @@ dataset:
       # 2,800,32:   ['ship##Gauss2','mic##Gauss2','chair##Gauss2','lego##Gauss2'] # 
       # 8,200,32:   ['ship##Noise5']
       # 2,800,32:   ['ship##Noise5']
-      # 2,800,32:   ['chair']
+      2,800,32:   ['lego']
       # 8,200,32:   ['ship']
       #   # 8,200,32:   ['ship','mic','ship##Gauss2','mic##Gauss2']
       # 2,800,32:   ['mic##Gauss2']
-      # 2,800,32:   ['ship##1']
+      # 2,800,32:   ['lego##1']
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
   cachedir: cache/legocache200
@@ -120,14 +123,16 @@ dataset:
 models:
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy579K
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_imConsistLossFreq10nonSpatial_Lean_orchidsFern_0_copy348K
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy1572K
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_imConsistLossFreq10nonSpatial_orchidsFern_0
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy453K
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_other4_0
   # planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromOther4NoPaper453K_paper4Gauss1_0
   # planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromOther4NoPaper453K_all8_0
   # planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromOther4NoPaper453K_paper4noised5_0
   # planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromNoDetach579K_paper4_8xLR_0
+  # planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromNoDetach1572K_paper4_8xLR_0
+  # use_existing_planes:  True
   # Coarse model.
   coarse:
     # Name of the torch.nn.Module class that implements the model.
@@ -283,6 +288,7 @@ nerf:
     radiance_field_noise_std: 0.
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
+    eval_train_scenes:  True # Whether to add full training views to evaluation (different from the sparse ray sampling from these views during training)
 super_resolution:
   lr: 5.E-5 #1.E-4 #
   training:
@@ -306,8 +312,8 @@ super_resolution:
   model:
     # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
     # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy579K
-    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy
-    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_imConsistLossFreq10nonSpatial_Lean_orchidsFern_0_copy348K
+    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy1572K
+    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_imConsistLossFreq10nonSpatial_orchidsFern_0
     # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy453K
     # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_other4_0
     # Name of the torch.nn.Module class that implements the model.
