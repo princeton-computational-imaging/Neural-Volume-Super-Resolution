@@ -10,116 +10,6 @@ from re import search
 import os
 from tqdm import tqdm
 from shutil import copyfile
-# from time import time
-class Conv3D(nn.Module):
-    def __init__(
-        self,
-        num_layers=4,
-        num_layers_dir=1,
-        dirs_hidden_width_ratio=2,
-        hidden_size=128,
-        skip_connect_every=4,
-        num_encoding_fn_xyz=6,
-        num_encoding_fn_dir=4,
-        include_input_xyz=True,
-        include_input_dir=True,
-        use_viewdirs=True,
-        input_dim=None,
-        xyz_input_2_dir=False,
-        kernel_size=3,
-    ):
-        super(Conv3D, self).__init__()
-        if not isinstance(hidden_size,list):
-            hidden_size = [hidden_size]
-        layer_size = lambda x: hidden_size[min([x,len(hidden_size)-1])]
-        self.skip_connect_every = skip_connect_every
-        self.receptive_field = 1
-        if input_dim is not None:
-            self.dim_xyz = input_dim[0]
-            if use_viewdirs:
-                self.dim_dir = input_dim[1]
-            else:
-                self.dim_xyz = sum(input_dim)
-        else:
-            include_input_xyz = 3 if include_input_xyz else 0
-            include_input_dir = 3 if include_input_dir else 0
-            self.dim_xyz = include_input_xyz + 2 * 3 * num_encoding_fn_xyz
-            self.dim_dir = include_input_dir + 2 * 3 * num_encoding_fn_dir
-            if not use_viewdirs:
-                self.dim_dir = 0
-        self.layer1 = nn.Conv3d(self.dim_xyz, layer_size(0),kernel_size=kernel_size)
-        self.receptive_field += kernel_size-1
-        self.layers_xyz = nn.ModuleList()
-        for i in range(num_layers - 1):
-            self.receptive_field += kernel_size-1
-            if i % self.skip_connect_every == 0 and i > 0 and i != num_layers - 1:
-                self.layers_xyz.append(
-                    nn.Conv3d(self.dim_xyz + layer_size(i), layer_size(i+1),kernel_size=kernel_size)
-                )
-            else:
-                self.layers_xyz.append(nn.Conv3d(layer_size(i), layer_size(i+1),kernel_size=kernel_size))
-
-        self.use_viewdirs = use_viewdirs
-        if self.use_viewdirs:
-            self.xyz_input_2_dir = xyz_input_2_dir
-            self.layers_dir = nn.ModuleList()
-            # This deviates from the original paper, and follows the code release instead.
-            self.layers_dir.append(
-                nn.Conv3d(self.dim_dir + hidden_size[-1]+(self.dim_xyz if xyz_input_2_dir else 0),\
-                    hidden_size[-1] // dirs_hidden_width_ratio,kernel_size=kernel_size)
-            )
-            self.receptive_field += kernel_size-1
-            for i in range(num_layers_dir-1):
-                self.receptive_field += kernel_size-1
-                self.layers_dir.append(
-                    nn.Conv3d(hidden_size[-1]//dirs_hidden_width_ratio, hidden_size[-1] // dirs_hidden_width_ratio,kernel_size=kernel_size)
-                )
-
-            self.fc_alpha = nn.Conv3d(hidden_size[-1], 1,kernel_size=kernel_size)
-            self.receptive_field += kernel_size-1
-            self.fc_rgb = nn.Conv3d(hidden_size[-1] // dirs_hidden_width_ratio, 3,kernel_size=kernel_size)
-            self.receptive_field += kernel_size-1
-            self.fc_feat = nn.Conv3d(hidden_size[-1], hidden_size[-1],kernel_size=kernel_size)
-        else:
-            self.receptive_field += kernel_size-1
-            self.fc_out = nn.Conv3d(hidden_size[-1], 4,kernel_size=kernel_size)
-
-        self.relu = nn.functional.relu
-
-    def forward(self, x):
-        if self.use_viewdirs:
-            xyz, view = x[:, : self.dim_xyz,...], x[:, self.dim_xyz :,...]
-        else:
-            xyz = x[:, : self.dim_xyz,...]
-        x = self.layer1(xyz)
-        for i in range(len(self.layers_xyz)):
-            if (
-                i % self.skip_connect_every == 0
-                and i > 0
-                and i != len(self.layers_xyz)
-            ):
-                x = torch.cat((x, xyz), dim=-1)
-            x = self.relu(self.layers_xyz[i](x))
-        def different_shape_concat(x,y):
-            shape_crop = (y.shape[2]-x.shape[2])//2
-            return torch.cat((x,y[...,shape_crop:-shape_crop,shape_crop:-shape_crop,shape_crop:-shape_crop]),1)
-
-        if self.use_viewdirs:
-            feat = self.relu(self.fc_feat(x))
-            alpha = self.fc_alpha(x)
-            # x = torch.cat((feat, view[...,shape_crop:-shape_crop,shape_crop:-shape_crop,shape_crop:-shape_crop]), dim=1)
-            x = different_shape_concat(feat,view)
-            if self.xyz_input_2_dir:
-                x = different_shape_concat(x,xyz)
-                # x = torch.cat((xyz,x),dim=-1)
-            for l in self.layers_dir:
-                x = self.relu(l(x))
-            rgb = self.fc_rgb(x)
-            # return torch.cat((rgb, alpha), dim=-1)
-            return different_shape_concat(rgb,alpha)
-        else:
-            return self.fc_out(x)
-
 
 class FlexibleNeRFModel(nn.Module):
     def __init__(
@@ -164,10 +54,8 @@ class FlexibleNeRFModel(nn.Module):
             if i % self.skip_connect_every == 0 and i > 0 and i != num_layers - 1:
                 self.layers_xyz.append(
                     nn.Linear(self.dim_xyz + layer_size(i), layer_size(i+1))
-                    # nn.Linear(self.dim_xyz + hidden_size, hidden_size)
                 )
             else:
-                # self.layers_xyz.append(nn.Linear(hidden_size, hidden_size))
                 self.layers_xyz.append(nn.Linear(layer_size(i), layer_size(i+1)))
 
         self.use_viewdirs = use_viewdirs
@@ -227,41 +115,10 @@ def get_plane_name(scene_id,dimension):
 def plane_name2scene(plane_name):
     return search('(?<=sc).*(?=_D)',plane_name).group(0)
 
-class DSS(nn.Module):
-    def __init__(self,n_layers,n_channels,num_features,combine):
-        super(DSS,self).__init__()
-        assert combine in ['sum','avg']
-        self.combine = combine
-        assert n_layers>=2
-        self.per_plane_layers,self.planes_avg_layers = nn.ModuleList(),nn.ModuleList()
-        self.per_plane_layers.append(nn.Linear(num_features,n_channels))
-        self.planes_avg_layers.append(nn.Linear(num_features,n_channels))
-        for layer_num in range(n_layers-2):
-            self.per_plane_layers.append(nn.Linear(n_channels,n_channels))
-            self.planes_avg_layers.append(nn.Linear(n_channels,n_channels))
-        self.per_plane_layers.append(nn.Linear(n_channels,num_features))
-        self.planes_avg_layers.append(nn.Linear(n_channels,num_features))
-        self.relu = nn.functional.relu
-
-    def forward(self,features):
-        for layer_num in range(len(self.per_plane_layers)):
-            per_plane = []
-            for plane in features:
-                per_plane.append(self.per_plane_layers[layer_num](plane))
-            planes_avg = torch.stack(features,0)
-            planes_avg = planes_avg.sum(0) if self.combine=='sum' else planes_avg.mean(0)
-            planes_avg = self.planes_avg_layers[layer_num](planes_avg)
-            features = [self.relu((plane+planes_avg) if self.combine=='sum' else (plane+planes_avg)/2) for plane in per_plane]
-        features = torch.stack(features,0)
-        features = features.sum(0) if self.combine=='sum' else features.mean(0)
-        return features        
-
-
 class TwoDimPlanesModel(nn.Module):
     def __init__(
         self,
         use_viewdirs,
-        # coords_normalization,
         dec_density_layers=4,
         dec_rgb_layers=4,
         dec_channels=128,
@@ -270,25 +127,20 @@ class TwoDimPlanesModel(nn.Module):
         num_viewdir_plane_channels=None,
         rgb_dec_input='projections',
         proj_combination='sum',
-        # planes=None,
         plane_interp='bilinear',
         align_corners=True,
         interp_viewdirs=None,
         viewdir_proj_combination=None,
         num_planes_or_rot_mats=3,
         plane_stats=False,
-        detach_LR_planes=True,
+        detach_LR_planes=False,
         scene_coupler=None,
         point_coords_noise=0,
-        zero_mean_planes_w=None,
         ensemble_size=1,
-        dec_dss_layers=None,
     ):
         self.num_density_planes = num_planes_or_rot_mats if isinstance(num_planes_or_rot_mats,int) else len(num_planes_or_rot_mats)
-        # self.PLANES_2_INFER = [self.num_density_planes]
 
         super(TwoDimPlanesModel, self).__init__()
-        # self.box_coords = coords_normalization
         self.box_coords = None
         self.use_viewdirs = use_viewdirs
         assert use_viewdirs or (viewdir_proj_combination is None and num_viewdir_plane_channels is None)
@@ -316,12 +168,7 @@ class TwoDimPlanesModel(nn.Module):
         self.skip_connect_every = skip_connect_every # if skip_connect_every is not None else max(dec_rgb_layers,dec_density_layers)
         self.coord_projector = CoordProjector(self.num_density_planes,rot_mats=None if isinstance(num_planes_or_rot_mats,int) else num_planes_or_rot_mats)
         self.scene_coupler = scene_coupler
-        self.zero_mean_planes_w = zero_mean_planes_w
-        if self.zero_mean_planes_w is not None:
-            self.zero_mean_planes_loss = {}
 
-        # DSS module:
-        self.dss_module = None if dec_dss_layers is None else DSS(n_layers=dec_dss_layers,n_channels=dec_channels,num_features=num_plane_channels,combine=proj_combination)
         # Density (alpha) decoder:
         self.density_dec = nn.ModuleDict([(str(i),nn.ModuleList()) for i in range(ensemble_size)])
         self.debug = {'max_norm':defaultdict(lambda: torch.finfo(torch.float32).min),'min_norm':defaultdict(lambda: torch.finfo(torch.float32).max)}
@@ -341,7 +188,6 @@ class TwoDimPlanesModel(nn.Module):
         self.rgb_dec = nn.ModuleDict([(str(i),nn.ModuleList()) for i in range(ensemble_size)])
         plane_C_mult = 0
         if proj_combination=='concat' or viewdir_proj_combination=='concat_pos':  plane_C_mult += self.num_density_planes
-        # if use_viewdirs and viewdir_proj_combination=='concat':  plane_C_mult +=1
 
         for i in range(ensemble_size):
             self.rgb_dec[str(i)].append(nn.Linear(num_viewdir_plane_channels+num_plane_channels*plane_C_mult,dec_channels))
@@ -390,8 +236,6 @@ class TwoDimPlanesModel(nn.Module):
 
     def raw_plane(self,plane_name,downsample=False,detach=False):
         plane = self.gen_plane(plane_name,detach=detach)
-        if self.zero_mean_planes_w is not None and self.scene_coupler.plane2saved[plane_name] not in self.zero_mean_planes_loss:
-            self.zero_mean_planes_loss[self.scene_coupler.plane2saved[plane_name]] = torch.mean(plane,(2,3)).abs().mean()
         if downsample:
             if plane_name not in self.downsampled_planes:
                 self.downsampled_planes[plane_name] = self.downsample_plane(plane)
@@ -408,17 +252,10 @@ class TwoDimPlanesModel(nn.Module):
             loaded_dict.update(dict([(k,v) for k,v in self.state_dict().items() if 'rot_mats' in k]))
         return loaded_dict
 
-    def eval(self):
-        super(TwoDimPlanesModel, self).eval()
-        self.SR_planes2drop = []
-        self.planes2drop = []
-        
-    def assign_SR_model(self,SR_model,SR_viewdir,plane_dropout=0,single_plane=True):
+    def assign_SR_model(self,SR_model,SR_viewdir):
         self.SR_model = SR_model
         self.SR_model.align_corners = self.align_corners
         self.SR_model.SR_viewdir = SR_viewdir
-        self.SR_plane_dropout = plane_dropout
-        self.single_plane_SR = single_plane
         self.skip_SR_ = False
         assert not SR_viewdir,'Ceased supporting this option'
 
@@ -430,19 +267,18 @@ class TwoDimPlanesModel(nn.Module):
         scene_name = self.cur_id+''
         normalized_coords = 2*(coords-self.box_coords[scene_name].type(coords.type())[:1])/\
             (self.box_coords[scene_name][1:]-self.box_coords[scene_name][:1]).type(coords.type())-1
-        # assert normalized_coords.min()>=-1-EPSILON and normalized_coords.max()<=1+EPSILON,"Sanity check"
         self.debug['max_norm'][scene_name] = np.maximum(self.debug['max_norm'][scene_name],normalized_coords.max(0)[0].cpu().numpy())
         self.debug['min_norm'][scene_name] = np.minimum(self.debug['min_norm'][scene_name],normalized_coords.min(0)[0].cpu().numpy())
         return normalized_coords
 
     def planes(self,dim_num:int,super_resolve:bool,grid:torch.tensor=None)->torch.tensor:
         plane_name = get_plane_name(self.cur_id,dim_num)
-        detach = self.detach_LR_planes and plane_name2scene(plane_name) in self.scene_coupler.downsample_couples and not self.scene_coupler.use_HR_planes
+        detach = self.detach_LR_planes and plane_name2scene(plane_name) in self.scene_coupler.downsample_couples
         downsample_plane = self.scene_coupler.should_downsample(plane_name)
         plane_name = self.scene_coupler.scene_with_saved_plane(plane_name,plane_not_scene=True)
         if super_resolve:
             SR_input = plane_name
-            if grid is not None and self.SR_model.training and self.single_plane_SR:
+            if grid is not None and self.SR_model.training:
                 roi = torch.stack([grid.min(1)[0].squeeze(),grid.max(1)[0].squeeze()],0)
                 roi = torch.stack([roi[:,1],roi[:,0]],1) # Converting from (x,y) to (y,x) on the columns dimension
                 SR_input = (SR_input,roi)
@@ -456,7 +292,6 @@ class TwoDimPlanesModel(nn.Module):
 
     def project_xyz(self,coords):
         projections = []
-        joint_planes = None
         if self.point_coords_noise and self.training:
             projected_to_res = int(search('(?<=PlRes)(\d)+(?=_)',self.cur_id).group(0))
             coords = coords+torch.normal(mean=0,std=self.point_coords_noise*2/(1+projected_to_res),size=coords.shape).type(coords.type())
@@ -468,18 +303,9 @@ class TwoDimPlanesModel(nn.Module):
             # Check whether the planes SHOULD be super-resolved:
             super_resolve = hasattr(self,'SR_model') and (not hasattr(self,'scene_coupler') or self.scene_coupler.should_SR(plane_name,plane_not_scene=True))
             # Check whether the planes CAN be super-resolved:
-            # super_resolve = super_resolve and (plane_name in self.SR_model.LR_planes or self.scene_coupler.plane2saved[plane_name] in self.SR_model.LR_planes)
             super_resolve = super_resolve and not self.skip_SR_
-            if super_resolve and d in self.SR_planes2drop and self.single_plane_SR: super_resolve = False
-            if joint_planes is None:
-                input_plane = self.planes(d,super_resolve=super_resolve,grid=grid)
-                if super_resolve and not self.single_plane_SR:
-                    joint_planes = 1*input_plane
-
-            if joint_planes is not None:
-                input_plane = self.planes(d,super_resolve=False,grid=grid) if d in self.SR_planes2drop else joint_planes[:,d*self.num_plane_channels:(d+1)*self.num_plane_channels,...]
             projections.append(nn.functional.grid_sample(
-                    input=input_plane,
+                    input=self.planes(d,super_resolve=super_resolve,grid=grid),
                     grid=grid,
                     mode=self.plane_interp,
                     align_corners=self.align_corners,
@@ -491,7 +317,7 @@ class TwoDimPlanesModel(nn.Module):
         grid = dirs.reshape([1,dirs.shape[0],1,2])
         plane_name = get_plane_name(self.cur_id,self.num_density_planes)
         # Stopped supporting viewdir-planes SR:
-        super_resolve = False and hasattr(self,'SR_model') and not self.skip_SR_ and plane_name in self.SR_model.LR_planes and self.num_density_planes not in self.SR_planes2drop
+        super_resolve = False
         assert not super_resolve,'Unexpected'
         if self.plane_stats and self.training:
             self.plane_coverage(grid,self.num_density_planes)
@@ -531,9 +357,7 @@ class TwoDimPlanesModel(nn.Module):
 
 
     def combine_pos_planes(self,tensors):
-        if self.dss_module is not None:
-            return self.dss_module(tensors)
-        elif self.proj_combination=='sum':
+        if self.proj_combination=='sum':
             return torch.stack(tensors,0).sum(0)  
         elif self.proj_combination=='avg':
             return torch.stack([t for i,t in enumerate(tensors) if i not in self.planes2drop],0).mean(0)
@@ -611,22 +435,7 @@ class TwoDimPlanesModel(nn.Module):
                 LR_plane = self.downsample_plane(self.raw_plane(k,detach=self.detach_LR_planes))
             else:
                 LR_plane = self.raw_plane(k,detach=self.detach_LR_planes)
-            # if self.SR_model.detach_LR_planes: LR_plane = LR_plane.detach()
             self.SR_model.set_LR_plane(LR_plane,id=k,save_interpolated=False)
-
-    def return_zero_mean_planes_loss(self):
-        loss = None
-        if self.zero_mean_planes_w is not None and len(self.zero_mean_planes_loss)>0:
-            loss = torch.mean(torch.stack(list(self.zero_mean_planes_loss.values())))
-            self.zero_mean_planes_loss = {}
-        return loss
-
-    # def return_im_consistency_loss(self,sr,gt_lr=None,gt_hr=None):
-    #     # loss = None
-    #     assert (gt_lr is None) ^ (gt_hr is None)
-    #     # if hasattr(self,'SR_model') and self.SR_model.im_consistency_loss_w is not None:
-    #     loss = torch.nn.functional.l1_loss(gt_lr if gt_hr is None else self.downsample_plane(gt_hr,antialias=True),self.downsample_plane(sr,antialias=True))
-    #     return loss
 
 def create_plane(resolution,num_plane_channels,init_STD):
     if not isinstance(resolution,list):
@@ -654,7 +463,6 @@ class SceneSampler:
             sampled = [self.sample_from.pop() for i in range(len(self.sample_from))]
         else:
             while len(sampled)<n:
-                # if len(self.sample_from)==0:
                 if cursor>=len(self.sample_from):
                     self.shuffle()
                     cursor = 0
@@ -662,13 +470,6 @@ class SceneSampler:
                     cursor += 1
                 else:
                     sampled.append(self.sample_from.pop(cursor))
-                # if self.sample_from[cursor] not in sampled:
-                #     popped_scene = self.sample_from.pop(cursor)
-                #     if len(sampled)==n-1 and all([sc in self.frozen_scenes for sc in sampled]): 
-                #         continue
-                #     sampled.append(popped_scene)
-                # else:
-                #     cursor += 1
         return sampled
 
 class CoordProjector(nn.Module):
@@ -684,7 +485,6 @@ class CoordProjector(nn.Module):
                 plane_axes /= np.sqrt(np.sum(plane_axes**2,2,keepdims=True))
                 plane_axes = np.concatenate((plane_axes,-1*plane_axes),1)
                 chosen = plane_axes[np.argmax(np.sum(np.sort(np.sum((plane_axes[...,None,:]-np.expand_dims(plane_axes,1))**2,-1),1)[:,1,...],-1))][:N]
-                # chosen = np.array([[1,0,0],[0,1,0],[0,0,1]])
                 self.rot_mats_NON_LEARNED = nn.ParameterList()
                 for norm in chosen:
                     independent = False
@@ -756,8 +556,6 @@ class PlanesOptimizer(nn.Module):
             self.planes_per_scene = model.num_density_planes+model.use_viewdirs
             if init_params or copy_params_path:
                 for scene,res in tqdm([(k,v) for k,v in scene_id_plane_resolution.items() if k not in self.frozen_scene_paths],desc='Initializing scene planes',):
-                # for scene,res in tqdm(scene_id_plane_resolution.items(),desc='Initializing scene planes',):
-                    # if scene in self.frozen_scene_paths:    continue
                     if init_params:
                         params = nn.ParameterDict([
                             (get_plane_name(scene,d),
@@ -775,7 +573,7 @@ class PlanesOptimizer(nn.Module):
                         params = self.load_scene_planes(model_name=model_name,scene=scene,save_location=copy_params_path,prefer_best=True)
                         cn = params['coords_normalization']
                         params = params['params']
-                    if not os.path.isdir(self.save_location[-1].replace('/planes','')) or any(['.ckpt' in f for f in os.listdir(self.save_location[-1].replace('/planes',''))]):
+                    if not os.path.isdir(self.save_location[-1].replace('/planes/','/')) or any(['.ckpt' in f for f in os.listdir(self.save_location[-1].replace('/planes/','/'))]):
                         assert not os.path.exists(self.param_path(model_name=model_name,scene=scene)),"Planes scene file %s already exists"%(self.param_path(model_name=model_name,scene=scene))
                     torch.save({'params':params,'coords_normalization':cn},self.param_path(model_name=model_name,scene=scene))
                     if model.plane_stats:
@@ -797,7 +595,6 @@ class PlanesOptimizer(nn.Module):
             self.save_params()
         for model_name in ['coarse','fine']:
             model = self.models[model_name]
-            # scenes_planes_name = scene if scene in self.scenes_with_planes else model.scene_coupler.scene_with_saved_plane(scene)
             scenes_planes_name = model.scene_coupler.scene2saved[scene]
             if model_name=='coarse' or not self.use_coarse_planes:
                 loaded_params = self.load_scene_planes(model_name=model_name,scene=scenes_planes_name,prefer_best=load_best)
@@ -823,30 +620,23 @@ class PlanesOptimizer(nn.Module):
                 if os.path.isfile(path(loc).replace('.par','.par_best') if prefer_best else path(loc)):
                     break
             save_location = loc
-            # save_location = self.save_location[scene]
-        # return os.path.join(save_location,"%s_%s.par"%(model_name,scene))
         return path(save_location)
 
-    def get_plane_stats(self,viewdir=False,single_plane=True):
+    def get_plane_stats(self,viewdir=False):
         model_name='coarse'
         plane_means,plane_STDs = [],[]
         for scene in tqdm(self.training_scenes,desc='Collecting plane statistics'):
             loaded_params = self.load_scene_planes(model_name=model_name,scene=self.models[model_name].scene_coupler.scene2saved[scene],prefer_best=True)
-            # loaded_params = torch.load(self.param_path(model_name=model_name,scene=self.models[model_name].scene_coupler.scene2saved[scene]))
             for k,p in loaded_params['params'].items():
                 if not viewdir and get_plane_name(None,self.models[model_name].num_density_planes) in k:  continue
                 plane_means.append(torch.mean(p,(2,3)).squeeze(0))
                 plane_STDs.append(torch.std(p.reshape(p.shape[1],-1),1))
-        if single_plane:
-            return {'mean':torch.stack(plane_means,0).mean(0),'std':torch.stack(plane_STDs,0).mean(0)}
-        else:
-            return {'mean':torch.cat(plane_means,0).reshape([len(self.training_scenes),-1]).mean(0),'std':torch.cat(plane_STDs,0).reshape([len(self.training_scenes),-1]).mean(0)}
+        return {'mean':torch.stack(plane_means,0).mean(0),'std':torch.stack(plane_STDs,0).mean(0)}
 
     def save_params(self,as_best=False):
         assert self.optimize,'Why would you want to save if not optimizing?'
         model_name = 'coarse'
         model = self.models[model_name]
-        # scenes_list = self.scenes if as_best else self.cur_scenes
         scenes_list = self.training_scenes if as_best else self.cur_scenes
         scene_num = 0
         already_saved = []
@@ -855,7 +645,6 @@ class PlanesOptimizer(nn.Module):
         for sc in scenes2save_:
             if model.scene_coupler.scene_with_saved_plane(sc) not in scenes2save:
                 scenes2save.append(model.scene_coupler.scene_with_saved_plane(sc))
-        # scenes2save = list(set([model.scene_coupler.scene_with_saved_plane(sc) for sc in scenes2save]))
         scenes2save = scenes2save if len(scenes2save)<20 else tqdm(scenes2save,desc='Saving scene planes')
         for scene in scenes2save:
             scene = model.scene_coupler.scene_with_saved_plane(scene)
@@ -876,7 +665,6 @@ class PlanesOptimizer(nn.Module):
                 suffix='par',best=as_best,run_time_signature=self.run_time_signature)
         if not as_best: self.saving_needed = False
 
-    # def load_scene_planes(self,model_name,scene,save_location=None,prefer_best=False):
     def load_scene_planes(self,model_name,scene,prefer_best,save_location=None):
         if scene in self.frozen_scene_paths:
             file2load = self.frozen_scene_paths[scene]
@@ -895,7 +683,6 @@ class PlanesOptimizer(nn.Module):
         for model_name in ['coarse','fine']:
             model = self.models[model_name]
             if model_name=='coarse' or not self.use_coarse_planes:
-                # model.scene_coupler.downsampled_planes = {}
                 params_dict,optimizer_states,box_coords = nn.ParameterDict(),[],{}
                 already_loaded = []
                 scenes2load = self.cur_scenes if len(self.cur_scenes)<20 else tqdm(self.cur_scenes,desc='Loading scene planes')
@@ -924,7 +711,6 @@ class PlanesOptimizer(nn.Module):
             if not self.optimize:   continue
             if model_name=='coarse' or not self.use_coarse_planes:
                 params = list([v for i,v in enumerate(params_dict.values()) if self.cur_scenes[i//(model.num_density_planes+1)] not in self.frozen_scene_paths])
-                # params = list(params_dict.values())
                 if self.optimizer is None: # First call to this function:
                     self.optimizer = torch.optim.Adam(params, lr=self.lr)
                     if self.lr_scheduler is not None:
@@ -955,7 +741,7 @@ class PlanesOptimizer(nn.Module):
         if self.optimize and self.cur_id not in self.frozen_scene_paths:   self.optimizer.zero_grad()
 
     def jump_start(self,config=None,on=True):
-        items2memorize = ['steps_per_buffer'] #,'scene_sampler.scenes''buffer_size',
+        items2memorize = ['steps_per_buffer']
         if on:
             num_scenes = config[0]
             if isinstance(num_scenes,float):
@@ -1031,25 +817,20 @@ class EDSR(nn.Module):
         return self.conv_output(out)
 
 class PlanesSR(nn.Module):
-    # def __init__(self,model_arch,scale_factor,in_channels,out_channels,sr_config,plane_interp,detach_LR_planes):
     def __init__(self,model_arch,scale_factor,in_channels,out_channels,sr_config,plane_interp):
         super(PlanesSR, self).__init__()
 
         hidden_size = sr_config.model.hidden_size
         n_blocks = sr_config.model.n_blocks
         input_normalization = sr_config.get("input_normalization",False)
-        # self.detach_LR_planes = detach_LR_planes
         self.scale_factor = scale_factor
         self.plane_interp = plane_interp
-        # self.n_blocks = n_blocks
         self.input_noise = getattr(sr_config,'sr_input_noise',0)
         self.output_noise = getattr(sr_config,'sr_output_noise',0)
-        self.single_plane = getattr(sr_config.model,'single_plane',True)
         self.per_channel_sr = getattr(sr_config.model,'per_channel_sr',False)
         if self.per_channel_sr:
             in_channels = out_channels = 1
 
-        # assert model_arch in ['EDSR','SRResNet']
         PADDING = 0
         self.inner_model = model_arch(in_channels=in_channels,out_channels=out_channels,hidden_size=hidden_size,n_blocks=n_blocks,
             scale_factor=scale_factor,padding=PADDING,receptive_field_bound=getattr(sr_config.model,'receptive_field_bound',np.iinfo(np.int32).max),
@@ -1075,10 +856,6 @@ class PlanesSR(nn.Module):
         if self.consistency_loss_w is not None:
             self.planes_diff = nn.L1Loss()
             self.consistentcy_loss = []
-        # self.im_consistency_loss_w = sr_config.get("im_consistency_loss_w",None)
-        # if self.im_consistency_loss_w is not None:
-        #     self.ims_diff = nn.L1Loss()
-        #     self.im_consistentcy_loss = []
 
     def interpolate_LR(self,id):
         return torch.nn.functional.interpolate(self.LR_planes[id].cuda(),scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=self.align_corners)
@@ -1095,14 +872,7 @@ class PlanesSR(nn.Module):
 
     def set_LR_plane(self,plane,id:str,save_interpolated:bool):
         assert id not in self.LR_planes,"Plane ID already exists."
-        if self.single_plane or get_plane_name(None,0) in id:
-            self.LR_planes[id] = plane
-        else:
-            assert not save_interpolated,'Unsupported'
-            self.LR_planes[id] = None
-            dim_num = int(search('(?<=_D)(\d)+(?=$)',id.split('PlRes')[-1]).group(0))
-            id = id.replace(get_plane_name(None,dim_num),get_plane_name(None,0))
-            self.LR_planes[id] = torch.cat((self.LR_planes[id],plane),1)
+        self.LR_planes[id] = plane
         if save_interpolated:
             self.residual_planes[id] = self.interpolate_LR(id).cpu()
 
@@ -1132,8 +902,6 @@ class PlanesSR(nn.Module):
             out = self.SR_planes[plane_name].cuda()
         else:
             LR_plane = self.LR_planes[plane_name].cuda()
-            # if self.detach_LR_planes:
-            #     LR_plane = LR_plane.detach()
             if self.training and self.input_noise>0:
                 LR_plane = torch.add(LR_plane,torch.normal(mean=0,std=self.input_noise*LR_plane.std(),size=LR_plane.shape).type(LR_plane.type()))
             x = 1*LR_plane
@@ -1178,28 +946,20 @@ class PlanesSR(nn.Module):
                 )
         return out
 
-    # def inner_forward(self,x):
-    #     out = self.conv_input(x)
-    #     out = self.conv_mid(self.residual(out))
-    #     out = self.upscale(out)
-    #     return self.conv_output(out)
-
 def get_scene_id(basedir,ds_factor,plane_res):
     return '%s_DS%d%s'%(basedir,ds_factor,'' if plane_res[0] is None else '_PlRes%d_%d'%(plane_res))
 
 def extract_ds_and_res(scene_name):
-    # ds = int(search('(?<=_DS)(\d)+(?=_PlRes)',scene_name).group(0))
     ds = int(search('(?<=_DS)(\d)+',scene_name).group(0))
     res = int(search('(?<=_PlRes)(\d)+(?=_)',scene_name).group(0)) if '_PlRes' in scene_name else None
     return ds,res
 
 class SceneCoupler:
     def __init__(self,scenes_list,planes_res,num_pos_planes,training_scenes,multi_im_res) -> None:
-        # num_planes = num_pos_planes+viewdir_plane
         planes_model = num_pos_planes>0
         name_pattern = lambda name: '^'+name.split('_DS')[0]+'_DS'+ ('(\d)+_PlRes(\d)+_'+name.split('_')[-1] if planes_model else '')
         ds_ratios,res_ratios,res_vals,ds_vals = [],[],[],[]
-        self.upsample_couples,self.downsample_couples,self.HR_planes_LR_ims_scenes = {},{},[]
+        self.upsample_couples,self.downsample_couples, = {},{},
         scenes_list = list(set(scenes_list+training_scenes))
         assert planes_res in ['HR','LR','LRHR','HRLR','']
         if multi_im_res:
@@ -1217,9 +977,6 @@ class SceneCoupler:
                         res_ratios.append(res_ratio)
                         ds_ratios.append(found_vals[0]/org_vals[0])
                         ds_vals.extend([found_vals[0],org_vals[0]])
-                        if ds_ratios[-1]==1 and res_ratio>1:
-                            self.HR_planes_LR_ims_scenes.append(match)
-                        # if ds_ratios[-1]>1:
                         determining_ratio = res_ratios[-1] if planes_model else 1/ds_ratios[-1]
                         if determining_ratio<1:
                             if scenes_list[sc_num] in training_scenes:
@@ -1243,27 +1000,17 @@ class SceneCoupler:
                 assert res_ratios[match_num] in [self.ds_factor,1/self.ds_factor],"Not all plane resolution ratios/downsampling factors are the same"
         self.use_HR_planes = False
         if 'HR' in planes_res:
-            # self.downsampled_planes = {}
+            raise Exception('Depricated.')
             self.HR_planes = [get_plane_name(k,d) for k in self.downsample_couples.keys() for d in range(num_pos_planes)]
             self.scene2saved = dict([(sc,self.upsample_couples[sc] if (sc in self.upsample_couples and 'LR' not in planes_res) else sc if sc in training_scenes else self.downsample_couples[sc])
                 for sc in scenes_list])
-            # Removed the following, recode properly if necessary:
-            # self.upsample_planes = dict([(get_plane_name(lr_scene,d),get_plane_name(hr_scene,d))\
-            #     for lr_scene,hr_scene in self.upsample_couples.items() if hr_scene in training_scenes for d in range(num_pos_planes)])
         else:
             self.HR_planes = []
             self.scene2saved = dict([(sc,self.downsample_couples[sc] if sc in self.downsample_couples else sc) for sc in scenes_list])
-            # self.downsample_planes = dict([(get_plane_name(hr_scene,d),get_plane_name(lr_scene,d))\
-            #     for hr_scene,lr_scene in self.downsample_couples.items() for d in range(num_pos_planes)])
-        # self.plane2saved = dict([(get_plane_name(k,d),get_plane_name(v,d)) for k,v in self.scene2saved.items() for d in range(num_planes)])
         def plane2saved(plane_name):
             scene = plane_name2scene(plane_name)
             return plane_name.replace(scene,self.scene2saved[scene])
         self.plane2saved = plane2saved
-
-    def toggle_used_planes_res(self,HR):
-        if HR==True:    assert len(self.HR_planes)>0,'No HR planes to use.'
-        self.use_HR_planes = HR
 
     def coupled_scene(self,scene):
         couples = []
@@ -1275,7 +1022,6 @@ class SceneCoupler:
         return couples
 
     def scene_with_saved_plane(self,scene,plane_not_scene=False):
-        # return getattr(self,('plane' if plane_not_scene else 'scene')+'2saved')[scene]
         if plane_not_scene:
             return self.plane2saved(scene)
         else:
@@ -1283,21 +1029,15 @@ class SceneCoupler:
 
     def should_SR(self,scene,plane_not_scene=False):
         if len(self.HR_planes)>0:
-            if self.use_HR_planes:
-                return False
-            else:
-                # return scene in getattr(self,'upsample_'+('planes' if plane_not_scene else 'couples')).values()
-                return scene in (self.HR_planes if plane_not_scene else self.downsample_couples.keys())
+            return scene in (self.HR_planes if plane_not_scene else self.downsample_couples.keys())
         else:
-            # return scene in getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples'))
             if plane_not_scene:
                 return plane_name2scene(scene) in self.downsample_couples
             else:
                 return scene in self.downsample_couples
-            # return scene in getattr(self,'downsample_'+('planes' if plane_not_scene else 'couples'))
 
     def should_downsample(self,plane_name,for_LR_loading=False):
-        return len(self.HR_planes)>0 and (for_LR_loading or not self.use_HR_planes) and self.plane2saved(plane_name) in self.HR_planes
+        return len(self.HR_planes)>0 and self.plane2saved(plane_name) in self.HR_planes
 
 class _ResidualConvBlock(nn.Module):
     """Implements residual conv function.
@@ -1401,7 +1141,6 @@ class SRResNet(nn.Module):
         out = self.upsampling(out)
         out = self.conv_block3(out)
 
-        # out = torch.clamp_(out, 0.0, 1.0)
 
         return out
 
