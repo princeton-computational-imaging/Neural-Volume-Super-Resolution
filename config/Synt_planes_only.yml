@@ -4,7 +4,7 @@ experiment:
   # id: planes_only_blurrySTD2
   # id: planes_only_258recovery
   # id: planesOnly_fromOther4NoPaper453K_paper4noised5_0
-  id: planesOnly_fromNoDetach579K_paper4_8xLR
+  id: planesOnly_fromNoDetach1572K_paper4_8xLR
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
@@ -65,7 +65,8 @@ dataset:
 # Model parameters.
 models:
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy453K
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy579K
+  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy579K
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy1572K
   # use_existing_planes:  True # If true, use saved planes saved in the decoder model folder for the relevant scenes, WITHOUT updating them.
   init_scenes_hack: True
 
