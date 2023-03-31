@@ -811,7 +811,7 @@ class PlanesOptimizer(nn.Module):
                         params = self.load_scene_planes(model_name=model_name,scene=scene,save_location=copy_params_path,prefer_best=True)
                         cn = params['coords_normalization']
                         params = params['params']
-                    if not os.path.isdir(self.save_location[-1].replace('/planes','')) or any(['.ckpt' in f for f in os.listdir(self.save_location[0].replace('/planes',''))]):
+                    if not os.path.isdir(self.save_location[-1].replace('/planes/','/')) or any(['.ckpt' in f for f in os.listdir(self.save_location[0].replace('/planes/','/'))]):
                         assert not os.path.exists(self.param_path(model_name=model_name,scene=scene,file_must_exist=True)),"Planes scene file %s already exists"%(self.param_path(model_name=model_name,scene=scene,file_must_exist=True))
                     torch.save({'params':params,'coords_normalization':cn},self.param_path(model_name=model_name,scene=scene,file_must_exist=False))
                     if model.plane_stats:
