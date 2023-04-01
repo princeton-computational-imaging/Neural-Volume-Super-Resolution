@@ -498,7 +498,7 @@ def cart2az_el(dirs):
 def downsample_plane(plane,ds_factor,plane_interp,align_corners,antialias=False):
     return torch.nn.functional.interpolate(plane,scale_factor=1/ds_factor,mode=plane_interp,align_corners=align_corners,antialias=antialias)
 
-def calc_im_consistency_loss(sr,ds_factor,plane_interp,align_corners=True,gt_lr=None,gt_hr=None):
+def calc_im_inconsistency_loss(sr,ds_factor,plane_interp,align_corners=True,gt_lr=None,gt_hr=None):
     assert (gt_lr is None) ^ (gt_hr is None)
     loss = torch.nn.functional.l1_loss(gt_lr if gt_hr is None else downsample_plane(gt_hr,ds_factor,plane_interp,align_corners,antialias=True),
                                        downsample_plane(sr,ds_factor,plane_interp,align_corners,antialias=True))

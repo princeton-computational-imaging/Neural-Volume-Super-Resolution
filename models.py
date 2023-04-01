@@ -852,10 +852,6 @@ class PlanesSR(nn.Module):
         self.clear_SR_planes(all_planes=True)
         if input_normalization:
             self.normalization_params({'mean':float('nan')*torch.ones([in_channels]),'std':float('nan')*torch.ones([in_channels])})
-        self.consistency_loss_w = sr_config.get("consistency_loss_w",None)
-        if self.consistency_loss_w is not None:
-            self.planes_diff = nn.L1Loss()
-            self.consistentcy_loss = []
 
     def interpolate_LR(self,id):
         return torch.nn.functional.interpolate(self.LR_planes[id].cuda(),scale_factor=self.scale_factor,mode=self.plane_interp,align_corners=self.align_corners)
@@ -882,13 +878,6 @@ class PlanesSR(nn.Module):
             planes_2_clear += ['LR_planes','residual_planes']
         for attr in planes_2_clear:
             setattr(self,attr,{})
-
-    def return_consistency_loss(self):
-        loss = None
-        if self.consistency_loss_w is not None and len(self.consistentcy_loss)>0:
-            loss = torch.mean(torch.stack(self.consistentcy_loss))
-            self.consistentcy_loss = []
-        return loss
 
     def forward(self, plane_name):
         if isinstance(plane_name,tuple):
@@ -935,15 +924,6 @@ class PlanesSR(nn.Module):
             out[...,min_index[0]:max_index[0],min_index[1]:max_index[1]] = super_resolved
             if full_plane:   
                 self.SR_planes[plane_name] = out.cpu()
-            if self.consistency_loss_w is not None: # and self.training:
-                self.consistentcy_loss.append(
-                    torch.nn.functional.interpolate(
-                        difference,
-                        scale_factor=1/self.scale_factor,mode=self.plane_interp,
-                        align_corners=self.align_corners,
-                        antialias=True
-                    ).abs().mean()
-                )
         return out
 
 def get_scene_id(basedir,ds_factor,plane_res):

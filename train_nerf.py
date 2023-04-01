@@ -70,7 +70,7 @@ def main():
             cfg.dataset = dataset_config4eval
     print('Using configuration file %s'%(config_file))
     print(("Evaluating" if eval_mode else "Running") + " experiment %s"%(cfg.experiment.id))
-    im_consistency_loss_w = getattr(cfg.nerf.train,'im_consistency_loss_w',0)
+    im_inconsistency_loss_w = getattr(cfg.nerf.train,'im_inconsistency_loss_w',0)
     SR_experiment = "super_resolution" in cfg
     what2train = getattr(cfg.nerf.train,'what',[])
     assert all([m in ['LR_planes','decoder','SR'] for m in what2train])
@@ -107,7 +107,7 @@ def main():
 
     # Preparing dataset:
     dataset = BlenderDataset(config=cfg.dataset,scene_id_func=models.get_scene_id,
-        eval_mode=eval_mode,scene_norm_coords=cfg.nerf if init_new_scenes else None,planes_logdir=getattr(cfg.models,'planes_path',logdir)) #,assert_LR_ver_of_val=im_consistency_loss
+        eval_mode=eval_mode,scene_norm_coords=cfg.nerf if init_new_scenes else None,planes_logdir=getattr(cfg.models,'planes_path',logdir)) #,assert_LR_ver_of_val=im_inconsistency_loss
     scene_ids = dataset.per_im_scene_id
     i_val = dataset.i_val
     i_train = dataset.i_train
@@ -165,7 +165,7 @@ def main():
             if id in i_val.keys(): #Avoid evaluating training images for scenes which were discarded for evaluation due to max_scenes_eval
                 i_val[id+'_train'] = [i_train[id][i] for i in sorted([(i+im_freq//2)%len(i_train[id]) for i in  np.unique(np.round(np.linspace(0,len(i_train[id])-1,val_ims_per_scene)).astype(int))])]
 
-    if not eval_mode and im_consistency_loss_w:
+    if not eval_mode and im_inconsistency_loss_w:
         # Adding LR views corresponding to evaluation scenes to training dictionary to facilitate using the consistency loss term:
         for k in val_only_scene_ids:
             i_train.update({k:i_train[scene_coupler.downsample_couples[k]]})
@@ -213,7 +213,7 @@ def main():
     loss_groups4_best = [tag for tag in val_strings if ('validation' in tag and '_LR' not in tag and 'blind' not in tag)]
     if len(loss_groups4_best)==0:        loss_groups4_best = [tag for tag in val_strings if 'validation' in tag and 'blind' not in tag]
     loss_groups4_best = list(set(loss_groups4_best))
-    loss4best = 'im_inconsistency' if im_consistency_loss_w else 'fine_loss' if all([v not in what2train for v in ['decoder','SR']]) else 'loss'
+    loss4best = 'im_inconsistency' if im_inconsistency_loss_w else 'fine_loss' if all([v not in what2train for v in ['decoder','SR']]) else 'loss'
 
     # Printing scenes used for each stage and initializing score tracking:
     def print_scenes_list(title,scenes):
@@ -545,7 +545,7 @@ def main():
             optimizer.load_state_dict(checkpoint["optimizer"])
         del checkpoint # Importent: Releasing GPU memory occupied by loaded data.
 
-    assert SR_model is None or (not im_consistency_loss_w) or (not getattr(cfg.nerf.train,'antialias_rendered_downsampling',False)),'Using aliased downsampling of rendered HR images for calculating the consistency loss term. This works better.'
+    assert SR_model is None or (not im_inconsistency_loss_w) or (not getattr(cfg.nerf.train,'antialias_rendered_downsampling',False)),'Using aliased downsampling of rendered HR images for calculating the consistency loss term. This works better.'
     if planes_model and SR_model is not None:
         if getattr(cfg.super_resolution,'apply_2_coarse',False):
             # If super-resolving feature planes to be used by the coarse-resolution decoder too (default is no):
@@ -604,7 +604,7 @@ def main():
     downsampling_offset = lambda ds_factor: (ds_factor-1)/(2*ds_factor) # Importent: Detrmining the rendered rays offset to match the sub-pixel offset caused by downsampling the input images.
     saved_target_ims = dict(zip(set(val_strings),[set() for i in set(val_strings)])) # Keeping track of target images logged so far to avoid re-logging them.
     virtual_batch_size = getattr(cfg.nerf.train,'virtual_batch_size',1)
-    if im_consistency_loss_w:
+    if im_inconsistency_loss_w:
         def avg_downsampling(pixels):
             # For the downsampling consistency loss term (enforced w.r.t. LR views corresponding to validation scenes), downsampling the rendered HR images using simple averaging over image patches of size (scale_factor X scale_facotr), without any antialias filtering. Found this to work best.
             return torch.mean(pixels.reshape(-1,scene_coupler.ds_factor,scene_coupler.ds_factor,3),dim=(1,2))
@@ -638,8 +638,8 @@ def main():
 
             record_fine = True
             for eval_cycle in range(eval_cycles):
-                coarse_loss,fine_loss,loss,psnr,rgb_coarse,rgb_fine,rgb_SR,target_ray_values,consistency_loss,im_consistency_loss,sr_scene_inds =\
-                    defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list)
+                coarse_loss,fine_loss,loss,psnr,rgb_coarse,rgb_fine,rgb_SR,target_ray_values,im_inconsistency_loss,sr_scene_inds =\
+                    defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list)
                 for eval_num,img_idx in enumerate(tqdm(img_indecis[eval_cycle],
                     desc='Evaluating '+('scene (%d/%d): %s'%(eval_cycle+1,eval_cycles,evaluation_sequences[eval_cycle]) if eval_mode else 'scenes'))):
                     if eval_mode:
@@ -648,31 +648,53 @@ def main():
                     else:
                         scene_num = eval_num
                     cur_scene_id = scene_ids[img_idx]
-                    sr_scene = (not planes_model or SR_experiment) and cur_scene_id in scene_coupler.downsample_couples and '_HRplane' not in evaluation_sequences[scene_num]
+                    sr_scene = (not planes_model or SR_experiment) and cur_scene_id in scene_coupler.downsample_couples
                     sr_scene_inds[val_strings[scene_num]].append(sr_scene)
                     img_target,pose_target,cur_H,cur_W,cur_focal,cur_ds_factor = dataset.item(img_idx,device)
                     ray_origins, ray_directions = get_ray_bundle(
                         cur_H, cur_W, cur_focal, pose_target,downsampling_offset=downsampling_offset(cur_ds_factor),
                     )
                     if planes_model and (not eval_mode or eval_num==0):
+                        # Loading feature-planes corresponding to the evaluated scene:
                         planes_opt.load_scene(cur_scene_id,load_best=not optimize_planes)
                         planes_opt.cur_id = cur_scene_id
-                    rgb_coarse_, _, _, rgb_fine_, _, _,rgb_SR_,_,_ = eval_nerf(
-                        cur_H,
-                        cur_W,
-                        cur_focal,
-                        model_coarse,
-                        model_fine,
-                        ray_origins,
-                        ray_directions,
-                        cfg,
-                        mode="validation",
-                        encode_position_fn=encode_position_fn,
-                        encode_direction_fn=encode_direction_fn,
-                        SR_model=SR_model,
-                        scene_id=cur_scene_id,
-                        scene_config=cfg.dataset[dataset.scene_types[cur_scene_id]],
-                    )
+                    # Rendering the scene view. Using the SR model to SR the feature-planes, if applicable:
+                    def render_view():
+                        rgb_c, _, _, rgb_f, _, _,rgb_SR,_,_ = eval_nerf(
+                            cur_H,
+                            cur_W,
+                            cur_focal,
+                            model_coarse,
+                            model_fine,
+                            ray_origins,
+                            ray_directions,
+                            cfg,
+                            mode="validation",
+                            encode_position_fn=encode_position_fn,
+                            encode_direction_fn=encode_direction_fn,
+                            SR_model=SR_model,
+                            scene_id=cur_scene_id,
+                            scene_config=cfg.dataset[dataset.scene_types[cur_scene_id]],
+                        )
+                        return rgb_c,rgb_f,rgb_SR
+
+                    rgb_coarse_, rgb_fine_, rgb_SR_ = render_view()
+                    # rgb_coarse_, _, _, rgb_fine_, _, _,rgb_SR_,_,_ = eval_nerf(
+                    #     cur_H,
+                    #     cur_W,
+                    #     cur_focal,
+                    #     model_coarse,
+                    #     model_fine,
+                    #     ray_origins,
+                    #     ray_directions,
+                    #     cfg,
+                    #     mode="validation",
+                    #     encode_position_fn=encode_position_fn,
+                    #     encode_direction_fn=encode_direction_fn,
+                    #     SR_model=SR_model,
+                    #     scene_id=cur_scene_id,
+                    #     scene_config=cfg.dataset[dataset.scene_types[cur_scene_id]],
+                    # )
                     target_ray_values[val_strings[scene_num]].append(img_target[...,:3])
                     loss[val_strings[scene_num]].append(None)
                     if sr_scene:
@@ -680,28 +702,31 @@ def main():
                             rgb_SR_ = 1*rgb_fine_
                             if SR_model is not None:
                                 if eval_mode or val_ind(val_strings[scene_num]) not in saved_rgb_fine[evaluation_sequences[scene_num]]:
+                                    # Rendering the scene view without super-resolving the feature-planes, as reference:
                                     record_fine = True
                                     model_coarse.skip_SR(True)
                                     model_fine.skip_SR(True)
-                                    rgb_coarse_, _, _, rgb_fine_, _, _,_,_,_ = eval_nerf(
-                                        cur_H,
-                                        cur_W,
-                                        cur_focal,
-                                        model_coarse,
-                                        model_fine,
-                                        ray_origins,
-                                        ray_directions,
-                                        cfg,
-                                        mode="validation",
-                                        encode_position_fn=encode_position_fn,
-                                        encode_direction_fn=encode_direction_fn,
-                                        SR_model=SR_model,
-                                        scene_id=cur_scene_id,
-                                        scene_config=cfg.dataset[dataset.scene_types[cur_scene_id]],
-                                    )
+                                    rgb_coarse_, rgb_fine_, _ = render_view()
+                                    # rgb_coarse_, _, _, rgb_fine_, _, _,_,_,_ = eval_nerf(
+                                    #     cur_H,
+                                    #     cur_W,
+                                    #     cur_focal,
+                                    #     model_coarse,
+                                    #     model_fine,
+                                    #     ray_origins,
+                                    #     ray_directions,
+                                    #     cfg,
+                                    #     mode="validation",
+                                    #     encode_position_fn=encode_position_fn,
+                                    #     encode_direction_fn=encode_direction_fn,
+                                    #     SR_model=SR_model,
+                                    #     scene_id=cur_scene_id,
+                                    #     scene_config=cfg.dataset[dataset.scene_types[cur_scene_id]],
+                                    # )
                                     model_coarse.skip_SR(False)
                                     model_fine.skip_SR(False)
                                     if not (eval_mode or planes_updating or decoder_training):
+                                        # Save the reference views to avoid re-rendering them in future evaluation rounds:
                                         saved_rgb_fine[evaluation_sequences[scene_num]][val_ind(val_strings[scene_num])] = 1*rgb_fine_.detach()
                                 else:
                                     record_fine = False
@@ -710,17 +735,13 @@ def main():
                         fine_loss[val_strings[scene_num]].append(img2mse(rgb_fine_[..., :3], img_target[..., :3]).item())
                         if planes_model:
                             loss[val_strings[scene_num]][-1] = img2mse(rgb_SR_[..., :3], img_target[..., :3]).item()
-                        if SR_model is not None:
-                            consistency_loss_ = SR_model.return_consistency_loss()
-                            if consistency_loss_ is not None:
-                                consistency_loss[val_strings[scene_num]].append(consistency_loss_.item())
-                        if im_consistency_loss_w is None:
-                            im_consistency_loss_ = None
+                        if im_inconsistency_loss_w is None:
+                            im_inconsistency_loss_ = None
                         else:
-                            im_consistency_loss_ = calc_im_consistency_loss(gt_hr=img_target[..., :3].permute(2,0,1)[None,...],
+                            im_inconsistency_loss_ = calc_im_inconsistency_loss(gt_hr=img_target[..., :3].permute(2,0,1)[None,...],
                                 sr=(rgb_SR_ if planes_model else rgb_fine_)[..., :3].permute(2,0,1)[None,...],ds_factor=scene_coupler.ds_factor,plane_interp='bilinear')
-                        if im_consistency_loss_ is not None:
-                            im_consistency_loss[val_strings[scene_num]].append(im_consistency_loss_.item())
+                        if im_inconsistency_loss_ is not None:
+                            im_inconsistency_loss[val_strings[scene_num]].append(im_inconsistency_loss_.item())
                     else:
                         coarse_loss[val_strings[scene_num]].append(img2mse(rgb_coarse_[..., :3], img_target[..., :3]).item())
                         fine_loss[val_strings[scene_num]].append(0.0)
@@ -744,7 +765,7 @@ def main():
                     with open(os.path.join(results_dir,evaluation_sequences[eval_cycle],'metrics.txt'),'w') as f:
                         f.write('Evaluated at '+str(datetime.datetime.now())+':\n')
                         if hasattr(cfg.dataset.llff,'min_eval_frames'):
-                            f.write('Not saving metrics since viewing directions are interpolated')
+                            f.write('Not saving metrics since rendered viewing directions are interpolated and therefore do not match test images.')
 
                 for val_set in cur_val_sets:
                     writing_index = val_ind(val_set) if eval_mode else iter
@@ -758,10 +779,8 @@ def main():
                                 images=[torch.zeros_like(rgb_fine[val_set][i]) if im is None else im for i,im in enumerate(rgb_SR[val_set])],
                                 text=str(val_ind(val_set)),psnrs=[None if im is None else SR_psnr_gain[i] if eval_mode else psnr[val_set][i] for i,im in enumerate(rgb_SR[val_set])],
                                 iter=iter,)
-                        if val_set in consistency_loss:
-                            write_scalar("%s/inconsistency"%(val_set), np.nanmean(consistency_loss[val_set]), writing_index)
-                        if val_set in im_consistency_loss:
-                            write_scalar("%s/im_inconsistency"%(val_set), np.nanmean(im_consistency_loss[val_set]), writing_index)
+                        if val_set in im_inconsistency_loss:
+                            write_scalar("%s/im_inconsistency"%(val_set), np.nanmean(im_inconsistency_loss[val_set]), writing_index)
                     write_scalar("%s/fine_psnr"%(val_set), np.nanmean([mse2psnr(l) for l in fine_loss[val_set]]), writing_index)
                     fine_loss_is_loss = not any([v is not None for v in loss[val_set]])
                     if not fine_loss_is_loss:
@@ -817,7 +836,7 @@ def main():
         hr_planes_iter = len(scene_coupler.HR_planes)>0 and cur_scene_id in scene_coupler.downsample_couples and np.random.uniform()>=0.5
         sr_iter = cur_scene_id in scene_coupler.downsample_couples and not hr_planes_iter
         img_target,pose_target,cur_H,cur_W,cur_focal,cur_ds_factor = dataset.item(img_idx,device)
-        im_consistency_iter = im_consistency_loss_w and cur_scene_id in val_only_scene_ids
+        im_consistency_iter = im_inconsistency_loss_w and cur_scene_id in val_only_scene_ids
         if im_consistency_iter:
             cur_H *= scene_coupler.ds_factor
             cur_W *= scene_coupler.ds_factor
@@ -916,14 +935,7 @@ def main():
                 write_scalar("train/loss_%s"%('sr' if cur_scene_id in scene_coupler.downsample_couples else 'lr'), rendering_loss.item(), iter)
                 psnr = mse2psnr(rendering_loss.item())
                 write_scalar("train/psnr", psnr, iter)
-        loss = (im_consistency_loss_w if im_consistency_iter else rendering_loss_w)*rendering_loss
-
-        if planes_model:
-            if SR_experiment and SR_model is not None:
-                SR_consistency_loss = SR_model.return_consistency_loss()
-                if SR_consistency_loss is not None:
-                    write_scalar("train/inconsistency", SR_consistency_loss.item(), iter)
-                    loss += cfg.super_resolution.consistency_loss_w*SR_consistency_loss
+        loss = (im_inconsistency_loss_w if im_consistency_iter else rendering_loss_w)*rendering_loss
 
         loss.backward()
         new_drawn_scenes = None

@@ -140,7 +140,7 @@ nerf:
     num_fine: 64
     # Whether to render models using a white background.
     white_background: False
-    im_consistency_loss_w: 1 #1#0
+    im_inconsistency_loss_w: 1 #1#0
     # blind_only_im_consistency:  True
     im_consistency_iters_freq:  1
     antialias_rendered_downsampling:  False
