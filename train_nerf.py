@@ -1121,13 +1121,13 @@ def main():
         if isinstance(rendering_loss,torch.Tensor):
             if im_consistency_iter:
                 write_scalar("train/im_inconsistency", rendering_loss.item(), iter)
+                psnr = mse2psnr(rendering_loss.item())
             else:
                 write_scalar("train/loss", rendering_loss.item(), iter)
                 write_scalar("train/loss_%s"%('sr' if cur_scene_id in scene_coupler.downsample_couples else 'lr'), rendering_loss.item(), iter)
                 psnr = mse2psnr(rendering_loss.item())
                 write_scalar("train/psnr", psnr, iter)
         loss = (im_consistency_loss_w if im_consistency_iter else rendering_loss_w)*rendering_loss
-
         # if planes_model and not im_consistency_iter:
         if planes_model:
             # if im_consistency_iter:
