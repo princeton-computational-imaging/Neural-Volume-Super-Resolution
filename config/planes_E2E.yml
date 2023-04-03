@@ -20,22 +20,20 @@ experiment:
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
-  randomseed: 10 # 34  # 8239
+  randomseed: 0 # 34  # 8239
   # Number of training iterations.
   train_iters: 1500000
-  # Number of training iterations after which to validate.
-  validate_every: [0.1,5000] #50
-  # Number of training iterations after which to checkpoint.
-  save_every: 10.0 #5000
-  # Number of training iterations after which to print progress.
+  # Evaluation round frequency:
+  validate_every: [0.1,5000] # [Desired portion of evaluation time, compared to training time,Max training iterations between evaluation rounds]
+  # Checkpoint saving frequency:
+  save_every: 10.0 # Minutes (Use floating point numbers)
+  # Number of training iterations after which to print progress:
   print_every: 100
 
 # Dataset parameters.
 dataset:
-  # Base directory of dataset.
-  # type: DTU # DTU,synt
-  # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
-  synt: 
+  # Per dataset type configurations:
+  synt: # Synthetic scenes, from the NeRF dataset or using the same configuration
     root: /scratch/gpfs/yb6751/datasets/Synthetic
     # Near clip plane (clip all depth values closer than this threshold).
     near: 2
@@ -44,294 +42,167 @@ dataset:
     # Do not use NDC (normalized device coordinates). Usually True for
     # synthetic (Blender) datasets.
     no_ndc: True
-  llff: 
+  llff: # Real world scenes from NeRF:
     root: /scratch/gpfs/yb6751/datasets/LLFF
+    # Near clip plane (clip all depth values closer than this threshold).
     near: 0
+    # Far clip plane (clip all depth values farther than this threshold).
     far:  1
+    # Do not use NDC (normalized device coordinates). Usually True for
+    # synthetic (Blender) datasets.
     no_ndc: False
+    # If set, adding test views by interpolating camera poses, to allow rendering smoother high FPS video sequences:
     # min_eval_frames:  200
-  # nerfstudio: 
-  #   root: /scratch/gpfs/yb6751/datasets/nerfstudio
-  #   near: 0
-  #   far:  1
-  #   no_ndc: False
-  max_scenes_eval:  2 #4
+  max_scenes_eval:  2 # If set, using at most this number of evaluation scenes in evaluation rounds:
   # prob_assigned2scene_groups: False # (Default: True) When True, the probability value reflects the chance of sampling A (any) SCENE IN THE GROUP, and not the probabiliy of sampling any specific scene.
-  # auto_remove_val:  True
   dir:
     train:
-      # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon'] # old
-      # 8,200,32:   ['house','robot','chair','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','mic','ship'] # All 29 scenes
+      # Training scenes: 
+      # Parameter convention:
+      #   downsampling_factor,pos_feature_plane_resolution,viewdir_feature_plane_resoution,dataset_type (default:'synt'),relative probability (default:1): [scene names]
+      # Adding suffix "##<integer>" to scene name allows training multiple independent feature plane sets to the same scene. E.g. ['lego','ship','lego##1','lego##2']
+      # LR scenes (training and some of evaluation):
       8,200,32:   ['house','robot','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #'lego','chair',mic,ship
-      # 8,200,32:   ['house','robot','chair','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','mic','ship','ship##Gauss2','mic##Gauss2','chair##Gauss2','lego##Gauss2'] # 
-      # 8,200,32,'synt',None:   ['house','robot','chair','ficus','materials','holiday']
-      # 8,200,32,'synt',None,['decoder']:   ['bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','mic','ship'] # All 29 scenes
-      # 8,200,32:   ['holiday']      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      # 8,200,32,'synt',None,['decoder']:   ['motorbike','ship']      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','chair','lego','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship']
-      # 2,800,32:   ['house','robot','chair','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #mic,ship
-      # 2,800,32:   ['house','robot','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #'lego','chair',mic,ship
-      # 2,800,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops',] #'ficus','materials','hotdog','drums','lego','chair','mic','ship',
-      # 2,800,32:   ['house','robot','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #'lego','chair',mic,ship
+      # HR scenes (training only):
       2,800,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops',] #'ficus','materials','hotdog','drums','lego','chair','mic','ship',
-      # 2,800,32,'synt',None,['decoder']:   ['bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','lego','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums',] #mic,ship
-      # 2,800,32:   ['engine','fruits','house','marble_fireplace','piano','plane','robot','satellite','speakers','steamTrain','thuja','toad','triceratops','drums','ficus','hotdog','materials','bugatti','cola','donut','guitar','holiday','motorbike','teddy','dragon','mic','ship'] #'chair','lego',
-      # 32,200,32,'llff':   ['orchids','fern','flower','fortress','horns','leaves','room','trex']
-      # 8,800,32,'llff':   ['flower','fortress','orchids','fern','room','trex',] #'horns','leaves',
-      # 32,200,32,'llff',0:   ['orchids','fern']
-      # 2,800,32:   ['holiday'] #mic,ship
-      # 2,800,32,'synt',None,['decoder']:   ['motorbike'] #mic,ship
-      # 8,200,32,'synt',0:   ['mic','ship','chair','lego','ship##Gauss2','mic##Gauss2','chair##Gauss2','lego##Gauss2']
-      # 8,200,32,'synt',0:   ['mic','ship','chair','lego']
-      8,200,32,'synt',0:   ['lego'] ##Gauss2','mic##Gauss2','chair##Gauss2','lego##Gauss2
-      # 8,200,32,'synt',0:   ['ship##Noise5'] #,'lego'
-      # 8,200,32,'synt',0:   ['lego##1'] #,'lego'
-      # 8,200,32,'synt',10:   ['mic','ship']
-      # 2,800,32:   ['mic']
+      # Evaluation scene(s) for image inconsistency loss term:
+      # Should be added (with sampling probability set to 0) if not already included in LR scenes above
+      8,200,32,'synt',0:   ['lego','ship']
     val:
-    #   # 8,800,32,'llff':   ['fern',]
-    #   # 1,800,32,'nerfstudio':   ['vegetation']
-    #   # 2,800,32:   ['chair','drums','ficus','hotdog','lego','materials','mic','ship']
-      # 32,200,32,'llff':   ['orchids','fern']
-      # 8,800,32,'llff':   ['horns','leaves',]
-      # 8,200,32:   ['mic','ship',]
-      # 2,800,32:   ['mic','ship',] #'ship##Gauss2','mic##Gauss2',
-      # 8,200,32:   ['chair##Gauss2','lego##Gauss2','chair','lego',]
-      # 8,200,32:   ['chair','lego'] # 
-      # 2,800,32:   ['chair','lego'] # 
-      # 8,200,32:   ['mic','ship','chair','lego']
-      # 2,800,32:   ['mic','ship','chair','lego'] # 
-      2,800,32:   ['ficus','materials','hotdog','drums'] # 
-      # 2,800,32:   ['mic','ship','chair','lego','ship##Gauss2','mic##Gauss2','chair##Gauss2','lego##Gauss2'] # 
-      # 2,800,32:   ['ship##Gauss2','mic##Gauss2','chair##Gauss2','lego##Gauss2'] # 
-      # 8,200,32:   ['ship##Noise5']
-      # 2,800,32:   ['ship##Noise5']
-      2,800,32:   ['lego']
-      # 8,200,32:   ['ship']
-      #   # 8,200,32:   ['ship','mic','ship##Gauss2','mic##Gauss2']
-      # 2,800,32:   ['mic##Gauss2']
-      # 2,800,32:   ['lego##1']
-  # Optionally, provide a path to the pre-cached dataset dir. This
-  # overrides the other dataset options.
-  cachedir: cache/legocache200
-  # For the Blender datasets (synthetic), optionally return images
-  # at half the original resolution of 800 x 800, to save space.
-  # Stride (include one per "testskip" images in the dataset).
-  testskip: 10
-  llffhold: 2 #4
+      # Evaluation scenes (Should not overlap with training scenes):
+      # Use the same parameter convention as in training scenes, without sampling probability
+      2,800,32:   ['lego','ship']
+  
+  testskip: 10 # Stride for synthetic scenes: Include one evaluation image per "testskip" images in the dataset.
+  llffhold: 2 # For real scenes: Number of training images to hold out for evaluation
 
 # Model parameters.
 models:
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy579K
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy1572K
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_imConsistLossFreq10nonSpatial_orchidsFern_0
+  # Path to pre-trained model checkpoint to resume (if set):
   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy453K
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_other4_0
-  # planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromOther4NoPaper453K_paper4Gauss1_0
+  # Path to feature planes checkpoint for scenes missing from the pre-trained model path:
   # planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromOther4NoPaper453K_all8_0
-  # planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromOther4NoPaper453K_paper4noised5_0
-  # planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromNoDetach579K_paper4_8xLR_0
-  # planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromNoDetach1572K_paper4_8xLR_0
-  # use_existing_planes:  True
-  # Coarse model.
+  # use_existing_planes:  True # If True, favor feature plane sets from pre-trained model checkpoint folder over ones in planes_path folder, and keep them frozen (do not update). Default: False
   coarse:
     # Name of the torch.nn.Module class that implements the model.
     type: TwoDimPlanesModel
-    # Number of planes to project to (3 and up):
+    # Number of planes to project to (3 and up, default is 3):
     # num_planes: 4
-    # Plane side size. Integer or a list of integers to match different scenes.
-    # plane_resolutions: 200 #64 #32
-    # Plane side size for view-direction plane. Can be a list like plane_resolutions.
-    # viewdir_plane_resolution: 32
     # Planes interpolation method (default to bilinear):
     plane_interp: bilinear # bicubic # bilinear
-    # Number of layers in the density decoder.
+    # Number of layers in the density decoder:
     dec_density_layers: 4
-    # Number of layers in the rgb decoder.
+    # Number of layers in the rgb decoder:
     dec_rgb_layers: 4 #8
+    # Nunber of channels per layer (for both density and radience branches):
     dec_channels: 128 #256 #128
-    # # Number of layers in the density decoder.
-    # dec_density_layers: 8
-    # # Number of layers in the rgb decoder.
-    # dec_rgb_layers: 8
-    # dec_channels: 256 #128
-    # What is the input to the rgb decoder, apart from view directions (if used)
+    # Input to the rgb decoder, apart from view directions (if used):
     rgb_dec_input:  projections # projections, features
     # How to combine projections from different planes:
     proj_combination: avg #avg #concat #sum
-    # How to combine projection from viewdir plane with the ones from position planes. Defaults to proj_combination:
+    # How to combine projection from viewdir plane with the ones from position planes. Defaults to whatever is set in proj_combination:
     viewdir_proj_combination: concat_pos
     # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
     align_corners: False
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
-    # hidden_size: 256
-    # Add a skip connection once in a while. Note: This parameter
-    # won't take affect unless num_layers > skip_connect_every.
+    # Add a skip connection once in a while. Note: This parameter won't take affect unless num_layers > skip_connect_every:
     skip_connect_every: 3
-    # Whether to inetrpolate the view-directions plane (#3) to fill-in for view-directions unseen so far during training, each time the model's eval() function is called:
-    # interp_viewdirs: bilinear #'bilinear','bicubic',None
-    #### Plane coniguration: ####
-    # num_plane_channels: 24
-    # num_viewdir_plane_channels: 48
-    # Limiting planes' rank by constructing them as a product of two matrices. The following parameter determines the ratio of the rank relative to the full rank:
-    # planes_rank_ratio:  0.005
-    # Apply preliminary positional feature processing before summing, using a DSS module (from "On Learning Sets of Symmetric Elements"). 
-    # Should be used only with proj_combination in ['sum','avg']
-    # dec_dss_layers: 4
-  fine:
-    # Name of the torch.nn.Module class that implements the model.
+    # Plane coniguration:
+    # num_plane_channels: 24 (Default: 48)
+    # num_viewdir_plane_channels: 48 (Defaults to the value in num_plane_channels)
+  fine: # All missing paramers default to their corresponding setting for the coarse decoder
+    # Name of the torch.nn.Module class that implements the model:
     # type: use_same
-    type: TwoDimPlanesModel
-    # ensemble_size:  2
-    # Plane side size:
-    # plane_resolutions: 128
-    # # Number of layers in the density decoder.
-    # dec_density_layers: 2
-    # # Number of layers in the rgb decoder.
-    # dec_rgb_layers: 2
-    # Share the planes with the coarse model:
-    use_coarse_planes: True
-# Optimizer params.
+    type: TwoDimPlanesModel # Set to "use_same" to use a single model instance (same weights) for both coarse and fine models.
+    # use_coarse_planes: True # Whether to use feature planes from the coarse decoder model. Default: True, False is not supported yet.
+# Decoder and feature planes optimizer params:
 optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
-  # Learning rate.
-  lr: 5.E-4 #1.E-3 #5.0E-3 2.5E-4 #
-  # planes_lr: 1.E-3 #2.5E-4
+  # Decoder model learning rate:
+  lr: 5.E-4
+  # Feature planes learing rate:
+  # planes_lr: 1.E-3 # Defaults to value in lr
 
 # NeRF parameters.
 nerf:
   # Use viewing directions as input, in addition to the X, Y, Z coordinates.
-  use_viewdirs: True #False #True
-  # Normalize elevation angle range to the range observed across training image frames
-  # adjust_elevation_range: 1 #True
-  # adjust_azimuth_range: True
-  # # Encoding function for position (X, Y, Z).
-  # encode_position_fn: None
-  # # Encoding function for ray direction (theta, phi).
-  # encode_direction_fn: None
-  train:
-    # End-to-end training of representation and SR models
-    what: ['LR_planes','decoder','SR'] #,'HR_planes',
-    # what: ['decoder','SR'] #,'HR_planes','LR_planes',
-    # Train the SR model to super-resolve the VALIDATION scenes as well, but using the LR images as supervision on these scenes
-    # sr_val_scenes_with_LR:  True
-    # In the end-2-end training, learn decoder and sr model separately by not performing decoder steps during SR iterations
-    # separate_decoder_sr:  True
-    # In the end-2-end training, learn the LR planes corresponding to the validation scenes without affecting the decoder (almost as if learned afterwards.)
-    # separate_decoder_val_scenes:  True
-    # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iteration using the SR model. Meaning, learn 
+  use_viewdirs: True
+  # Normalize elevation and azimuth angle ranges to the range observed across training image frames
+  # adjust_elevation_range: 1 # Default: False
+  # adjust_azimuth_range: True # Default: False
+  train: # Training-specific parameters:
+    # Which modules to train:
+    what: ['LR_planes','decoder','SR'] # Exclude modules to freeze their weights.
+    # In the end-2-end learning scheme, don't propagate gradients all the way to LR planes in iterations using the SR model. Meaning, learn 
     # the LR planes corresponding to the training scenes independently of the SR model (This is anyway indepepent for the evaluation scenes,
-    #  since HR images are not available for their training) (default: True):
-    detach_LR_planes: False
-    # seperate_SR_planes_opt: True
-    # # if specified, spatial_sampling is the factor that multiplies the necessary patch area to yield num_random_rays. Should be >=1. Then rays are randomly sampled from this area.
-    # spatial_sampling: 1.
-    # Number of random rays to retain from each image.
-    # These sampled rays are used for training, and the others are discarded.
-    num_random_rays: 4096 #3072 #4096  # 32 * 32 * 4
-    # Size of each chunk (rays are batched into "chunks" and passed through
-    # the network)
-    chunksize: 131072  # 131072  # 1024 * 32
-    # Save GPU memory by holding plane variables on cpu memory until needed:
-    # save_GPU_memory: True
-    # Store and load plane parameters using hard drive to allow simultaneously training on many scenes:
+    #  since HR images are not available for their training):
+    # detach_LR_planes: False # Defaults to False
+    # Number of random rays to retain from each image. These sampled rays are used for training, while the rest are discarded:
+    num_random_rays: 4096 #3072
+    # Size of each chunk (rays are batched into "chunks" and passed through the network):
+    chunksize: 131072
+    # Store and load plane parameters using hard drive to facilitate simultaneously training on many scenes with limited GPU memory:
     store_planes:
-      # buffer_size:  10
-      steps_per_buffer: 200
-    # Whether or not to perturb the sampled depth values.
+      # buffer_size:  10 # Number of different scenes to randomly choose from at each training iteration
+      steps_per_buffer: 200 # Number of training iterations before re-drawing a new set of scenes
+    # Whether or not to perturb the sampled depth values along each ray:
     perturb: True
-    # Number of depth samples per ray for the coarse network.
+    # Number of depth samples per ray for the coarse network:
     num_coarse: 64
-    # Number of depth samples per ray for the fine network.
+    # Number of depth samples per ray for the fine network:
     num_fine: 64
-    # Whether to render models using a white background.
+    # Whether to render models using a white background:
     white_background: False
-    # Whether to use random target background colorin synthetic images (based on alpha channel):
-    # random_target_bg_color: True
-    # Whether to mask out regions where both target image is background and rendered density is 0:
-    # mask_background:  True
-    # Add Gaussian noise to points coordinates before projecting them to planes:
-    # point_coords_noise: 0.1
-    # Encourage per-channel 0 mean on the planes. This is meant to replace input normalization for SR in the end-2-end training scheme.
-    # zero_mean_planes_w: 0 #0 #1
-    im_inconsistency_loss_w: 0 #1#0
-    # blind_only_im_consistency:  True
-    im_consistency_iters_freq:  0.5 #10
-    antialias_rendered_downsampling:  False
-    nonspatial_sampling4im_consistency: True
-    # Standard deviation of noise to be added to the radiance field when
-    # performing volume rendering.
+    # Penalty (loss) term weights:
+    im_inconsistency_loss_w: 1 # Set to 0 to measure without effecting training. Default: None
+    im_consistency_iters_freq:  0.5 # Sampling frequency for set of evaluation scenes for which image inconsistency loss is minimized.
+    # Standard deviation of noise to be added to the radiance field when performing volume rendering.
     radiance_field_noise_std: 0.2
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
-    # Dropout some planes during training (only when using more than 3 planes and proj_combination is set to 'avg'):
-    # plane_dropout: 0.5
-    # Train on only one scene until loss 
-    # jump_start: [0.1,0.03] #[# scene (or portion of) training scenes to use in this phase, average loss threshold]
-  # Validation-specific parameters.
-  validation:
-    # Number of random rays to retain from each image.
-    # These sampled rays are used for training, and the others are discarded.
-    chunksize: 131072   # 1024 * 32
-    # Whether or not to perturb the sampled depth values.
+  validation:   # Validation-specific parameters:
+    chunksize: 131072
+    # Whether or not to perturb the sampled depth values:
     perturb: False
-    # Number of depth samples per ray for the coarse network.
+    # Number of depth samples per ray for the coarse network:
     num_coarse: 64
-    # Number of depth samples per ray for the fine network.
+    # Number of depth samples per ray for the fine network:
     num_fine: 64
-    # Whether to render models using a white background.
+    # Whether to render models using a white background:
     white_background: False
-    # Standard deviation of noise to be added to the radiance field when
-    # performing volume rendering.
+    # Standard deviation of noise to be added to the radiance field when performing volume rendering:
     radiance_field_noise_std: 0.
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
-    eval_train_scenes:  True # Whether to add full training views to evaluation (different from the sparse ray sampling from these views during training)
-super_resolution:
-  lr: 5.E-5 #1.E-4 #
+    # Whether to add full training views to evaluation (different from the sparse ray sampling from these views during training):
+    eval_train_scenes:  True # Defaults to False
+super_resolution: # Feature planes Super-Resolution module parameters:
+  lr: 5.E-5
   training:
+    # Calculate the loss on the output of which decoder models:
     loss: fine # fine,coarse,both
+  # Super-resolve feature planes before feeding into coarse decoder:
   apply_2_coarse: False #True # False
   # Super-resolve view-directions plane as well, or only positional planes:
-  SR_viewdir: False
-  # input_normalization:  True
-  # consistency_loss_w: 0 #1 #0.001
-  # plane_loss_w:  0 #1
-  # im_inconsistency_loss_w: 1 #1#0
-  # # blind_only_im_consistency:  True
-  # im_consistency_iters_freq:  10
-  # antialias_rendered_downsampling:  False
+  # SR_viewdir: False # Defaults to False, True is not supported yet.
+  # Normalize feature planes (per channel) before feeding into SR module (Can only be used when training the SR model using frozen feature planes):
+  # input_normalization:  True # Dafault: False
   # Add Gaussian noise to SR input, with STD relative to the plane's STD:
-  # sr_input_noise: 0.1
-  # sr_output_noise:  1
-  # rendering_loss: 0
-  # plane_dropout:  0.5
+  # Planes interpolation method (default to fine model plane_interp):
   # plane_resize_mode:  bicubic
   model:
-    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
-    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy579K
-    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss_0_copy1572K
-    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_imConsistLossFreq10nonSpatial_orchidsFern_0
+    # Path to pre-trained model checkpoint to resume (if set. Otherwise defaults to path set to decoder model, if set):
     # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy453K
-    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_other4_0
     # Name of the torch.nn.Module class that implements the model.
-    type: EDSR
+    type: EDSR # Can be set to None to test the effect of image inconsistency loss without super-resolving planes
     # type: None
-    # type: SRResNet
-    # edsr_init:  True
-    # no_batch_norm:  'add_relu' #True
-    # Number of hidden units in each layer of the MLP (multi-layer
-    # perceptron).
-    # hidden_size: 32 #256 #128 #256
-    hidden_size: 256 #128 #256
+    # Number of hidden units in each layer of the MLP (multi-layer perceptron):
+    hidden_size: 256
     # Number of residual blocks (originally 32):
-    # n_blocks: 8 #32
     n_blocks: 32
     # Limit model's receptive field size. Using 1x1 convolutions once reaching the limit:
-    # receptive_field_bound:  55
-    # scale_factor: 4 #sqrt #one #sqrt #linear
-    # Whether the SR model acts on each single plane independently or on the concatenation of all (default is True):
-    # single_plane: False
-    # per_channel_sr: True
+    # receptive_field_bound:  55 # Defaults to no limit
+    # Effective scale factor for feature planes SR: Can be a function of the ratio between downsceling-factors in the training scenes ('sqrt','linear') or an explicit integer. Defaults to 'linear'.
+    # scale_factor: 4 #sqrt #linear

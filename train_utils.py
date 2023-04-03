@@ -77,7 +77,6 @@ def predict_and_render_radiance(
     mode="train",
     encode_position_fn=None,
     encode_direction_fn=None,
-    SR_model=None,
 ):
     # TESTED
     mip_nerf = getattr(options.nerf,'encode_position_fn',None)=="mip"
@@ -117,7 +116,6 @@ def predict_and_render_radiance(
             pts,
             ray_batch,
             chunksize,
-            # getattr(options.nerf, mode).chunksize, # //(SR_CHUNK_REDUCE if hasattr(model_coarse,'SR_model') else 1),
             encode_position_fn,
             encode_direction_fn,
             mip_nerf=mip_nerf,
@@ -157,11 +155,6 @@ def predict_and_render_radiance(
         z_vals, _ = torch.sort(torch.cat((z_vals, z_samples), dim=-1), dim=-1)
         pts = ro[..., None, :] + rd[..., None, :] * z_vals[..., :, None]
         num_grads_2_return = 0
-        if SR_model is not None:
-            if options.super_resolution.model.input=="xyz_encoding":    
-                num_grads_2_return = 3*(2*options.models.fine.num_encoding_fn_xyz+options.models.fine.include_input_xyz)
-            elif options.super_resolution.model.input=="dirs_encoding":
-                num_grads_2_return = 3*(2*(options.models.fine.num_encoding_fn_dir+options.models.fine.num_encoding_fn_xyz)+options.models.fine.include_input_xyz+options.models.fine.include_input_dir)
         radiance_field = run_network(
             model_fine,
             pts,
@@ -174,26 +167,6 @@ def predict_and_render_radiance(
             z_vals=z_vals,
             scene_id=scene_id,
         )
-        if SR_model is not None:
-            SR_inputs = []
-            if num_grads_2_return>0:
-                if options.super_resolution.model.get("consistent_density",False):
-                    num_xyz_coords = 3*(2*options.models.fine.num_encoding_fn_xyz+options.models.fine.include_input_xyz)
-                    SR_inputs.append(torch.cat(( # Rearranging SR_inputs to be ordered by [(1) Gradients of sigma with respect to pos_encoding, (2) Gradients of RGB with respect to all inputs, (3) Gradients of sigma with respect to directional encoding]
-                        radiance_field[1][:,:,-1,:num_xyz_coords],
-                        radiance_field[1][:,:,:-1,:].reshape([radiance_field[1].shape[0],radiance_field[1].shape[1],-1]),
-                        radiance_field[1][:,:,-1,num_xyz_coords:],
-                    ),-1))
-                else:
-                    SR_inputs.append(radiance_field[1].reshape([radiance_field[1].shape[0],radiance_field[1].shape[1],-1]))
-                radiance_field = radiance_field[0]
-            if options.super_resolution.model.get("consistent_density",False):
-                # Adding the density output value to the beginning of SR_inputs and the RGB outputs to its tailing end.
-                SR_inputs.insert(0,radiance_field[...,-1:])
-                SR_inputs.append(radiance_field[...,:-1])
-            else:
-                SR_inputs.insert(0,radiance_field)
-            SR_inputs = torch.cat(SR_inputs,-1)
 
         rgb_fine, disp_fine, acc_fine, _, _ = volume_render_radiance_field(
             radiance_field,
@@ -205,20 +178,6 @@ def predict_and_render_radiance(
             white_background=getattr(options.nerf, mode).white_background,
             mip_nerf=mip_nerf,
         )
-        if SR_model is not None:
-            SR_input_shape = list(SR_inputs.shape)
-            residual = SR_model(SR_inputs.reshape([SR_input_shape[0]*SR_input_shape[1],-1]))
-            radiance_field = radiance_field + options.super_resolution.model.get("weight",1)*residual.reshape(radiance_field.shape)
-            rgb_SR, disp_SR, acc_SR, _, _ = volume_render_radiance_field(
-                radiance_field,
-                z_vals,
-                rd,
-                radiance_field_noise_std=getattr(
-                    options.nerf, mode
-                ).radiance_field_noise_std,
-                white_background=getattr(options.nerf, mode).white_background,
-                mip_nerf=mip_nerf,
-            )
 
     return rgb_coarse, disp_coarse, acc_coarse, rgb_fine, disp_fine, acc_fine,rgb_SR, disp_SR, acc_SR
 
@@ -235,7 +194,6 @@ def run_one_iter_of_nerf(
     mode="train",
     encode_position_fn=None,
     encode_direction_fn=None,
-    SR_model=None,
     scene_config={},
 ):
     if encode_position_fn is None:
@@ -270,8 +228,8 @@ def run_one_iter_of_nerf(
     chunk_size = getattr(options.nerf, mode).chunksize
     if isinstance(model_coarse,models.TwoDimPlanesModel):
         chunk_size = int(chunk_size/(model_coarse.num_density_planes/3))
-    if (SR_model is not None or hasattr(model_fine,'SR_model')):
-        chunk_size //= 10 #5 #(2*int(np.ceil(np.log2(model_fine.SR_model.n_blocks))))
+    if hasattr(model_fine,'SR_model'):
+        chunk_size //= 10
     elif hasattr(options.nerf,'encode_position_fn') and options.nerf.encode_position_fn=="mip":
         chunk_size //= 4 # For some reason I get memory problems when using MipNeRF, so I'm using this arbitrary factor of 4.
     batches = get_minibatches(rays, chunksize=chunk_size)
@@ -295,7 +253,6 @@ def run_one_iter_of_nerf(
             mode=mode,
             encode_position_fn=encode_position_fn,
             encode_direction_fn=encode_direction_fn,
-            SR_model=SR_model,
             scene_id=scene_id,
         )
         rgb_coarse.append(rc)
@@ -338,7 +295,6 @@ def eval_nerf(
     mode="validation",
     encode_position_fn=None,
     encode_direction_fn=None,
-    SR_model=None,
     scene_config={},
 ):
     r"""Evaluate a NeRF by synthesizing a full image (as opposed to train mode, where
@@ -363,7 +319,6 @@ def eval_nerf(
         mode="validation",
         encode_position_fn=encode_position_fn,
         encode_direction_fn=encode_direction_fn,
-        SR_model=None if isinstance(model_coarse,models.TwoDimPlanesModel) else SR_model,
         scene_id=scene_id,
         scene_config=scene_config,
     )

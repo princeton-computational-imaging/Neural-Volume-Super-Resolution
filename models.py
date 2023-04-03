@@ -129,7 +129,6 @@ class TwoDimPlanesModel(nn.Module):
         proj_combination='sum',
         plane_interp='bilinear',
         align_corners=True,
-        interp_viewdirs=None,
         viewdir_proj_combination=None,
         num_planes_or_rot_mats=3,
         plane_stats=False,
@@ -151,9 +150,6 @@ class TwoDimPlanesModel(nn.Module):
         self.num_viewdir_plane_channels = num_viewdir_plane_channels
         self.plane_stats = plane_stats
         self.detach_LR_planes = detach_LR_planes
-        assert interp_viewdirs in ['bilinear','bicubic',None]
-        assert interp_viewdirs is None,'Depricated'
-        self.interp_from_learned = interp_viewdirs
         self.align_corners = align_corners
         assert rgb_dec_input in ['projections','features','projections_features']
         self.rgb_dec_input = rgb_dec_input
@@ -533,7 +529,7 @@ class PlanesOptimizer(nn.Module):
             self.steps_per_buffer = -1
         assert all([s in self.scenes or model_fine.scene_coupler.downsample_couples[s] in self.scenes for s in self.training_scenes])
         assert optimizer_type=='Adam','Optimizer %s not supported yet.'%(optimizer_type)
-        assert use_coarse_planes,'Unsupported yet, probably requires adding a param_group to the optimizer'
+        assert use_coarse_planes,'Not supporting separate feature planes set for coarse and fine decoder models. Probably requires adding a param_group to the optimizer.'
         assert not init_params or optimize,'This would means using (frozen) random planes...'
         assert self.steps_per_buffer==-1 or self.steps_per_buffer>=self.buffer_size,\
             'Trying to use %d steps for a buffer of size %d: Some scenes would be loaded in vain.'%(options.steps_per_buffer,self.buffer_size)
@@ -827,9 +823,6 @@ class PlanesSR(nn.Module):
         self.plane_interp = plane_interp
         self.input_noise = getattr(sr_config,'sr_input_noise',0)
         self.output_noise = getattr(sr_config,'sr_output_noise',0)
-        self.per_channel_sr = getattr(sr_config.model,'per_channel_sr',False)
-        if self.per_channel_sr:
-            in_channels = out_channels = 1
 
         PADDING = 0
         self.inner_model = model_arch(in_channels=in_channels,out_channels=out_channels,hidden_size=hidden_size,n_blocks=n_blocks,
@@ -910,10 +903,7 @@ class PlanesSR(nn.Module):
             x = torch.nn.functional.pad(x,
                 pad=(self.inner_model.required_padding-pre_padding[1],self.inner_model.required_padding-post_padding[1],self.inner_model.required_padding-pre_padding[0],self.inner_model.required_padding-post_padding[0]),
                 mode='replicate')
-            if self.per_channel_sr:
-                difference = torch.cat([self.inner_model(x[:,ch:ch+1,...]) for ch in range(x.shape[1])],1)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
-            else:
-                difference = self.inner_model(x)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
+            difference = self.inner_model(x)[...,self.HR_overpadding:take_last(self.HR_overpadding),self.HR_overpadding:take_last(self.HR_overpadding)]
             min_index = plane_roi[0]*self.scale_factor
             max_index = plane_roi[1]*self.scale_factor
             residual_plane = self.residual_plane(plane_name)

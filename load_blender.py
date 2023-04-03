@@ -58,7 +58,6 @@ class BlenderDataset(torch.utils.data.Dataset):
         self.downsampling_factors += train_dirs[0]
         plane_resolutions += train_dirs[2]
         train_ids = train_dirs[3]
-        if getattr(config,'auto_remove_val',False): assert not any([id in train_ids for id in val_ids]),'Removed support to this option. Should re-enable.'
         scene_types += train_dirs[4]
         scene_probs += train_dirs[5]
         module_confinements += train_dirs[6]
