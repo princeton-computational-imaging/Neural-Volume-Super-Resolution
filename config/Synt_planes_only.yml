@@ -4,13 +4,15 @@ experiment:
   # id: planes_only_blurrySTD2
   # id: planes_only_258recovery
   # id: planesOnly_fromOther4NoPaper453K_paper4noised5_0
-  id: planesOnly_fromNoDetach579K_paper4_8xLR
+  id: planesOnly_fromNoDetach579K_paper4_8xLR_
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
   train_iters: 750000
+  # Automatically stop training if no improvement in the relevant loss (the term used for determining best checkpoint so far) is observed for this many iterations:
+  no_improvement_iters: 25000 # Number of iteration PER-TRAINING SCENE
   # Evaluation round frequency:
   validate_every: [0.1,5000] # [Desired portion of evaluation time, compared to training time,Max training iterations between evaluation rounds]
   # Checkpoint saving frequency:
@@ -61,8 +63,7 @@ dataset:
 # Model parameters.
 models:
   # Path to pre-trained model checkpoint to resume (if set):
-  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0 copy1459K
-  init_scenes_hack: True
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy1459K
 
 # Optimizer params.
 optimizer:
@@ -91,6 +92,8 @@ nerf:
       steps_per_buffer: 5 # Number of training iterations before re-drawing a new set of scenes
     # Whether or not to perturb the sampled depth values along each ray:
     perturb: True
+    # Feature planes weights initialization factor, relative to STD of a weights in a specific layer of the pre-trained decoder model:
+    STD_factor: 0.34
     # Number of depth samples per ray for the coarse network:
     num_coarse: 64
     # Number of depth samples per ray for the fine network:
@@ -115,26 +118,3 @@ nerf:
     radiance_field_noise_std: 0.
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
-super_resolution:
-  # lr: 5.E-5
-  # training:
-  #   loss: fine # fine,coarse,both
-  apply_2_coarse: False #True # False
-  # Super-resolve view-directions plane as well, or only positional planes:
-  SR_viewdir: False
-  # input_normalization:  True
-  # consistency_loss_w: 0 #1 #0.001
-  # plane_loss_w:  0 #1
-  # Add Gaussian noise to SR input, with STD relative to the plane's STD:
-  # sr_input_noise: 0.1
-  # sr_output_noise:  1
-  # rendering_loss: 0
-  # plane_dropout:  0.5
-  # plane_resize_mode:  bicubic
-  # model:
-  # #   # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res266Sc200_258Sc800_32_LR100_400_SRrecField55_PZerMean1_1
-    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy453K
-    # type: None
-    # hidden_size: 256 #128 #256
-    # n_blocks: 32
-

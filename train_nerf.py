@@ -16,6 +16,7 @@ from deepdiff import DeepDiff
 from copy import deepcopy
 from shutil import copyfile
 import datetime
+import sys
 
 def main():
     parser = argparse.ArgumentParser()
@@ -71,7 +72,6 @@ def main():
     print('Using configuration file %s'%(config_file))
     print(("Evaluating" if eval_mode else "Running") + " experiment %s"%(cfg.experiment.id))
     im_inconsistency_loss_w = getattr(cfg.nerf.train,'im_inconsistency_loss_w',None)
-    SR_experiment = "super_resolution" in cfg
     what2train = getattr(cfg.nerf.train,'what',[])
     assert all([m in ['LR_planes','decoder','SR'] for m in what2train])
     decoder_training = 'decoder' in what2train
@@ -103,7 +103,9 @@ def main():
     if not eval_mode:   writer = SummaryWriter(logdir) #Setting TensorBoard logger
 
     load_saved_models = pretrained_model_folder is not None or resume_experiment
-    init_new_scenes = not resume_experiment and ('LR_planes' in what2train) and (pretrained_model_folder is None or getattr(cfg.models,'init_scenes_hack',False))
+    only_planes_update = what2train==['LR_planes']
+    init_new_scenes = not resume_experiment and ('LR_planes' in what2train) and (pretrained_model_folder is None or only_planes_update)
+    SR_experiment = "super_resolution" in cfg or (only_planes_update and "super_resolution" in pretrained_model_config)
 
     # Preparing dataset:
     dataset = BlenderDataset(config=cfg.dataset,scene_id_func=models.get_scene_id,
@@ -128,8 +130,8 @@ def main():
                 available_scenes.append(models.get_scene_id(sc,conf[0],(conf[1],conf[2] if len(conf)>2 else conf[1])))
         available_scenes = list(set(available_scenes))
     scene_coupler = models.SceneCoupler(list(set(available_scenes+val_only_scene_ids)),planes_res=''.join([m[:2] for m in what2train if '_planes' in m]),
-        num_pos_planes=getattr(cfg.models.coarse,'num_planes',3) if planes_model else 0,training_scenes=list(i_train.keys()),
-        multi_im_res=SR_experiment or not planes_model)
+        num_pos_planes=getattr(cfg.models.coarse,'num_planes',3) if planes_model else 0,training_scenes=list(i_train.keys()),)
+        # multi_im_res=SR_experiment or not planes_model)
 
     # Assigning logging titles to different evaluation subsets:
     val_strings = []
@@ -387,7 +389,8 @@ def main():
     SR_model,SR_optimizer = None,None
     if SR_experiment: # For experiments involving rendering HR views based on learning from LR views (not necessarily using a dedicated SR model):
         if 'SR' not in what2train:
-            assert not (hasattr(cfg.super_resolution,'model') and hasattr(cfg.super_resolution.model,'path')),'Should not specify a pre-trained SR model path if not training the SR model. Using the same path used for the decoder model in such case.'
+            assert not (hasattr(cfg,'super_resolution') and hasattr(cfg.super_resolution,'model') and hasattr(cfg.super_resolution.model,'path')),'Should not specify a pre-trained SR model path if not training the SR model. Using the same path used for the decoder model in such case.'
+            if not hasattr(cfg,'super_resolution'):   setattr(cfg,'super_resolution',CfgNode())
             if not hasattr(cfg.super_resolution,'model'):   setattr(cfg.super_resolution,'model',CfgNode())
             rsetattr(cfg.super_resolution,'model.path',pretrained_model_folder)
             SR_model_config = get_config(os.path.join(cfg.super_resolution.model.path,"config.yml"))
@@ -513,7 +516,7 @@ def main():
                 if ch_type=='dictionary_item_removed' and "['use_viewdirs']" in diff:  continue
                 elif ch_type=='dictionary_item_added':
                     if diff[:len("root['fine']")]=="root['fine']":  continue
-                    if diff in ["root['use_existing_planes']","root['init_scenes_hack']","root['planes_path']"]: continue
+                    if diff in ["root['use_existing_planes']","root['planes_path']"]: continue
                 elif ch_type=='dictionary_item_removed' and "root['fine']" in str(config_diffs[ch_type]):   continue
                 elif not planes_model and ch_type=='values_changed' and 'include_input_xyz' in diff and cfg.nerf.encode_position_fn=="mip": continue
                 print(ch_type,diff)
@@ -562,7 +565,8 @@ def main():
         if eval_mode: assert os.path.isdir(planes_folder[0])
         if not os.path.isdir(planes_folder[0]):
             os.mkdir(planes_folder[0])
-        if not getattr(cfg.models,'init_scenes_hack',False) and not resume_experiment and pretrained_model_folder and any([m in ['LR_planes','HR_planes'] for m in what2train]):
+        if 'LR_planes' in what2train and not only_planes_update and not resume_experiment and pretrained_model_folder:
+            # When starting a new non-frozen decoder and feature planes run, using a pre-trained decoder model:
             params_init_path = [os.path.join(pretrained_model_folder,'planes')]
             if getattr(cfg.models,'planes_path',None) is not None:
                 params_init_path.insert(0,os.path.join(getattr(cfg.models,'planes_path'),'planes'))
@@ -971,12 +975,14 @@ def main():
         save_now |= iter == cfg.experiment.train_iters - 1
 
         if save_now:
-            save_as_best = False
+            save_as_best,quit_training = False,False
             if len(experiment_info['running_scores'][loss4best][loss_groups4_best[0]])==val_ims_per_scene:
                 recent_loss_avg = np.mean([l for term in loss_groups4_best for l in experiment_info['running_scores'][loss4best][term]])
                 if recent_loss_avg<experiment_info['best_loss'][1]:
                     experiment_info['best_loss'] = (iter,recent_loss_avg)
                     save_as_best = True
+                elif getattr(cfg.experiment,'no_improvement_iters',None) is not None:
+                    if iter-experiment_info['best_loss'][0]>=len(training_scenes)*getattr(cfg.experiment,'no_improvement_iters'): quit_training = True
             if save_as_best:
                 print("================Saving new best checkpoint at iteration %d, with average evaluation loss %.3e====================="%(experiment_info['best_loss'][0],experiment_info['best_loss'][1]))
             else:
@@ -1012,6 +1018,8 @@ def main():
                 del checkpoint_dict
             experiment_info['start_i'] = iter+1
             safe_saving(experiment_info_file,content=experiment_info,suffix='pkl',run_time_signature=run_time_signature)
+            if quit_training:
+                sys.exit('Done training, after no improvement in %s:%s was observed in the last %d iterations.'%(loss_groups4_best,loss4best,iter-experiment_info['best_loss'][0]))
 
     print("Done!")
 

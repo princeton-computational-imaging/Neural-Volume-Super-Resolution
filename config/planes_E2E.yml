@@ -12,9 +12,9 @@ experiment:
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach579K_imConsistF10nonSpat_noSR_Lean_HrLr_mic
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_800_noDetach_imConsistLossFreq10nonSpatial_paper4
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetachother4_imConsistF10nonSpat_Lean_HrLr_donut
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach1572KwPlanes_imConsist8xFnonSpat_Lean_HrLr_lego##1
+  id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach1572KwPlanes_imConsist8xFnonSpat_Lean_HrLr_lego##1_0
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromOther4NoPaper453K_imConsistF10nonSpat_Lean_HrLr_chairNoised5
-  id: E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0
+  # id: E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_imConsistLossFreq10nonSpatial_hornsLeaves
   # Experiment logs will be stored at "logdir"/"id"
@@ -22,7 +22,7 @@ experiment:
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
-  train_iters: 2500000
+  train_iters: 1500000
   # Evaluation round frequency:
   validate_every: [0.1,5000] # [Desired portion of evaluation time, compared to training time,Max training iterations between evaluation rounds]
   # Checkpoint saving frequency:
@@ -62,16 +62,16 @@ dataset:
       #   downsampling_factor,pos_feature_plane_resolution,viewdir_feature_plane_resoution,dataset_type (default:'synt'),relative probability (default:1): [scene names]
       # Adding suffix "##<integer>" to scene name allows training multiple independent feature plane sets to the same scene. E.g. ['lego','ship','lego##1','lego##2']
       # LR scenes (training and some of evaluation):
-      8,200,32:   ['house','robot','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #'lego','chair',mic,ship
+      # 8,200,32:   ['house','robot','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #'lego','chair',mic,ship
       # HR scenes (training only):
-      2,800,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops',] #'ficus','materials','hotdog','drums','lego','chair','mic','ship',
+      2,800,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','ficus','materials','hotdog','drums'] #,'lego','chair','mic','ship',
       # Evaluation scene(s) for image inconsistency loss term:
       # Should be added (with sampling probability set to 0) if not already included in LR scenes above
-      # 8,200,32,'synt',0:   ['lego','ship']
+      8,200,32,'synt',0:   ['lego##1']
     val:
       # Evaluation scenes (Should not overlap with training scenes):
       # Use the same parameter convention as in training scenes, without sampling probability
-      2,800,32:   ['ficus','materials','hotdog','drums'] #['lego','ship']
+      2,800,32:   ['lego##1']
   
   testskip: 10 # Stride for synthetic scenes: Include one evaluation image per "testskip" images in the dataset.
   llffhold: 2 # For real scenes: Number of training images to hold out for evaluation
@@ -79,10 +79,10 @@ dataset:
 # Model parameters.
 models:
   # Path to pre-trained model checkpoint to resume (if set):
-  # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy453K
+  path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy1459K
   # Path to feature planes checkpoint for scenes missing from the pre-trained model path:
-  # planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromOther4NoPaper453K_all8_0
-  # use_existing_planes:  True # If True, favor feature plane sets from pre-trained model checkpoint folder over ones in planes_path folder, and keep them frozen (do not update). Default: False
+  planes_path:  /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/planesOnly_fromNoDetach579K_paper4_8xLR
+  use_existing_planes:  True # If True, favor feature plane sets from pre-trained model checkpoint folder over ones in planes_path folder, and keep them frozen (do not update). Default: False
   coarse:
     # Name of the torch.nn.Module class that implements the model.
     type: TwoDimPlanesModel
@@ -156,8 +156,8 @@ nerf:
     # Whether to render models using a white background:
     white_background: False
     # Penalty (loss) term weights:
-    im_inconsistency_loss_w: 0 #1 # Set to 0 to measure without effecting training. Default: None
-    im_consistency_iters_freq:  0.5 # Sampling frequency for set of evaluation scenes for which image inconsistency loss is minimized.
+    im_inconsistency_loss_w: 1 # Set to 0 to measure without effecting training. Default: None
+    im_consistency_iters_freq:  4 # Sampling frequency for set of evaluation scenes for which image inconsistency loss is minimized.
     # Standard deviation of noise to be added to the radiance field when performing volume rendering.
     radiance_field_noise_std: 0.2
     # Sample linearly in disparity space, as opposed to in depth space.
@@ -194,7 +194,7 @@ super_resolution: # Feature planes Super-Resolution module parameters:
   # plane_resize_mode:  bicubic
   model:
     # Path to pre-trained model checkpoint to resume (if set. Otherwise defaults to path set to decoder model, if set):
-    # path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy453K
+    path: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy1459K
     # Name of the torch.nn.Module class that implements the model.
     type: EDSR # Can be set to None to test the effect of image inconsistency loss without super-resolving planes
     # type: None

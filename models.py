@@ -925,7 +925,7 @@ def extract_ds_and_res(scene_name):
     return ds,res
 
 class SceneCoupler:
-    def __init__(self,scenes_list,planes_res,num_pos_planes,training_scenes,multi_im_res) -> None:
+    def __init__(self,scenes_list,planes_res,num_pos_planes,training_scenes,multi_im_res=True) -> None:
         planes_model = num_pos_planes>0
         name_pattern = lambda name: '^'+name.split('_DS')[0]+'_DS'+ ('(\d)+_PlRes(\d)+_'+name.split('_')[-1] if planes_model else '')
         ds_ratios,res_ratios,res_vals,ds_vals = [],[],[],[]
