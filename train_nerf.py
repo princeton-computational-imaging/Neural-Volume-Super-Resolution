@@ -548,7 +548,7 @@ def main():
         else:
             assert getattr(cfg.super_resolution.training,'loss','fine')=='fine',"Shouldn't use the ourput of coarse decoder for training the SR model when not feeding it with super-resolved feature planes."
             if not decoder_training:  model_coarse.optional_no_grad = torch.no_grad
-        model_fine.assign_SR_model(SR_model,SR_viewdir=cfg.super_resolution.SR_viewdir,)
+        model_fine.assign_SR_model(SR_model,SR_viewdir=getattr(cfg.super_resolution,'SR_viewdir',False),)
 
     run_time_signature = time.time() # A trick to allow starting new training jobs that would automatically cause the old jobs to exit
 
@@ -581,7 +581,7 @@ def main():
 
         planes_opt = models.PlanesOptimizer(optimizer_type=cfg.optimizer.type,
             scene_id_plane_resolution=scene_id_plane_resolution,options=cfg.nerf.train.store_planes,save_location=planes_folder,
-            lr=getattr(cfg.optimizer,'planes_lr',cfg.optimizer.lr),model_coarse=model_coarse,model_fine=model_fine,
+            lr=getattr(cfg.optimizer,'planes_lr',getattr(cfg.optimizer,'lr',None)),model_coarse=model_coarse,model_fine=model_fine,
             use_coarse_planes=getattr(cfg.models.fine,'use_coarse_planes',True),
             init_params=init_new_scenes,optimize=optimize_planes,training_scenes=training_scenes,
             coords_normalization=None if not init_new_scenes else coords_normalization,

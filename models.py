@@ -356,7 +356,7 @@ class TwoDimPlanesModel(nn.Module):
         if self.proj_combination=='sum':
             return torch.stack(tensors,0).sum(0)  
         elif self.proj_combination=='avg':
-            return torch.stack([t for i,t in enumerate(tensors) if i not in self.planes2drop],0).mean(0)
+            return torch.stack(tensors,0).mean(0)
         elif self.proj_combination=='concat':
             return torch.cat(tensors,1)
 

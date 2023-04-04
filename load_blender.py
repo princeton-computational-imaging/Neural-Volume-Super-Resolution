@@ -216,7 +216,6 @@ class BlenderDataset(torch.utils.data.Dataset):
                 img_target = float('nan')*imread(im_path)
             else:
                 img_target = imread(im_path)
-            # img_target = (imageio.imread(self.images[index])/ 255.0).astype(np.float32)
             if self.per_im_scene_id[index] in self.marg2crop:
                 marg2crop = self.marg2crop[self.per_im_scene_id[index]]
                 img_target = img_target[marg2crop[0]:-marg2crop[0] if marg2crop[0]>0 else None,marg2crop[1]:-marg2crop[1] if marg2crop[1]>0 else None,:]

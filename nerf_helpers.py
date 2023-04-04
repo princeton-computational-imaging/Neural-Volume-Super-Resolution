@@ -75,13 +75,13 @@ def rgetattr(obj, attr, *args):
         return getattr(obj, attr, *args)
     return functools.reduce(_getattr, [obj] + attr.split('.'))
 
-def deep_update(org_dict,new_dict):
-    for k,v in new_dict.items():
-        if isinstance(v,dict):
-            org_dict[k] = deep_update(org_dict[k],v)
+def deep_update(existing_dict,overriding_dict):
+    for k,v in overriding_dict.items():
+        if isinstance(v,dict) and k in existing_dict:
+            existing_dict[k] = deep_update(existing_dict[k],v)
         else:
-            org_dict[k] = v
-    return org_dict
+            existing_dict[k] = v
+    return existing_dict
     
 class null_with:
     def __enter__(self):
