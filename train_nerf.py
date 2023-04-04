@@ -212,10 +212,15 @@ def main():
         val_strings.append('_'.join(tags))
 
     # Which tracked values to consider when determining the best model to use for evaluation or as initialization for subsequent training:
-    loss_groups4_best = [tag for tag in val_strings if ('validation' in tag and '_LR' not in tag and 'blind' not in tag)]
-    if len(loss_groups4_best)==0:        loss_groups4_best = [tag for tag in val_strings if 'validation' in tag and 'blind' not in tag]
-    loss_groups4_best = list(set(loss_groups4_best))
     loss4best = 'im_inconsistency' if im_inconsistency_loss_w else 'fine_loss' if all([v not in what2train for v in ['decoder','SR']]) else 'loss'
+    def tag_filter(tag_list,include=[],exclude=[]):
+        return list(set([tag for tag in tag_list if all([p in tag for p in include]) and all([p not in tag for p in exclude])]))
+    if im_inconsistency_loss_w:
+        loss_groups4_best = tag_filter(val_strings,['blind','validation'],['_LR'])
+    else:
+        loss_groups4_best = tag_filter(val_strings,['validation'],['blind','_LR'])
+        if len(loss_groups4_best)==0:
+            loss_groups4_best = tag_filter(val_strings,['validation'],['blind'])
 
     # Printing scenes used for each stage and initializing score tracking:
     def print_scenes_list(title,scenes):

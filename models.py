@@ -514,8 +514,8 @@ class PlanesOptimizer(nn.Module):
         if use_frozen_planes!='':
             for sc in training_scenes:
                 lr_scene = sc.replace(str(max(model_fine.scene_coupler.plane_res_vals)),str(min(model_fine.scene_coupler.plane_res_vals))).replace('DS%d'%(min(model_fine.scene_coupler.ds_vals)),'DS%d'%(max(model_fine.scene_coupler.ds_vals)))
-                frozen_planes_path = self.param_path(model_name='coarse',scene=lr_scene,save_location=use_frozen_planes)
-                if os.path.isfile(frozen_planes_path):
+                frozen_planes_path = self.param_path(model_name='coarse',scene=lr_scene,save_location=use_frozen_planes,prefer_best=True,file_must_exist=True)
+                if os.path.isfile(frozen_planes_path.replace('.par','.par_best')):
                     self.frozen_scene_paths.update({sc:frozen_planes_path,lr_scene:frozen_planes_path})
                     model_fine.scene_coupler.scene2saved[sc] = lr_scene
                     model_fine.scene_coupler.downsample_couples[sc] = lr_scene
@@ -569,9 +569,9 @@ class PlanesOptimizer(nn.Module):
                         params = self.load_scene_planes(model_name=model_name,scene=scene,save_location=copy_params_path,prefer_best=True)
                         cn = params['coords_normalization']
                         params = params['params']
-                    if not os.path.isdir(self.save_location[-1].replace('/planes/','/')) or any(['.ckpt' in f for f in os.listdir(self.save_location[-1].replace('/planes/','/'))]):
-                        assert not os.path.exists(self.param_path(model_name=model_name,scene=scene)),"Planes scene file %s already exists"%(self.param_path(model_name=model_name,scene=scene))
-                    torch.save({'params':params,'coords_normalization':cn},self.param_path(model_name=model_name,scene=scene))
+                    if not os.path.isdir(self.save_location[-1].replace('/planes/','/')) or any(['.ckpt' in f for f in os.listdir(self.save_location[0].replace('/planes/','/'))]):
+                        assert not os.path.exists(self.param_path(model_name=model_name,scene=scene,file_must_exist=True)),"Planes scene file %s already exists"%(self.param_path(model_name=model_name,scene=scene,file_must_exist=True))
+                    torch.save({'params':params,'coords_normalization':cn},self.param_path(model_name=model_name,scene=scene,file_must_exist=False))
                     if model.plane_stats:
                         coverages.update(
                             dict([(get_plane_name(scene,d),torch.zeros([res[1 if d==model.num_density_planes else 0]+15,res[1 if d==model.num_density_planes else 0]+15])) for d in range(model.num_density_planes+model.use_viewdirs)])
@@ -609,14 +609,22 @@ class PlanesOptimizer(nn.Module):
 
         self.cur_scenes = [scene]
 
-    def param_path(self,model_name,scene,save_location=None,prefer_best=False):
+    def param_path(self,model_name,scene,save_location=None,prefer_best=False,file_must_exist=None):
         path = lambda loc:  os.path.join(loc,"%s_%s.par"%(model_name,scene))
         if save_location is None:
-            for loc in self.save_location:
+            save_location = self.save_location
+        if isinstance(save_location,list):
+            assert file_must_exist is not None,'Must pass this argument to determine whether my check below should look for the file or its containing folder'
+        else:
+            save_location = [save_location]
+        for loc in save_location:
+            if file_must_exist:
                 if os.path.isfile(path(loc).replace('.par','.par_best') if prefer_best else path(loc)):
-                    break
-            save_location = loc
-        return path(save_location)
+                    return path(loc)
+            else:
+                if os.path.isdir(loc):
+                    return path(loc)
+        return ''
 
     def get_plane_stats(self,viewdir=False):
         model_name='coarse'
@@ -656,7 +664,7 @@ class PlanesOptimizer(nn.Module):
                 params = loaded_params['params']
                 opt_states = loaded_params['opt_states'] if 'opt_states' in loaded_params else [None for p in params]
                 coords_normalization = loaded_params['coords_normalization']
-            param_file_name = self.param_path(model_name=model_name,scene=scene)
+            param_file_name = self.param_path(model_name=model_name,scene=scene,file_must_exist=True)
             safe_saving(param_file_name,content={'params':params,'opt_states':opt_states,'coords_normalization':coords_normalization},
                 suffix='par',best=as_best,run_time_signature=self.run_time_signature)
         if not as_best: self.saving_needed = False
@@ -666,7 +674,7 @@ class PlanesOptimizer(nn.Module):
             file2load = self.frozen_scene_paths[scene]
             prefer_best = True
         else:
-            file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location,prefer_best=prefer_best)
+            file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location,prefer_best=prefer_best,file_must_exist=True)
         loaded_params = safe_loading(file2load,suffix='par',best=prefer_best)
         return loaded_params
 

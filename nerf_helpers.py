@@ -18,7 +18,7 @@ import imageio
 
 def safe_saving(file_name,content,suffix,best=False,run_time_signature=0):
     if run_time_signature:
-        run_folder = os.path.dirname(file_name).replace('/planes/','/')
+        run_folder = os.path.dirname(file_name.replace('/planes/','/'))
         run_signature_file = os.path.join(run_folder,'time_sig.txt')
         if os.path.exists(run_signature_file):
             with open(run_signature_file,'r') as f:

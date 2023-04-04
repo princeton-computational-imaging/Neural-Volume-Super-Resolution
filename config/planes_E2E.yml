@@ -12,7 +12,7 @@ experiment:
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach579K_imConsistF10nonSpat_noSR_Lean_HrLr_mic
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_800_noDetach_imConsistLossFreq10nonSpatial_paper4
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetachother4_imConsistF10nonSpat_Lean_HrLr_donut
-  id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach1572KwPlanes_imConsist8xFnonSpat_Lean_HrLr_lego##1_0
+  id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach1572KwPlanes_imConsist8xFnonSpat_Lean_HrLr_lego##2
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromOther4NoPaper453K_imConsistF10nonSpat_Lean_HrLr_chairNoised5
   # id: E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0
   # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss
@@ -67,11 +67,11 @@ dataset:
       2,800,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','ficus','materials','hotdog','drums'] #,'lego','chair','mic','ship',
       # Evaluation scene(s) for image inconsistency loss term:
       # Should be added (with sampling probability set to 0) if not already included in LR scenes above
-      8,200,32,'synt',0:   ['lego##1']
+      8,200,32,'synt',0:   ['lego##2']
     val:
       # Evaluation scenes (Should not overlap with training scenes):
       # Use the same parameter convention as in training scenes, without sampling probability
-      2,800,32:   ['lego##1']
+      2,800,32:   ['lego##2']
   
   testskip: 10 # Stride for synthetic scenes: Include one evaluation image per "testskip" images in the dataset.
   llffhold: 2 # For real scenes: Number of training images to hold out for evaluation
