@@ -235,7 +235,7 @@ def main():
         for cat in set(val_strings):
             print_scenes_list('"%s" evaluation'%(cat),[s for i,s in enumerate(evaluation_sequences) if val_strings[i]==cat])
         assert all([val_ims_per_scene==len(i_val[id]) for id in evaluation_sequences]),'Assuming all scenes have the same number of evaluation images'
-        running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','fine_loss','fine_psnr','loss','coarse_loss','inconsistency','loss_sr','loss_lr','im_inconsistency']
+        running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','fine_loss','fine_psnr','loss','coarse_loss','inconsistency','loss_sr','loss_lr','im_inconsistency'] #,'psnr_final'
         experiment_info['running_scores'] = dict([(score,dict([(cat,deque(maxlen=len(training_scenes) if cat=='train' else val_ims_per_scene)) for cat in list(set(val_strings))+['train']])) for score in running_mean_logs])
 
     image_sampler = ImageSampler(i_train,dataset.scene_probs) # Initializaing training images sampler
@@ -338,9 +338,6 @@ def main():
             cfg.models.coarse.include_input_xyz = False
             cfg.models.fine.include_input_xyz = False
             print("!!! Warning: Not including xyz in model's input since Mip-NeRF does not use the input xyz !!!")
-
-        assert cfg.models.coarse.include_input_xyz==cfg.models.fine.include_input_xyz,"Assuming they are the same"
-        assert cfg.models.coarse.include_input_dir==cfg.models.fine.include_input_dir,"Assuming they are the same"
         model_coarse = getattr(models, cfg.models.coarse.type)(
             num_encoding_fn_xyz=cfg.models.coarse.num_encoding_fn_xyz,
             num_encoding_fn_dir=cfg.models.coarse.num_encoding_fn_dir,
@@ -359,8 +356,8 @@ def main():
             model_fine = model_coarse
             print("Using the same model for coarse and fine")
         else:
+            set_config_defaults(source=cfg.models.coarse,target=cfg.models.fine)
             if planes_model:
-                set_config_defaults(source=cfg.models.coarse,target=cfg.models.fine)
                 model_fine = models.TwoDimPlanesModel(
                     use_viewdirs=cfg.nerf.use_viewdirs,
                     dec_density_layers=getattr(cfg.models.fine,'dec_density_layers',4),
@@ -380,6 +377,8 @@ def main():
                     detach_LR_planes=getattr(cfg.nerf.train,'detach_LR_planes',False),
                 )
             else:
+                assert cfg.models.coarse.include_input_xyz==cfg.models.fine.include_input_xyz,"Assuming they are the same"
+                assert cfg.models.coarse.include_input_dir==cfg.models.fine.include_input_dir,"Assuming they are the same"
                 model_fine = getattr(models, cfg.models.fine.type)(
                     num_encoding_fn_xyz=cfg.models.fine.num_encoding_fn_xyz,
                     num_encoding_fn_dir=cfg.models.fine.num_encoding_fn_dir,
@@ -642,8 +641,8 @@ def main():
 
             record_fine = True
             for eval_cycle in range(eval_cycles):
-                coarse_loss,fine_loss,loss,psnr,rgb_coarse,rgb_fine,rgb_SR,target_ray_values,im_inconsistency_loss,sr_scene_inds =\
-                    defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list)
+                coarse_loss,fine_loss,loss,psnr,rgb_coarse,rgb_fine,rgb_SR,target_ray_values,im_inconsistency_loss,sr_scene_inds, =\
+                    defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list),defaultdict(list), #defaultdict(list)
                 for eval_num,img_idx in enumerate(tqdm(img_indecis[eval_cycle], # Rendering and calculating metrics for evaluation images:
                     desc='Evaluating '+('scene (%d/%d): %s'%(eval_cycle+1,eval_cycles,evaluation_sequences[eval_cycle]) if eval_mode else 'scenes'))):
                     if eval_mode:
@@ -684,35 +683,34 @@ def main():
                     rgb_coarse_, rgb_fine_, rgb_SR_ = render_view()
                     target_ray_values[val_strings[scene_num]].append(img_target[...,:3])
                     loss[val_strings[scene_num]].append(None)
+                    # if planes_model:
+                    loss[val_strings[scene_num]][-1] = img2mse(rgb_fine_[..., :3], img_target[..., :3]).item()
+                    # psnr_final[val_strings[scene_num]].append(mse2psnr(img2mse(rgb_fine_[..., :3], img_target[..., :3]).item()))
                     if sr_scene:
-                        if planes_model:
-                            rgb_SR_ = 1*rgb_fine_
-                            if SR_model is not None:
-                                if eval_mode or val_ind(val_strings[scene_num]) not in saved_rgb_fine[evaluation_sequences[scene_num]]:
-                                    # Rendering the scene view without super-resolving the feature-planes, as reference:
-                                    record_fine = True
-                                    model_coarse.skip_SR(True)
-                                    model_fine.skip_SR(True)
-                                    rgb_coarse_, rgb_fine_, _ = render_view()
-                                    model_coarse.skip_SR(False)
-                                    model_fine.skip_SR(False)
-                                    if not (eval_mode or planes_updating or decoder_training):
-                                        # Save the reference views to avoid re-rendering them in future evaluation rounds:
-                                        saved_rgb_fine[evaluation_sequences[scene_num]][val_ind(val_strings[scene_num])] = 1*rgb_fine_.detach()
-                                else:
-                                    record_fine = False
-                                    rgb_fine_ = 1*saved_rgb_fine[evaluation_sequences[scene_num]][val_ind(val_strings[scene_num])]
-
-                        fine_loss[val_strings[scene_num]].append(img2mse(rgb_fine_[..., :3], img_target[..., :3]).item())
-                        if planes_model:
-                            loss[val_strings[scene_num]][-1] = img2mse(rgb_SR_[..., :3], img_target[..., :3]).item()
                         if im_inconsistency_loss_w is None:
                             im_inconsistency_loss_ = None
                         else:
                             im_inconsistency_loss_ = calc_im_inconsistency_loss(gt_hr=img_target[..., :3].permute(2,0,1)[None,...],
-                                sr=(rgb_SR_ if planes_model else rgb_fine_)[..., :3].permute(2,0,1)[None,...],ds_factor=scene_coupler.ds_factor,plane_interp='bilinear')
+                                sr=rgb_fine_[..., :3].permute(2,0,1)[None,...],ds_factor=scene_coupler.ds_factor,plane_interp='bilinear')
                         if im_inconsistency_loss_ is not None:
                             im_inconsistency_loss[val_strings[scene_num]].append(im_inconsistency_loss_.item())
+                        if planes_model and SR_model is not None:
+                            rgb_SR_ = 1*rgb_fine_
+                            if eval_mode or val_ind(val_strings[scene_num]) not in saved_rgb_fine[evaluation_sequences[scene_num]]:
+                                # Rendering the scene view without super-resolving the feature-planes, as reference:
+                                record_fine = True
+                                model_coarse.skip_SR(True)
+                                model_fine.skip_SR(True)
+                                rgb_coarse_, rgb_fine_, _ = render_view()
+                                model_coarse.skip_SR(False)
+                                model_fine.skip_SR(False)
+                                if not (eval_mode or planes_updating or decoder_training):
+                                    # Save the reference views to avoid re-rendering them in future evaluation rounds:
+                                    saved_rgb_fine[evaluation_sequences[scene_num]][val_ind(val_strings[scene_num])] = 1*rgb_fine_.detach()
+                            else:
+                                record_fine = False
+                                rgb_fine_ = 1*saved_rgb_fine[evaluation_sequences[scene_num]][val_ind(val_strings[scene_num])]
+                        fine_loss[val_strings[scene_num]].append(img2mse(rgb_fine_[..., :3], img_target[..., :3]).item())
                     else:
                         coarse_loss[val_strings[scene_num]].append(img2mse(rgb_coarse_[..., :3], img_target[..., :3]).item())
                         fine_loss[val_strings[scene_num]].append(0.0)
@@ -722,7 +720,8 @@ def main():
                     rgb_coarse[val_strings[scene_num]].append(rgb_coarse_)
                     rgb_fine[val_strings[scene_num]].append(rgb_fine_)
                     rgb_SR[val_strings[scene_num]].append(rgb_SR_)
-                    psnr[val_strings[scene_num]].append(mse2psnr(fine_loss[val_strings[scene_num]][-1] if loss[val_strings[scene_num]][-1] is None else loss[val_strings[scene_num]][-1]))
+                    # psnr[val_strings[scene_num]].append(mse2psnr(fine_loss[val_strings[scene_num]][-1] if loss[val_strings[scene_num]][-1] is None else loss[val_strings[scene_num]][-1]))
+                    psnr[val_strings[scene_num]].append(mse2psnr(loss[val_strings[scene_num]][-1]))
                     if planes_model and SR_model is not None:
                         last_scene_eval = img_idx==img_indecis[eval_cycle][-1]
                         if (planes_model and (not eval_mode or last_scene_eval)):
@@ -754,6 +753,7 @@ def main():
                         if val_set in im_inconsistency_loss:
                             write_scalar("%s/im_inconsistency"%(val_set), np.nanmean(im_inconsistency_loss[val_set]), writing_index)
                     write_scalar("%s/fine_psnr"%(val_set), np.nanmean([mse2psnr(l) for l in fine_loss[val_set]]), writing_index)
+                    # write_scalar("%s/psnr_final"%(val_set), np.nanmean(psnr_final[val_set]), writing_index)
                     fine_loss_is_loss = not any([v is not None for v in loss[val_set]])
                     if not fine_loss_is_loss:
                         write_scalar("%s/loss"%(val_set), np.nanmean(loss[val_set]), writing_index)

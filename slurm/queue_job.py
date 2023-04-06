@@ -35,7 +35,7 @@ RESUME_TRAINING = 0
 PARAM2SWEEP = None
 EVAL_WHITE = False
 
-RUN_TIME = 36 # 20 # 10 # Hours
+RUN_TIME = 12 # 20 # 10 # Hours
 OVERWRITE_RESUMED_CONFIG = False
 # OVERWRITE_RESUMED_CONFIG = True
 
@@ -131,6 +131,7 @@ for run_num in (trange(len(PARAM2SWEEP[1])) if len(PARAM2SWEEP[1])>1 else range(
     def hours2string(hours):
         return '%s%s_'%('%dD'%(hours//24) if hours>=24 else '','%dH'%(hours%24) if hours%24!=0 else '')
 
+    job_identifier = job_identifier.replace('##','__')
     with open(os.path.join("slurm/scripts/%s.sh"%(eval_prefix+job_identifier)),"w") as f:
         f.write("#!/bin/bash\n")
         f.write("#SBATCH --nodes=1\n")

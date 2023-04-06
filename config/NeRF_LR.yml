@@ -1,60 +1,60 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: lr_nerf_chair_mip_Linconsist
-  # id: lr_nerf_micGauss1_mip
-  # id: lr_nerf_chairNoise5_mip
-  # id: lr_nerf_orchids_mip_preSRscratch_0
-  # id: lr_nerf_chair_mip_preSR
-  # id: lr_nerf_room_mip
+  id: lr_nerf_lego_mip_Linconsist_0
   # Experiment logs will be stored at "logdir"/"id"
   logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
-  train_iters: 1200000
-  # Number of training iterations after which to validate.
-  validate_every: [0.01,5000] #50
-  # Number of training iterations after which to checkpoint.
-  save_every: 10.0 #5000
-  # Number of training iterations after which to print progress.
+  train_iters: 1500000
+  # Evaluation round frequency:
+  validate_every: [0.01,5000] # [Desired portion of evaluation time, compared to training time,Max training iterations between evaluation rounds]
+  # Checkpoint saving frequency:
+  save_every: 10.0 # Minutes (Use floating point numbers)
+  # Number of training iterations after which to print progress:
   print_every: 100
 
 # Dataset parameters.
 dataset:
-  # Base directory of dataset.
-  # type: DTU # DTU,synt
-  # root: /scratch/gpfs/yb6751/projects/VolumetricEnhance/cache/nerf_synthetic
-  synt: 
+  # Per dataset type configurations:
+  synt: # Synthetic scenes, from the NeRF dataset or using the same configuration
     root: /scratch/gpfs/yb6751/datasets/Synthetic
-    # root: /tigress/yb6751/projects/NeuralMFSR/results/SwinIR4preSR
-    # root: /tigress/yb6751/projects/NeuralMFSR/results/ScratchSwinIR4preSR
     # Near clip plane (clip all depth values closer than this threshold).
     near: 2
     # Far clip plane (clip all depth values farther than this threshold).
     far:  6
+    # Do not use NDC (normalized device coordinates). Usually True for
+    # synthetic (Blender) datasets.
     no_ndc: True
-  llff: 
+  llff: # Real world scenes from NeRF:
     root: /scratch/gpfs/yb6751/datasets/LLFF
-    # root: /tigress/yb6751/projects/NeuralMFSR/results/ScratchSwinIR4preSR
+    # Near clip plane (clip all depth values closer than this threshold).
     near: 0
+    # Far clip plane (clip all depth values farther than this threshold).
     far:  1
+    # Do not use NDC (normalized device coordinates). Usually True for
+    # synthetic (Blender) datasets.
     no_ndc: False
-    min_eval_frames:  200
+    # If set, adding test views by interpolating camera poses, to allow rendering smoother high FPS video sequences:
+    # min_eval_frames:  200
   max_scenes_eval:  9
   # auto_remove_val:  True
   dir:
     train:
-      # 8,:   ['mic##Gauss1'] #,'mic##Noise15'
-      8,:   ['chair'] #
+      # Training scenes: 
+      # Parameter convention:
+      #   downsampling_factor,None,None,dataset_type (default:'synt'): [scene names]
+      # Adding suffix "##<integer>" to scene name allows training multiple independent feature plane sets to the same scene. E.g. ['lego','ship','lego##1','lego##2']
+      # LR scenes (training and some of evaluation):
+      8,:   ['lego'] #
       # 32,None,None,'llff':   ['room']
     val:
-      # 2,:   ['mic##Gauss1'] #,'chair##Gauss2'
-      # 8,:   ['mic##Gauss1'] #,'chair##Gauss2'
-      2,:   ['chair'] #,
-      # 32,None,None,'llff':   ['room']
-      # 8,None,None,'llff':   ['room']
-  testskip: 10
+      # Evaluation scenes (Should not overlap with training scenes):
+      # Use the same parameter convention as in training scenes, without sampling probability
+      2,:   ['lego'] #,
+  testskip: 10 # Stride for synthetic scenes: Include one evaluation image per "testskip" images in the dataset.
+  llffhold: 2 # For real scenes: Number of training images to hold out for evaluation
 
 # Model parameters.
 models:
@@ -62,109 +62,73 @@ models:
   coarse:
     # Name of the torch.nn.Module class that implements the model.
     type: FlexibleNeRFModel
-    # Number of layers in the model.
+    # Number of layers in the model:
     num_layers: 6
-    # Number of hidden units in each layer of the MLP (multi-layer
-    # perceptron).
+    # Number of hidden units in each layer of the MLP (multi-layer perceptron):
     hidden_size: 256
-    # Add a skip connection once in a while. Note: This parameter
-    # won't take affect unless num_layers > skip_connect_every.
+    # Add a skip connection once in a while. Note: This parameter won't take affect unless num_layers > skip_connect_every:
     skip_connect_every: 3
-    # Whether to include the position (xyz) itself in its positional
-    # encoding.
+    # Whether to include the position (xyz) itself in its positional encoding:
     include_input_xyz: True
-    # Number of encoding functions to use in the positional encoding
-    # of the coordinates.
+    # Number of encoding functions to use in the positional encoding of the coordinates:
     num_encoding_fn_xyz: 6
-    # Additionally use viewing directions as input.
+    # Additionally use viewing directions as input:
     use_viewdirs: True
-    # Whether to include the direction itself in its positional encoding.
+    # Whether to include the direction itself in its positional encoding:
     include_input_dir: True
-    # Number of encoding functions to use in the positional encoding
-    # of the direction.
+    # Number of encoding functions to use in the positional encoding of the direction:
     num_encoding_fn_dir: 4
   # Fine model.
-  fine:
+  fine:  # All missing paramers default to their corresponding setting for the coarse decoder
     # Name of the torch.nn.Module class that implements the model.
     type: FlexibleNeRFModel
-    # Number of layers in the model.
-    num_layers: 6
-    # Number of hidden units in each layer of the MLP (multi-layer
-    # perceptron).
-    hidden_size: 256
-    # Add a skip connection once in a while. Note: This parameter
-    # won't take affect unless num_layers > skip_connect_every.
-    skip_connect_every: 3
-    # Number of encoding functions to use in the positional encoding
-    # of the coordinates.
-    num_encoding_fn_xyz: 6
-    # Whether to include the position (xyz) itself in its positional
-    # encoding.
-    include_input_xyz: True
-    # Additionally use viewing directions as input.
-    use_viewdirs: True
-    # Whether to include the direction itself in its positional encoding.
-    include_input_dir: True
-    # Number of encoding functions to use in the positional encoding of
-    # the direction.
-    num_encoding_fn_dir: 4
 
-# Optimizer params.
+# Optimizer params:
 optimizer:
   # Name of the torch.optim class used for optimization.
   type: Adam
-  # Learning rate.
-  lr: 1.0E-3 #1.0E-3 #5.0E-3
+  # Learning rate:
+  lr: 1.0E-3
 
 # NeRF parameters.
 nerf:
   # Use viewing directions as input, in addition to the X, Y, Z coordinates.
   use_viewdirs: True
-  # Encoding function for position (X, Y, Z).
+  # Encoding function for position (X, Y, Z):
   encode_position_fn: mip #mip #positional_encoding
-  # Encoding function for ray direction (theta, phi).
+  # Encoding function for ray direction (theta, phi):
   encode_direction_fn: positional_encoding
-  # Training-specific parameters.
-  train:
-    # Number of random rays to retain from each image.
-    # These sampled rays are used for training, and the others are discarded.
+  train: # Training-specific parameters:
+    # Number of random rays to retain from each image. These sampled rays are used for training, while the rest are discarded:
     num_random_rays: 4096  # 32 * 32 * 4
-    # Size of each chunk (rays are batched into "chunks" and passed through
-    # the network)
+    # Size of each chunk (rays are batched into "chunks" and passed through the network):
     chunksize: 131072  # 131072  # 1024 * 32
-    # Whether or not to perturb the sampled depth values.
+    # Whether or not to perturb the sampled depth values along each ray:
     perturb: True
-    # Number of depth samples per ray for the coarse network.
+    # Number of depth samples per ray for the coarse network:
     num_coarse: 64
-    # Number of depth samples per ray for the fine network.
+    # Number of depth samples per ray for the fine network:
     num_fine: 64
-    # Whether to render models using a white background.
+    # Whether to render models using a white background:
     white_background: False
-    im_inconsistency_loss_w: 1 #1#0
-    # blind_only_im_consistency:  True
-    im_consistency_iters_freq:  1
-    antialias_rendered_downsampling:  False
-    nonspatial_sampling4im_consistency: True
-    # Standard deviation of noise to be added to the radiance field when
-    # performing volume rendering.
+    # Penalty (loss) term weights:
+    im_inconsistency_loss_w: 1 # Set to 1 to train with image inconsistency penalty
+    im_consistency_iters_freq:  4 # Sampling frequency for set of evaluation scenes for which image inconsistency loss is minimized.
+    # Standard deviation of noise to be added to the radiance field when performing volume rendering.
     radiance_field_noise_std: 0.2
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
-  # Validation-specific parameters.
-  validation:
-    # Number of random rays to retain from each image.
-    # These sampled rays are used for training, and the others are discarded.
-    chunksize: 131072   # 1024 * 32
-    # Whether or not to perturb the sampled depth values.
+  validation:   # Validation-specific parameters:
+    chunksize: 131072
+    # Whether or not to perturb the sampled depth values:
     perturb: False
-    # Number of depth samples per ray for the coarse network.
+    # Number of depth samples per ray for the coarse network:
     num_coarse: 64
-    # Number of depth samples per ray for the fine network.
+    # Number of depth samples per ray for the fine network:
     num_fine: 64
-    # Whether to render models using a white background.
+    # Whether to render models using a white background:
     white_background: False
-    # Standard deviation of noise to be added to the radiance field when
-    # performing volume rendering.
+    # Standard deviation of noise to be added to the radiance field when performing volume rendering:
     radiance_field_noise_std: 0.
     # Sample linearly in disparity space, as opposed to in depth space.
     lindisp: False
