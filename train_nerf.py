@@ -682,8 +682,7 @@ def main():
 
                     rgb_coarse_, rgb_fine_, rgb_SR_ = render_view()
                     target_ray_values[val_strings[scene_num]].append(img_target[...,:3])
-                    loss[val_strings[scene_num]].append(None)
-                    loss[val_strings[scene_num]][-1] = img2mse(rgb_fine_[..., :3], img_target[..., :3]).item()
+                    loss[val_strings[scene_num]].append(img2mse(rgb_fine_[..., :3], img_target[..., :3]).item())
                     if sr_scene:
                         if im_inconsistency_loss_w is None:
                             im_inconsistency_loss_ = None
@@ -750,9 +749,7 @@ def main():
                         if val_set in im_inconsistency_loss:
                             write_scalar("%s/im_inconsistency"%(val_set), np.nanmean(im_inconsistency_loss[val_set]), writing_index)
                     write_scalar("%s/fine_psnr"%(val_set), np.nanmean([mse2psnr(l) for l in fine_loss[val_set]]), writing_index)
-                    fine_loss_is_loss = not any([v is not None for v in loss[val_set]])
-                    if not fine_loss_is_loss:
-                        write_scalar("%s/loss"%(val_set), np.nanmean(loss[val_set]), writing_index)
+                    write_scalar("%s/loss"%(val_set), np.nanmean(loss[val_set]), writing_index)
                     write_scalar("%s/psnr"%(val_set), np.nanmean(psnr[val_set]), writing_index)
                     if len(coarse_loss[val_set])>0:
                         write_scalar("%s/coarse_loss"%(val_set), np.nanmean(coarse_loss[val_set]), writing_index)
@@ -780,13 +777,13 @@ def main():
                     if not eval_mode:
                         tqdm.write(
                             "%s:\tValidation loss: "%(val_set)
-                            + str(np.nanmean(fine_loss[val_set]) if fine_loss_is_loss else np.nanmean(loss[val_set]))
+                            + str(np.nanmean(loss[val_set]))
                             + "\tValidation PSNR: "
                             + str(np.nanmean(psnr[val_set]))
                             + "\tTime: "
                             + str(time.time() - start)
                         )
-        return fine_loss if fine_loss_is_loss else loss
+        return loss
 
     def train():
         first_v_batch_iter = iter%virtual_batch_size==0
