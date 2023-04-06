@@ -133,7 +133,7 @@ dmypy.json
 cache/
 data/
 logs/
-slurm_
+slurm
 archived_logs
 *.png
 .vscode/settings.json
@@ -142,5 +142,5 @@ src/ResizeRight/__init__.py
 logs_archive/*
 train_nerf_copy.py
 reference_scores.pkl
-scripts_
+scripts
 config/local_config.yml
