@@ -135,6 +135,7 @@ data/
 logs/
 slurm
 archived_logs
+.vscode
 *.png
 .vscode/settings.json
 src/ResizeRight4delete/*
