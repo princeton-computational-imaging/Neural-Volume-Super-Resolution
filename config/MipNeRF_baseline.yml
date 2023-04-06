@@ -3,7 +3,7 @@ experiment:
   # Unique experiment identifier
   id: lr_nerf_lego_mip_Linconsist_0
   # Experiment logs will be stored at "logdir"/"id"
-  logdir: /scratch/gpfs/yb6751/projects/VolumetricEnhance/logs
+  logdir: projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
@@ -19,7 +19,7 @@ experiment:
 dataset:
   # Per dataset type configurations:
   synt: # Synthetic scenes, from the NeRF dataset or using the same configuration
-    root: /scratch/gpfs/yb6751/datasets/Synthetic
+    root: datasets/Synthetic
     # Near clip plane (clip all depth values closer than this threshold).
     near: 2
     # Far clip plane (clip all depth values farther than this threshold).
@@ -28,7 +28,7 @@ dataset:
     # synthetic (Blender) datasets.
     no_ndc: True
   llff: # Real world scenes from NeRF:
-    root: /scratch/gpfs/yb6751/datasets/LLFF
+    root: datasets/LLFF
     # Near clip plane (clip all depth values closer than this threshold).
     near: 0
     # Far clip plane (clip all depth values farther than this threshold).

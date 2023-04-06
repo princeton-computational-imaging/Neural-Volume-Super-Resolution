@@ -53,17 +53,21 @@ def main():
     # Read config file:
     assert (configargs.config is None) ^ (configargs.resume is None)
     cfg = None
+    LOCAL_CONFIG_FILENAME = os.path.join('config','local_config.yml')
+    local_config = get_config(LOCAL_CONFIG_FILENAME) if os.path.isfile(LOCAL_CONFIG_FILENAME) else None
+    root_path = local_config.root if local_config is not None else ''
     if configargs.config is None:
         config_file = os.path.join(configargs.resume,"config.yml")
     else:
         config_file = configargs.config
     cfg = get_config(config_file)
+    setattr(cfg.dataset,'root_path',local_config.root if local_config is not None else '')
     planes_model = not hasattr(cfg.models,'coarse') or cfg.models.coarse.type=="TwoDimPlanesModel" # Whether using our feature-plane model. Set to False when running the Mip-NeRF baseline
     if eval_mode: # When running in evaluation mode, overriding some configuration settings with those used for training:
         import imageio
         dataset_config4eval = cfg.dataset
-        config_file = os.path.join(cfg.experiment.logdir, cfg.experiment.id,"config.yml")
-        results_dir = os.path.join(configargs.results_path, cfg.experiment.id)
+        config_file = os.path.join(root_path,cfg.experiment.logdir, cfg.experiment.id,"config.yml")
+        results_dir = os.path.join(root_path,configargs.results_path, cfg.experiment.id)
         if not os.path.isdir(results_dir):  os.mkdir(results_dir)
         print('Evaluation outputs will be saved into %s'%(results_dir))
         if planes_model:
@@ -77,7 +81,7 @@ def main():
     decoder_training = 'decoder' in what2train
 
     # Setup logging.
-    logdir = os.path.join(cfg.experiment.logdir, cfg.experiment.id)
+    logdir = os.path.join(root_path,cfg.experiment.logdir, cfg.experiment.id)
     if not eval_mode:   print('Logs and models will be saved into %s'%(logdir))
 
     if configargs.load_checkpoint=="resume":
@@ -96,6 +100,7 @@ def main():
 
     # Using a pre-trained model:
     pretrained_model_folder = getattr(cfg.models,'path',None)
+    if pretrained_model_folder is not None: pretrained_model_folder = os.path.join(root_path,pretrained_model_folder)
     if planes_model and (not decoder_training or pretrained_model_folder):
         if os.path.isfile(pretrained_model_folder):   pretrained_model_folder = "/".join(pretrained_model_folder.split("/")[:-1])
         pretrained_model_config = get_config(os.path.join(pretrained_model_folder,"config.yml"))
@@ -397,7 +402,7 @@ def main():
             if not hasattr(cfg,'super_resolution'):   setattr(cfg,'super_resolution',CfgNode())
             if not hasattr(cfg.super_resolution,'model'):   setattr(cfg.super_resolution,'model',CfgNode())
             rsetattr(cfg.super_resolution,'model.path',pretrained_model_folder)
-            SR_model_config = get_config(os.path.join(cfg.super_resolution.model.path,"config.yml"))
+            SR_model_config = get_config(os.path.join(root_path,cfg.super_resolution.model.path,"config.yml"))
             set_config_defaults(source=SR_model_config.super_resolution,target=cfg.super_resolution)
         rendering_loss_w = getattr(cfg.super_resolution,'rendering_loss',1)
         plane_channels = getattr(cfg.models.coarse,'num_plane_channels',48)
@@ -487,6 +492,7 @@ def main():
                     SR_checkpoint_path = cfg.super_resolution.model.path
                 else:
                     SR_checkpoint_path = pretrained_model_folder
+                if SR_checkpoint_path is not None: SR_checkpoint_path = os.path.join(root_path,SR_checkpoint_path)
                 SR_checkpoint_path = find_latest_checkpoint(SR_checkpoint_path,sr=True,find_best=load_best or ('SR' not in what2train))
                 SR_model_checkpoint = safe_loading(SR_checkpoint_path,suffix='ckpt_best' if load_best else 'ckpt')
                 print(("Using" if load_best else "Resuming training of")+" SR model %s"%(SR_checkpoint_path))
@@ -573,7 +579,7 @@ def main():
             # When starting a new non-frozen decoder and feature planes run, using a pre-trained decoder model:
             params_init_path = [os.path.join(pretrained_model_folder,'planes')]
             if getattr(cfg.models,'planes_path',None) is not None:
-                params_init_path.insert(0,os.path.join(getattr(cfg.models,'planes_path'),'planes'))
+                params_init_path.insert(0,os.path.join(root_path,getattr(cfg.models,'planes_path'),'planes'))
         else:
             params_init_path = None
         scenes_cycle_counter = Counter() # Keeping track of cycling through the different scenes in the dataset
@@ -689,7 +695,6 @@ def main():
                         else:
                             im_inconsistency_loss_ = calc_im_inconsistency_loss(gt_hr=img_target[..., :3].permute(2,0,1)[None,...],
                                 sr=rgb_fine_[..., :3].permute(2,0,1)[None,...],ds_factor=scene_coupler.ds_factor,plane_interp='bilinear')
-                        if im_inconsistency_loss_ is not None:
                             im_inconsistency_loss[val_strings[scene_num]].append(im_inconsistency_loss_.item())
                         if planes_model and SR_model is not None:
                             rgb_SR_ = 1*rgb_fine_

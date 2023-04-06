@@ -102,7 +102,7 @@ class BlenderDataset(torch.utils.data.Dataset):
         self.on_the_fly_load = len(self.all_scenes)>ON_THE_FLY_SCENES_THRESHOLD
         if self.on_the_fly_load:    self.marg2crop = {}
         for basedir,ds_factor,plane_res,scene_type,scene_prob,module_confinement in zip(tqdm(self.all_scenes,desc='Loading scenes'),self.downsampling_factors,plane_resolutions,scene_types,scene_probs,module_confinements):
-            scene_path = os.path.join(config[scene_type].root,basedir)
+            scene_path = os.path.join(config.root_path,config[scene_type].root,basedir)
             scene_id = self.get_scene_id(basedir,ds_factor,plane_res)
             self.module_confinements[scene_id] = module_confinement
             if scene_id in self.i_train:

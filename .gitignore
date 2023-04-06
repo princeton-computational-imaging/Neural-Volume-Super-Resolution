@@ -145,3 +145,4 @@ logs_archive/*
 train_nerf_copy.py
 reference_scores.pkl
 scripts/video_scipts
+config/local_config.yml
