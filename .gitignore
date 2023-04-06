@@ -145,3 +145,4 @@ train_nerf_copy.py
 reference_scores.pkl
 scripts
 config/local_config.yml
+load_DTU.py
