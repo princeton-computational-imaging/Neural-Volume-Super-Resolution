@@ -2,17 +2,13 @@ import json
 import os
 from tqdm import tqdm
 from re import search
-# import cv2
-# import imageio
 import numpy as np
 import torch
 from nerf_helpers import im_resize,calc_scene_box,interpret_scene_list,imread
-# from models import get_scene_id
 from collections import OrderedDict
 from magic import from_file
 from copy import deepcopy
 import load_llff
-from load_DTU import DVRDataset
 
 from glob import glob
 
@@ -71,34 +67,7 @@ class BlenderDataset(torch.utils.data.Dataset):
         self.i_train,self.i_val,self.scene_probs = OrderedDict(),OrderedDict(),OrderedDict()
         self.scenes_set = set()
         self.degradations,self.scene_types,self.module_confinements = {},{},{},
-        # self.im_repeat_factor = {}
-        # DTU scenes:
-        DTU_config = dict(deepcopy(config))
-        DTU_config['dir'] = dict([(k,dict([(k_in,v_in) for k_in,v_in in v.items() if "'DTU'" in k_in])) for k,v in DTU_config['dir'].items()])
-        if all([len(v)==0 for v in DTU_config['dir'].values()]):
-            self.DTU_dataset = None
-        else:
-            if eval_mode:
-                DTU_config['dir'].pop('train')
-            self.DTU_dataset = DVRDataset(config=DTU_config,scene_id_func=scene_id_func,eval_ratio=0.1,)
-            self.i_train.update(self.DTU_dataset.train_ims_per_scene)
-            self.i_val.update(self.DTU_dataset.i_val)
-            if len(set(list(self.i_train.keys())+list(self.DTU_dataset.val_scene_IDs())))!=len(list(self.i_train.keys())+self.DTU_dataset.val_scene_IDs()) and not eval_mode:
-                raise Exception('I suspect an overlap between training and validation scenes. The following appear in both:\n%s'%([s for s in self.DTU_dataset.val_scene_IDs() if s in self.i_train.keys()]))
-            self.per_im_scene_id.extend(self.DTU_dataset.per_im_scene_id)
-            self.scenes_set = set(self.DTU_dataset.per_im_scene_id)
-            self.downsampling_factors.extend(self.DTU_dataset.downsampling_factors)
-            self.scene_types.update(dict([(sc,'DTU') for sc in self.scenes_set]))
-            self.scene_id_plane_resolution.update(self.DTU_dataset.scene_id_plane_resolution)
-            self.val_only_scene_ids.extend(self.DTU_dataset.val_scene_IDs())
-            if scene_norm_coords is not None:
-                for id in tqdm(self.scenes_set,desc='Computing DTU scene bounding boxes'):
-                    if scene_norm_coords is not None:
-                        scene_info = self.DTU_dataset.scene_info(id)
-                        scene_info.update({'near':config['DTU'].near,'far':config['DTU'].far})
-                        self.coords_normalization[id] = calc_scene_box(scene_info,including_dirs=scene_norm_coords.use_viewdirs,no_ndc=config['DTU'].no_ndc,
-                            adjust_az_range=getattr(scene_norm_coords,'adjust_azimuth_range',False),adjust_elevation_range=getattr(scene_norm_coords,'adjust_elevation_range',False))
-
+        self.DTU_dataset = None
         self.on_the_fly_load = len(self.all_scenes)>ON_THE_FLY_SCENES_THRESHOLD
         if self.on_the_fly_load:    self.marg2crop = {}
         for basedir,ds_factor,plane_res,scene_type,scene_prob,module_confinement in zip(tqdm(self.all_scenes,desc='Loading scenes'),self.downsampling_factors,plane_resolutions,scene_types,scene_probs,module_confinements):
@@ -118,19 +87,15 @@ class BlenderDataset(torch.utils.data.Dataset):
             else:
                 splits2use = ['val'] if val_only else ['train','val']
             if not hasattr(config,scene_type):
-            # if not isinstance(config.root,dict): #Legacy support
                 assert scene_type=='synt'
                 setattr(config,scene_type,{'root':config.root,'near':config.near,'far':config.far})
-                # scene_path = os.path.join(config.root,basedir)
             if search('##',basedir) is not None:
                 if search('##(\d)+',basedir) is not None:
                     scene_path = scene_path.replace(search('##(\d)+',basedir).group(0),'')
                 elif search('##Gauss(\d)+(\.)?(\d)*',basedir) is not None:
-                    # assert not self.on_the_fly_load,"Blurring each image every time would be very slow (consider upgrading to PyTorch Dataloader if necessary)"
                     scene_path = scene_path.replace(search('##Gauss(\d)+(\.)?(\d)*',basedir).group(0),'')
                     self.degradations[scene_id] = {'type':'blur','base_factor':min(self.downsampling_factors),'STD':float(search('(?<=##Gauss)(\d)+(\.)?(\d)*(?=$)',basedir).group(0))}
                 elif search('##Noise(\d)+(\.)?(\d)*',basedir) is not None:
-                    # assert not self.on_the_fly_load,"I want to keep the noise fixed per image, so need to solve this"
                     scene_path = scene_path.replace(search('##Noise(\d)+(\.)?(\d)*',basedir).group(0),'')
                     self.degradations[scene_id] = {'type':'noise','base_factor':min(self.downsampling_factors),
                                                    'STD':float(search('(?<=##Noise)(\d)+(\.)?(\d)*(?=$)',basedir).group(0)),
@@ -160,8 +125,6 @@ class BlenderDataset(torch.utils.data.Dataset):
                 if self.on_the_fly_load:    
                     self.base_factor = load_params[0]
                     self.marg2crop[scene_id] = load_params[1]
-                # if load_params[2] is not None:
-                #     self.im_repeat_factor[scene_id] = load_params[2]
                 cur_images = [im for im in cur_images]
                 cur_hwfDs = cur_poses[0, :3, -1]
                 cur_hwfDs = [int(cur_hwfDs[0]),int(cur_hwfDs[1]),cur_hwfDs[2].item(),ds_factor]
@@ -203,8 +166,6 @@ class BlenderDataset(torch.utils.data.Dataset):
             self.per_im_scene_id += [scene_id for i in cur_images]
     
     def item(self,index,device):
-        if self.scene_types[self.per_im_scene_id[index]]=='DTU':
-            return self.DTU_dataset.item(index,device)
         cur_H,cur_W,cur_focal,cur_ds_factor = self.hwfDs[index]
         if self.on_the_fly_load:
             im_path = self.images[index]
@@ -240,7 +201,6 @@ class BlenderDataset(torch.utils.data.Dataset):
         return len(self.images)
 
     def get_scene_configs(self,config_dict,excluded_scene_ids=[],prob_assigned2scene_groups=True):
-        # PROB_ASSIGNED_TO_SCENE_GROUPS = True # When True, the probability value reflects the chance of sampling A (any) SCENE IN THE GROUP, and not the probabiliy of sampling any specific scene.
         ds_factors,dir,plane_res,scene_ids,types,probs,module_confinements = [],[],[],[],[],[],[]
         config_dict = dict(config_dict)
         for conf,scenes in config_dict.items():
@@ -252,9 +212,6 @@ class BlenderDataset(torch.utils.data.Dataset):
             elif conf[4] is None:   conf[4] = 1
             if len(conf)<6: conf.append([]) # Module confinements
             conf = tuple(conf)
-            if conf[3]=='DTU':
-                probs.append(len(scenes)) #Merely bypassing the assert outside when dealing with DTU
-                continue
             if not isinstance(scenes,list): scenes = [scenes]
             for s in interpret_scene_list(scenes):
                 cur_factor,cur_dir,cur_res,cur_type,module_confinement = conf[0],s,(conf[1],conf[2]),conf[3],conf[5]
@@ -273,14 +230,11 @@ class BlenderDataset(torch.utils.data.Dataset):
 
 def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
         downsampling_factor=1,val_downsampling_factor=None,cfg=None,splits2use=['train','val'],load_imgs=True,degradation=None):
-    # train_im_inds = None
     assert not half_res,'Depricated'
     if cfg is not None:
         raise Exception("Depricated")
         if cfg.get("super_resolution",None) is not None:
             train_im_inds = cfg.super_resolution.get("dataset",{}).get("train_im_inds",None)
-    # assert downsampling_factor==1 or train_im_inds is None,"Should not use a global downsampling_factor when training an SR model, only when learning the LR representation"
-    # if downsampling_factor!=1: assert half_res,"Assuming half_res is True"
     if val_downsampling_factor is None:
         val_downsampling_factor = downsampling_factor
     splits = ["train", "val", "test"]
@@ -312,9 +266,6 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
             skip = 1
 
         for f_num,frame in enumerate(meta["frames"][::skip]):
-            # if FIGURE_IMAGES_MODE and f_num>=10:
-            #     print("!!!!!WARNING!!!!!!!")
-            #     break
             fname = os.path.join(basedir, frame["file_path"] + ".png")
             if s=='val':
                 per_im_ds_factor = 1*val_downsampling_factor
@@ -322,7 +273,6 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
                 per_im_ds_factor = 1*downsampling_factor
             if load_imgs:
                 img = imread(fname)
-                # img = (imageio.imread(fname)/ 255.0).astype(np.float32)
                 H.append(img.shape[0])
                 W.append(img.shape[1])
                 resized_img = torch.from_numpy(im_resize(img, scale_factor=per_im_ds_factor,degradation=degradation,fname='%s_%s'%(basedir.split('/')[-1],frame["file_path"].split('/')[-1])))
@@ -338,7 +288,6 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
             ds_factor.append(per_im_ds_factor)
             imgs.append(resized_img if load_imgs else fname)
             poses.append(np.array(frame["transform_matrix"]))
-        # imgs = (np.array(imgs) / 255.0).astype(np.float32)
         poses = np.array(poses).reshape([-1,4,4]).astype(np.float32)
         counts.append(counts[-1] + len(imgs))
         all_imgs.append(imgs)
@@ -362,7 +311,6 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False,
         0,
     )
 
-    # In debug mode, return extremely tiny images
     assert not debug,"No longer supported, after introducing downsampling options"
     if debug:
         H = H // 32
