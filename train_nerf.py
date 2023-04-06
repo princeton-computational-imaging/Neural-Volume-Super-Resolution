@@ -265,10 +265,16 @@ def main():
         val_strings.append('_'.join(tags))
     # loss_groups4_best = [tag for tag in val_strings if 'blind_validation' in tag]
     # if len(loss_groups4_best)==0:        
-    loss_groups4_best = [tag for tag in val_strings if ('validation' in tag and '_LR' not in tag and 'blind' not in tag)]
-    if len(loss_groups4_best)==0:        loss_groups4_best = [tag for tag in val_strings if 'validation' in tag and 'blind' not in tag]
-    loss_groups4_best = list(set(loss_groups4_best))
+
     loss4best = 'fine_loss' if all([v not in what2train for v in ['decoder','SR']]) else 'loss'
+    def tag_filter(tag_list,include=[],exclude=[]):
+        return list(set([tag for tag in tag_list if all([p in tag for p in include]) and all([p not in tag for p in exclude])]))
+    if im_inconsistency_loss_w:
+        loss_groups4_best = tag_filter(val_strings,['blind','validation'],['_LR'])
+    else:
+        loss_groups4_best = tag_filter(val_strings,['validation'],['blind','_LR'])
+        if len(loss_groups4_best)==0:
+            loss_groups4_best = tag_filter(val_strings,['validation'],['blind'])
 
     def print_scenes_list(title,scenes):
         print('\n%d %s scenes:'%(len(scenes),title))
@@ -808,8 +814,15 @@ def main():
                         zero_mean_planes_loss_ = model_coarse.return_zero_mean_planes_loss()
                         if zero_mean_planes_loss_ is not None:
                             zero_mean_planes_loss[val_strings[scene_num]].append(zero_mean_planes_loss_.item())
-                    loss[val_strings[scene_num]].append(None)
+                    # loss[val_strings[scene_num]].append(None)
+                    loss[val_strings[scene_num]].append(img2mse(rgb_fine_[..., :3], img_target[..., :3]).item())
                     if sr_scene:
+                        if im_inconsistency_loss_w is None:
+                            im_inconsistency_loss_ = None
+                        else:
+                            im_inconsistency_loss_ = calc_im_inconsistency_loss(gt_hr=img_target[..., :3].permute(2,0,1)[None,...],
+                                sr=rgb_fine_[..., :3].permute(2,0,1)[None,...],ds_factor=scene_coupler.ds_factor,plane_interp='bilinear')
+                            im_inconsistency_loss[val_strings[scene_num]].append(im_inconsistency_loss_.item())
                         if SR_experiment=="refine" or planes_model:
                             rgb_SR_ = 1*rgb_fine_
                             if HR_plane_LR_im:
@@ -849,20 +862,20 @@ def main():
                                 rgb_fine_ = model_fine.downsample_plane(rgb_fine_.permute(2,0,1).unsqueeze(0)).squeeze(0).permute(1,2,0)
 
                         fine_loss[val_strings[scene_num]].append(img2mse(rgb_fine_[..., :3], img_target[..., :3]).item())
-                        if SR_experiment=="refine" or planes_model:
-                            loss[val_strings[scene_num]][-1] = img2mse(rgb_SR_[..., :3], img_target[..., :3]).item()
+                        # if SR_experiment=="refine" or planes_model:
+                        #     loss[val_strings[scene_num]][-1] = img2mse(rgb_SR_[..., :3], img_target[..., :3]).item()
                         if SR_model is not None:
                             consistency_loss_ = SR_model.return_consistency_loss()
                             if consistency_loss_ is not None:
                                 consistency_loss[val_strings[scene_num]].append(consistency_loss_.item())
-                        if im_consistency_loss_w is None:
-                            im_consistency_loss_ = None
-                        else:
-                            # im_consistency_loss_ = model_fine.return_im_consistency_loss(gt_hr=img_target[..., :3].permute(2,0,1)[None,...],sr=rgb_SR_[..., :3].permute(2,0,1)[None,...])
-                            im_consistency_loss_ = calc_im_consistency_loss(gt_hr=img_target[..., :3].permute(2,0,1)[None,...],
-                                sr=(rgb_SR_ if planes_model else rgb_fine_)[..., :3].permute(2,0,1)[None,...],ds_factor=scene_coupler.ds_factor,plane_interp='bilinear')
-                        if im_consistency_loss_ is not None:
-                            im_consistency_loss[val_strings[scene_num]].append(im_consistency_loss_.item())
+                        # if im_consistency_loss_w is None:
+                        #     im_consistency_loss_ = None
+                        # else:
+                        #     # im_consistency_loss_ = model_fine.return_im_consistency_loss(gt_hr=img_target[..., :3].permute(2,0,1)[None,...],sr=rgb_SR_[..., :3].permute(2,0,1)[None,...])
+                        #     im_consistency_loss_ = calc_im_consistency_loss(gt_hr=img_target[..., :3].permute(2,0,1)[None,...],
+                        #         sr=(rgb_SR_ if planes_model else rgb_fine_)[..., :3].permute(2,0,1)[None,...],ds_factor=scene_coupler.ds_factor,plane_interp='bilinear')
+                        # if im_consistency_loss_ is not None:
+                        #     im_consistency_loss[val_strings[scene_num]].append(im_consistency_loss_.item())
                         if planes_model:
                             planes_SR_loss_ = model_fine.return_planes_SR_loss()
                             if planes_SR_loss_ is not None:
@@ -877,7 +890,8 @@ def main():
                     rgb_coarse[val_strings[scene_num]].append(rgb_coarse_)
                     rgb_fine[val_strings[scene_num]].append(rgb_fine_)
                     rgb_SR[val_strings[scene_num]].append(rgb_SR_)
-                    psnr[val_strings[scene_num]].append(mse2psnr(fine_loss[val_strings[scene_num]][-1] if loss[val_strings[scene_num]][-1] is None else loss[val_strings[scene_num]][-1]))
+                    psnr[val_strings[scene_num]].append(mse2psnr(loss[val_strings[scene_num]][-1]))
+                    # psnr[val_strings[scene_num]].append(mse2psnr(fine_loss[val_strings[scene_num]][-1] if loss[val_strings[scene_num]][-1] is None else loss[val_strings[scene_num]][-1]))
                     if planes_model and SR_model is not None:
                         last_scene_eval = img_idx==img_indecis[eval_cycle][-1]
                         if (store_planes and (not eval_mode or last_scene_eval)) or save_RAM_memory:
