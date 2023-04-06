@@ -235,7 +235,7 @@ def main():
         for cat in set(val_strings):
             print_scenes_list('"%s" evaluation'%(cat),[s for i,s in enumerate(evaluation_sequences) if val_strings[i]==cat])
         assert all([val_ims_per_scene==len(i_val[id]) for id in evaluation_sequences]),'Assuming all scenes have the same number of evaluation images'
-        running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','fine_loss','fine_psnr','loss','coarse_loss','inconsistency','loss_sr','loss_lr','im_inconsistency'] #,'psnr_final'
+        running_mean_logs = ['psnr','SR_psnr_gain','planes_SR','fine_loss','fine_psnr','loss','coarse_loss','inconsistency','loss_sr','loss_lr','im_inconsistency'] 
         experiment_info['running_scores'] = dict([(score,dict([(cat,deque(maxlen=len(training_scenes) if cat=='train' else val_ims_per_scene)) for cat in list(set(val_strings))+['train']])) for score in running_mean_logs])
 
     image_sampler = ImageSampler(i_train,dataset.scene_probs) # Initializaing training images sampler
@@ -683,9 +683,7 @@ def main():
                     rgb_coarse_, rgb_fine_, rgb_SR_ = render_view()
                     target_ray_values[val_strings[scene_num]].append(img_target[...,:3])
                     loss[val_strings[scene_num]].append(None)
-                    # if planes_model:
                     loss[val_strings[scene_num]][-1] = img2mse(rgb_fine_[..., :3], img_target[..., :3]).item()
-                    # psnr_final[val_strings[scene_num]].append(mse2psnr(img2mse(rgb_fine_[..., :3], img_target[..., :3]).item()))
                     if sr_scene:
                         if im_inconsistency_loss_w is None:
                             im_inconsistency_loss_ = None
@@ -720,7 +718,6 @@ def main():
                     rgb_coarse[val_strings[scene_num]].append(rgb_coarse_)
                     rgb_fine[val_strings[scene_num]].append(rgb_fine_)
                     rgb_SR[val_strings[scene_num]].append(rgb_SR_)
-                    # psnr[val_strings[scene_num]].append(mse2psnr(fine_loss[val_strings[scene_num]][-1] if loss[val_strings[scene_num]][-1] is None else loss[val_strings[scene_num]][-1]))
                     psnr[val_strings[scene_num]].append(mse2psnr(loss[val_strings[scene_num]][-1]))
                     if planes_model and SR_model is not None:
                         last_scene_eval = img_idx==img_indecis[eval_cycle][-1]
@@ -753,7 +750,6 @@ def main():
                         if val_set in im_inconsistency_loss:
                             write_scalar("%s/im_inconsistency"%(val_set), np.nanmean(im_inconsistency_loss[val_set]), writing_index)
                     write_scalar("%s/fine_psnr"%(val_set), np.nanmean([mse2psnr(l) for l in fine_loss[val_set]]), writing_index)
-                    # write_scalar("%s/psnr_final"%(val_set), np.nanmean(psnr_final[val_set]), writing_index)
                     fine_loss_is_loss = not any([v is not None for v in loss[val_set]])
                     if not fine_loss_is_loss:
                         write_scalar("%s/loss"%(val_set), np.nanmean(loss[val_set]), writing_index)
