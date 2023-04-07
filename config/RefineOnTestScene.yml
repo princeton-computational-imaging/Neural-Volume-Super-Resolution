@@ -1,22 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromDetachedLR_imConsistLoss_WOplanes_micShip
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_800_noDetach_imConsistLossFreq10nonSpatial_Lean_paper4 #_HRplanes
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_posFeatCatDecCh256_NoHRinfoBug_micShip_0
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_NoHRinfoBug_noPlnDetach_micShip
-  # id: E2E_Synt_Res29Sc200_27Sc1600_32_LR100_800_imConsistLossFreq10nonSpatial_micShip
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach579K_imConsistF10nonSpat_Lean_HrLr_paper4_GaussOnly #_micShip #_PZerMean1 #_chairLego
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach1572K_imConsistInfFnonSpat_Lean_HrLr_lego_0
-  # id: E2E_Synt_Res1Sc200_0Sc800_32_LR100_800_imConsistInfFnonSpat_Lean_HrLr_ship
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach579K_imConsistF10nonSpat_noSR_Lean_HrLr_mic
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_800_noDetach_imConsistLossFreq10nonSpatial_paper4
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetachother4_imConsistF10nonSpat_Lean_HrLr_donut
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_fromNoDetach1572KwPlanes_imConsist8xFnonSpat_Lean_HrLr_lego##2_0
   id: RefiningOnTestScenes
-  # id: E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_Lean_paper4_Gauss
-  # id: E2E_Synt_Res29Sc200_27Sc800_32_LR100_400_noDetach_imConsistLossFreq10nonSpatial_hornsLeaves
   # Experiment logs will be stored at "logdir"/"id"
   logdir: projects/VolumetricEnhance/logs
   # Seed for random number generators (for repeatability).
