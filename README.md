@@ -5,7 +5,7 @@
 
 ## Requitements
 Begin by setting up the dependencies. You can create a conda environment using `conda env create -f environment.yml`. Then update the root path in the [local configuration file](config/local_config.yml.example), and remove its `.example` suffix. Install [torchsearchsorted](https://github.com/aliutkus/torchsearchsorted) by following instructions from their `README`.
-## Super-resolve a volumetric scene
+## Super-resolve volumetric scene(s)
 Our framework includes three learned components: A decoder model and a feature-plane super-resolution model shared between all 3D scenes, and an individual set of feature planes per 3D scene. You can experiment with our code in different levels, by following the directions starting from any of the 3 possible stages below (directions marked with * should only be perfomed if starting from the stage they appear in):
 ### Train everything from scratch
 1. Download our [training scenes dataset](https://drive.google.com/file/d/10F2SPY-laYzdNzdNrxa_Yd4KA3qLbK8z/view?usp=sharing).
