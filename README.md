@@ -1,6 +1,6 @@
 # Neural Volume Super Resolution
 #### Official PyTorch implementation
-### Project page (Coming up soon) | [Paper](https://arxiv.org/abs/2212.04666)
+### Project page (Coming soon) | [Paper](https://arxiv.org/abs/2212.04666)
 
 
 ## Requitements
@@ -16,7 +16,7 @@ Our framework includes three learned components: A decoder model and a feature-p
 
 ### Super-resolve a new test scene
 Use pre-trained decoder and plane super-resolution models while learning feature planes corresponding to a new 3D scene.
-1. *Download our [pre-trained models file]() and unzip it.
+1. Download our [pre-trained models file](https://drive.google.com/file/d/1zdod2hVQO8H3WzGfzMuvKEkbenGUbrkA/view?usp=sharing) and unzip it.
 1. *Download our [training scenes dataset](https://drive.google.com/file/d/10F2SPY-laYzdNzdNrxa_Yd4KA3qLbK8z/view?usp=sharing).
 1. *Download the desired (synthetic) test scene from the [NeRF dataset](https://drive.google.com/drive/folders/1JDdLGDruGNXWnM1eqY1FNL9PlStjaKWi) and put all scenes in a dataset folder.
 1. Learn the feature planes representation for a new test scene:
