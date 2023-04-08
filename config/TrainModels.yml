@@ -1,9 +1,6 @@
 # Parameters to setup experiment.
 experiment:
-  # Unique experiment identifier
-  # id: TrainingOn21Scenes
-  # Experiment logs will be stored at "logdir"/"id"
-  # logdir: projects/VolumetricEnhance/logs
+  # Experiment logs and checkpoints will be stored in:
   logdir: projects/VolumetricEnhance/logs/TrainingOn21Scenes
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
@@ -47,14 +44,14 @@ dataset:
       # Parameter convention:
       #   downsampling_factor,pos_feature_plane_resolution,viewdir_feature_plane_resoution,dataset_type (default:'synt'),relative probability (default:1): [scene names]
       # Adding suffix "##<integer>" to scene name allows training multiple independent feature plane sets to the same scene. E.g. ['lego','ship','lego##1','lego##2']
-      # LR scenes (training and some of evaluation):
-      8,200,32:   ['house','robot','ficus','materials','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','hotdog','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','drums'] #,'lego','chair','mic','ship']
-      # HR scenes (training only):
-      2,800,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops',] #'ficus','materials','hotdog','drums','lego','chair','mic','ship',
+      # LR scenes. Specify all training scenes, and possibly also test scenes (for which only LR views are available):
+      8,200,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops'] #,'ficus','materials','hotdog','drums','lego','chair','mic','ship']
+      # HR scenes (training scenes only):
+      2,800,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops'] #'ficus','materials','hotdog','drums','lego','chair','mic','ship',
     val:
       # Evaluation scenes (Should not overlap with training scenes):
       # Use the same parameter convention as in training scenes, without sampling probability
-      2,800,32:   ['drums','materials','hotdog','ficus']
+      2,800,32:   [] #'lego','ship','hotdog','drums','chair','mic','materials','ficus'
   
   testskip: 10 # Stride for synthetic scenes: Include one evaluation image per "testskip" images in the dataset.
   llffhold: 2 # For real scenes: Number of training images to hold out for evaluation
