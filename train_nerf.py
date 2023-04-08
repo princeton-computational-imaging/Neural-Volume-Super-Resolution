@@ -30,12 +30,6 @@ def main():
         help="Path to load saved checkpoint from.",
     )
     parser.add_argument(
-        "--resume",
-        type=str,
-        default=None,
-        help="Path to load config file to resume.",
-    )
-    parser.add_argument(
         "--eval",
         type=str,
         choices=['images','video'],
@@ -51,13 +45,13 @@ def main():
     eval_mode = configargs.eval
     
     # Read config file:
-    assert (configargs.config is None) ^ (configargs.resume is None)
+    assert configargs.config or configargs.load_checkpoint, 'Should specify path to either (or both) a configuration file or a pre-trained model to resume training.'
     cfg = None
     LOCAL_CONFIG_FILENAME = os.path.join('config','local_config.yml')
     local_config = get_config(LOCAL_CONFIG_FILENAME) if os.path.isfile(LOCAL_CONFIG_FILENAME) else None
     root_path = local_config.root if local_config is not None else ''
     if configargs.config is None:
-        config_file = os.path.join(configargs.resume,"config.yml")
+        config_file = os.path.join(configargs.load_checkpoint,"config.yml")
     else:
         config_file = configargs.config
     cfg = get_config(config_file)
@@ -66,7 +60,8 @@ def main():
     if eval_mode: # When running in evaluation mode, overriding some configuration settings with those used for training:
         import imageio
         dataset_config4eval = cfg.dataset
-        config_file = os.path.join(root_path,cfg.experiment.logdir, cfg.experiment.id,"config.yml")
+        if configargs.config is not None:
+            config_file = os.path.join(root_path,cfg.experiment.logdir, cfg.experiment.id,"config.yml")
         results_dir = os.path.join(root_path,configargs.results_path, cfg.experiment.id)
         if not os.path.isdir(results_dir):  os.mkdir(results_dir)
         print('Evaluation outputs will be saved into %s'%(results_dir))

@@ -1,13 +1,32 @@
-# nerf-pytorch
-#### A PyTorch re-implementation
-### [Project](http://tancik.com/nerf) | [Video](https://youtu.be/JuH79E8rdKc) | [Paper](https://arxiv.org/abs/2003.08934)
+# Neural Volume Super Resolution
+#### Official PyTorch implementation
+### Project page (Coming up soon) | [Paper](https://arxiv.org/abs/2212.04666)
 
-[![Open Tiny-NeRF in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1rO8xo0TemN67d4mTpakrKrLp03b9bgCX)
+## Requitements
+Begin by setting up the dependencies. You can create a conda environment using `conda env create -f environment.yml`.
+## Super-resolve a volumetric scene
+Our framework includes three learned components: A decoder model and a feature-plane super-resolution model shared between all 3D scenes, and an individual set of feature planes per 3D scene. You can experiment with our code in different levels:
+### Evaluate a pre-learned test scene
+Use pre-trained decodeer and SR models, coupled with the learned feature-plane representation:
+1. Download one of our [pre-trained models](https://drive.google.com/drive/folders/1rHR5s1JUdtayk7kEcjONdv6MzJd1L-6F?usp=sharing) and unzip it, then download the corresponding ([synthetic](https://drive.google.com/drive/folders/1JDdLGDruGNXWnM1eqY1FNL9PlStjaKWi) or [real world](https://drive.google.com/drive/folders/14boI-o5hGO9srnWaaogTU5_ji7wkX2S7)) scene from the NeRF dataset.
+1. Run:
+    ```
+    python train_nerf.py --load-checkpoint <path to pre-trained models folder> --eval video --results_path <path to save output images and video> 
+    ```
+### Super-resolve a new test scene
+Use pre-trained decoder and plane super-resolution models while learning feature planes corresponding to a new 3D scene.
+1. Download our [pre-trained models file]() and unzip it, then download the desired (synthetic) test scene from the [NeRF dataset](https://drive.google.com/drive/folders/1JDdLGDruGNXWnM1eqY1FNL9PlStjaKWi), as well as our [training scenes dataset]().
+1. Learn the feature planes representation for a new test scene:
+    1. Update the desired scene name ([training](config/Feature_Planes_Only.yml#L55) and [evaluation](config/Feature_Planes_Only.yml#L59)), [pre-trained model path](config/Feature_Planes_Only.yml#L66) and [planes saving name](config/Feature_Planes_Only.yml#L7) in the configuration file.
+    1. Run
+        ```
+        train_nerf.py --config config/Feature_Planes_Only.yml 
+        ```
+1. Jointly refine all three modules:
+### Train everything from scratch
 
-A PyTorch re-implementation of [Neural Radiance Fields](http://tancik.com/nerf).
 
-
-## Tiny-NeRF on Google Colab
+<!-- 2. Set the desired scene to evaluate in [config/RefineOnTestScene.yml](/config/RefineOnTestScene.yml#L59) -->
 
 The NeRF code release has an accompanying Colab notebook, that showcases training a feature-limited version of NeRF on a "tiny" scene. It's equivalent PyTorch notebook can be found at the following URL:
 
@@ -57,7 +76,18 @@ The organization of code **WILL** change around a lot, because I'm actively expe
 
 **Pretrained models**: I am running a few large-scale experiments, and I hope to release models sometime in the end of April.
 
-
+## Citing
+If you find our code or paper useful, please consider citing
+```bibtex
+@misc{bahat2022neural,
+      title={Neural Volume Super-Resolution}, 
+      author={Yuval Bahat and Yuxuan Zhang and Hendrik Sommerhoff and Andreas Kolb and Felix Heide},
+      year={2022},
+      eprint={2212.04666},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
+```
 ## Contributing / Issues?
 
 Feel free to raise GitHub issues if you find anything concerning. Pull requests adding additional features are welcome too.
@@ -65,4 +95,5 @@ Feel free to raise GitHub issues if you find anything concerning. Pull requests 
 
 ## LICENSE
 
-`nerf-pytorch` is available under the [MIT License](https://opensource.org/licenses/MIT). For more details see: [LICENSE](LICENSE) and [ACKNOWLEDGEMENTS](ACKNOWLEDGEMENTS).
+This code is available under the [MIT License](https://opensource.org/licenses/MIT). The code was forked from the [nerf-pytorch](https://github.com/krrish94/nerf-pytorch) repository.
+ <!-- For more details see: [LICENSE](LICENSE) and [ACKNOWLEDGEMENTS](ACKNOWLEDGEMENTS). -->
