@@ -4,7 +4,7 @@
 
 
 ## Requitements
-Begin by setting up the dependencies. You can create a conda environment using `conda env create -f environment.yml`. Then update the root path in the [local configuration file](config/local_config.yml.example), and remove its `.example` suffix.
+Begin by setting up the dependencies. You can create a conda environment using `conda env create -f environment.yml`. Then update the root path in the [local configuration file](config/local_config.yml.example), and remove its `.example` suffix. Install [torchsearchsorted](https://github.com/aliutkus/torchsearchsorted) by following instructions from their `README`.
 ## Super-resolve a volumetric scene
 Our framework includes three learned components: A decoder model and a feature-plane super-resolution model shared between all 3D scenes, and an individual set of feature planes per 3D scene. You can experiment with our code in different levels, by following the directions starting from any of the 3 possible stages below (directions marked with * should only be perfomed if starting from the stage they appear in):
 ### Train everything from scratch
@@ -37,53 +37,10 @@ Use pre-trained decodeer and SR models, coupled with the learned feature-plane r
     ```
 
 
-The NeRF code release has an accompanying Colab notebook, that showcases training a feature-limited version of NeRF on a "tiny" scene. It's equivalent PyTorch notebook can be found at the following URL:
-
-https://colab.research.google.com/drive/1rO8xo0TemN67d4mTpakrKrLp03b9bgCX
 
 
-## How to train your NeRF
+Optionally, to resume training in any of the first two stages, use the `--load-checkpoint` argument followed by the path to the saved model folder, and omit the `--config` argument.
 
-To train a "full" NeRF model (i.e., using 3D coordinates as well as ray directions, and the hierarchical sampling procedure), first setup dependencies. In a new `conda` or `virtualenv` environment, run
-```
-pip install requirements.txt
-```
-
-**Importantly**, install [torchsearchsorted](https://github.com/aliutkus/torchsearchsorted) by following instructions from their `README`.
-
-Once everything is setup, to run experiments, first edit `config/default.yml` to specify your own parameters.
-
-The training script can be invoked by running
-```
-python train_nerf.py --config config/default.yml
-```
-
-Optionally, if resuming training from a previous checkpoint, run
-```
-python train_nerf.py --config config/default.yml --load-checkpoint path/to/checkpoint.ckpt
-```
-
-
-## (Full) NeRF on Google Colab
-
-A Colab notebook for the _full_ NeRF model (albeit on low-resolution data) can be accessed [here](https://colab.research.google.com/drive/1L6QExI2lw5xhJ-MLlIwpbgf7rxW7fcz3).
-
-
-## A note on reproducibility
-
-All said, this is not an official code release, and is instead a reproduction from the original code (released by the authors [here](https://github.com/bmild/nerf)).
-
-I have currently ensured (to the best of my abilities, but feel free to open issues if you feel something's wrong :) ) that
-* Every _individual_ module exactly (numerically) matches that of the TensorFlow implementation. [This Colab notebook](https://colab.research.google.com/drive/1ENrAtZIEhoeNkaXOXkBL7SbWU1VWHBQm) has all the tests, matching op for op (but is very scratchy to look at)!
-* Training works as expected for fairly small resolutions (100 x 100).
-
-However, this implementation still **lacks** the following:
-* I have not run all the full experiments devised in the paper.
-* I've only tested on the `lego` sequence of the synthetic (Blender) datasets.
-
-The organization of code **WILL** change around a lot, because I'm actively experimenting with this.
-
-**Pretrained models**: I am running a few large-scale experiments, and I hope to release models sometime in the end of April.
 
 ## Citing
 If you find our code or paper useful, please consider citing
