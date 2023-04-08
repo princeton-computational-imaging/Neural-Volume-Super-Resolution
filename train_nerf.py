@@ -55,28 +55,28 @@ def main():
     else:
         config_file = configargs.config
     cfg = get_config(config_file)
+    experiment_id = cfg.experiment.id if hasattr(cfg.experiment,'id') else cfg.experiment.logdir.split('/')[-1]
     setattr(cfg.dataset,'root_path',local_config.root if local_config is not None else '')
     planes_model = not hasattr(cfg.models,'coarse') or cfg.models.coarse.type=="TwoDimPlanesModel" # Whether using our feature-plane model. Set to False when running the Mip-NeRF baseline
     if eval_mode: # When running in evaluation mode, overriding some configuration settings with those used for training:
         import imageio
-        dataset_config4eval = cfg.dataset
-        if configargs.config is not None:
-            config_file = os.path.join(root_path,cfg.experiment.logdir, cfg.experiment.id,"config.yml")
-        results_dir = os.path.join(root_path,configargs.results_path, cfg.experiment.id)
+        results_dir = os.path.join(root_path,configargs.results_path, experiment_id)
         if not os.path.isdir(results_dir):  os.mkdir(results_dir)
         print('Evaluation outputs will be saved into %s'%(results_dir))
-        if planes_model:
+        if planes_model and configargs.config is not None:
+            dataset_config4eval = cfg.dataset
+            config_file = os.path.join(root_path,cfg.experiment.logdir, experiment_id,"config.yml")
             cfg = get_config(config_file)
             cfg.dataset = dataset_config4eval
     print('Using configuration file %s'%(config_file))
-    print(("Evaluating" if eval_mode else "Running") + " experiment %s"%(cfg.experiment.id))
+    print(("Evaluating" if eval_mode else "Running") + " experiment %s"%(experiment_id))
     im_inconsistency_loss_w = getattr(cfg.nerf.train,'im_inconsistency_loss_w',None)
     what2train = getattr(cfg.nerf.train,'what',[])
     assert all([m in ['LR_planes','decoder','SR'] for m in what2train])
     decoder_training = 'decoder' in what2train
 
     # Setup logging.
-    logdir = os.path.join(root_path,cfg.experiment.logdir, cfg.experiment.id)
+    logdir = os.path.join(root_path,cfg.experiment.logdir, getattr(cfg.experiment,'id',''))
     if not eval_mode:   print('Logs and models will be saved into %s'%(logdir))
 
     if configargs.load_checkpoint=="resume":

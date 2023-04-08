@@ -1,10 +1,7 @@
 # Parameters to setup experiment.
 experiment:
-  # Unique experiment identifier
-  # id: RefiningOnTestScenes
-  id: E2E_Synt_Res1Sc200_0Sc800_32_LR100_400_imConsistInfFnonSpat_Lean_HrLr_noSRSameSize_ship
-  # Experiment logs will be stored at "logdir"/"id"
-  logdir: projects/VolumetricEnhance/logs
+  # Experiment logs and checkpoints will be stored in:
+  logdir: projects/VolumetricEnhance/logs/RefiningOnTestScenes
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.

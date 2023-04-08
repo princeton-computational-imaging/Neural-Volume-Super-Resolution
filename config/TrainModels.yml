@@ -1,9 +1,10 @@
 # Parameters to setup experiment.
 experiment:
   # Unique experiment identifier
-  id: TrainingOn21Scenes
+  # id: TrainingOn21Scenes
   # Experiment logs will be stored at "logdir"/"id"
-  logdir: projects/VolumetricEnhance/logs
+  # logdir: projects/VolumetricEnhance/logs
+  logdir: projects/VolumetricEnhance/logs/TrainingOn21Scenes
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
