@@ -11,7 +11,7 @@ Our framework includes three learned components: A decoder model and a feature-p
 1. Download our [training scenes dataset](https://drive.google.com/file/d/10F2SPY-laYzdNzdNrxa_Yd4KA3qLbK8z/view?usp=sharing).
 1. Download the desired (synthetic) test scene from the [NeRF dataset](https://drive.google.com/drive/folders/1JDdLGDruGNXWnM1eqY1FNL9PlStjaKWi) and put all scenes in a dataset folder.
 1. Update the [configuration file](config/TrainModels.yml). Add the desired test scene name(s) to the [training list](config/TrainModels.yml#L50). Update the scene name(s) in the [evaluation list](config/TrainModels.yml#L54) and update the paths to the [scenes dataset folder](config/TrainModels.yml#L20) and to storing the [new models](config/TrainModels.yml#L4) in the configuration file.
-1. Run `train_nerf.py --config config/TrainModels.yml`
+1. Run `python train_nerf.py --config config/TrainModels.yml`
 
 
 ### Super-resolve a new test scene
@@ -21,10 +21,7 @@ Use pre-trained decoder and plane super-resolution models while learning feature
 1. *Download the desired (synthetic) test scene from the [NeRF dataset](https://drive.google.com/drive/folders/1JDdLGDruGNXWnM1eqY1FNL9PlStjaKWi) and put all scenes in a dataset folder.
 1. Learn the feature planes representation for a new test scene:
     1. Update the [configuration file](config/Feature_Planes_Only.yml). Add the desired test scene name(s) to the [training list](config/Feature_Planes_Only.yml#L55). Then update the scene name(s) in the [evaluation list](config/Feature_Planes_Only.yml#L59), as well as the paths to the [scenes dataset folder](config/Feature_Planes_Only.yml#L22), [pre-trained models folder](config/Feature_Planes_Only.yml#L61) and to storing the [new scene feature planes](config/Feature_Planes_Only.yml#L4) in the configuration file.
-    1. Run
-        ```
-        train_nerf.py --config config/Feature_Planes_Only.yml 
-        ```
+    1. Run `python train_nerf.py --config config/Feature_Planes_Only.yml`
 1. Jointly refine all three modules:
     1. Update the desired scene name ([training](config/RefineOnTestScene.yml#L53) and [evaluation](config/RefineOnTestScene.yml#L57)), as well as the paths to the [scenes dataset folder](config/RefineOnTestScene.yml#L20), [pre-trained models folder](config/RefineOnTestScene.yml#L65), [learned scene feature planes](config/RefineOnTestScene.yml#L67) (from the previous step) and to storing the [refined models](config/RefineOnTestScene.yml#L4) in the configuration file.
     1. Run `train_nerf.py --config config/RefineOnTestScene.yml`
