@@ -1,7 +1,7 @@
 # Parameters to setup experiment.
 experiment:
   # Experiment logs and checkpoints will be stored in:
-  logdir: projects/VolumetricEnhance/logs/new_scene_planes
+  logdir: projects/VolumetricEnhance/models/new_scene_planes
   # Seed for random number generators (for repeatability).
   randomseed: 0 # 34  # 8239
   # Number of training iterations.
@@ -47,18 +47,18 @@ dataset:
       #   downsampling_factor,pos_feature_plane_resolution,viewdir_feature_plane_resoution,dataset_type (default:'synt'),relative probability (default:1): [scene names]
       # Adding suffix "##<integer>" to scene name allows training multiple independent feature plane sets to the same scene. E.g. ['lego','ship','lego##1','lego##2']
       # LR scenes (training and some of evaluation):
-      8,200,32:   ['mic##2','ship##2','chair##2','lego##2',]
+      8,200,32:   ['lego##1',]
     val:
       # Evaluation scenes (Should not overlap with training scenes):
       # Use the same parameter convention as in training scenes, without sampling probability
-      2,800,32:   ['mic##2','ship##2','chair##2','lego##2',] #'ficus##1','materials##1','hotdog##1','drums##1'
+      2,800,32:   ['lego##1',] #'ficus##1','materials##1','hotdog##1','drums##1'
   testskip: 10 # Stride for synthetic scenes: Include one evaluation image per "testskip" images in the dataset.
   llffhold: 2 # For real scenes: Number of training images to hold out for evaluation
 
 # Model parameters.
 models:
   # Path to pre-trained model checkpoint to resume (if set):
-  path: projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy1459K
+  path: projects/VolumetricEnhance/models/21TrainScenes_LRforFicusMaterialsHotdogDrums
 
 # Optimizer params.
 optimizer:

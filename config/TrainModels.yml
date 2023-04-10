@@ -45,7 +45,7 @@ dataset:
       #   downsampling_factor,pos_feature_plane_resolution,viewdir_feature_plane_resoution,dataset_type (default:'synt'),relative probability (default:1): [scene names]
       # Adding suffix "##<integer>" to scene name allows training multiple independent feature plane sets to the same scene. E.g. ['lego','ship','lego##1','lego##2']
       # LR scenes. Specify all training scenes, and possibly also test scenes (for which only LR views are available):
-      8,200,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops'] #,'ficus','materials','hotdog','drums','lego','chair','mic','ship']
+      8,200,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','lego'] #,'ficus','materials','hotdog','drums','chair','mic','ship']
       # HR scenes (training scenes only):
       2,800,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops'] #'ficus','materials','hotdog','drums','lego','chair','mic','ship',
     val:

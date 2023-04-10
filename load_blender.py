@@ -204,6 +204,8 @@ class BlenderDataset(torch.utils.data.Dataset):
         ds_factors,dir,plane_res,scene_ids,types,probs,module_confinements = [],[],[],[],[],[],[]
         config_dict = dict(config_dict)
         for conf,scenes in config_dict.items():
+            if not isinstance(scenes,list): scenes = [scenes]
+            assert len(scenes)>0,'Passed an empty scene list for configuration %s'%(conf)
             conf = list(eval(conf))
             if len(conf)<2: conf.append(None) # Positional planes resolution. Setting None for non-planes model (e.g. NeRF)
             if len(conf)<3: conf.append(conf[1]) # View-direction planes resolution
@@ -212,7 +214,6 @@ class BlenderDataset(torch.utils.data.Dataset):
             elif conf[4] is None:   conf[4] = 1
             if len(conf)<6: conf.append([]) # Module confinements
             conf = tuple(conf)
-            if not isinstance(scenes,list): scenes = [scenes]
             for s in interpret_scene_list(scenes):
                 cur_factor,cur_dir,cur_res,cur_type,module_confinement = conf[0],s,(conf[1],conf[2]),conf[3],conf[5]
                 cur_prob = conf[4] if prob_assigned2scene_groups else conf[4]*len(scenes)

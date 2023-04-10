@@ -50,11 +50,11 @@ dataset:
       2,800,32:   ['house','robot','holiday','bugatti','motorbike','teddy','dragon','cola','donut','guitar','engine','fruits','marble_fireplace','piano','plane','satellite','speakers','steamTrain','thuja','toad','triceratops','ficus','materials','hotdog','drums'] #,'lego','chair','mic','ship',
       # Evaluation scene(s) for image inconsistency loss term:
       # Should be added (with sampling probability set to 0) if not already included in LR scenes above
-      8,200,32,'synt',0:   ['lego##2']
+      8,200,32,'synt',0:   ['lego##1']
     val:
       # Evaluation scenes (Should not overlap with training scenes):
       # Use the same parameter convention as in training scenes, without sampling probability
-      2,800,32:   ['lego##2']
+      2,800,32:   ['lego##1']
   
   testskip: 10 # Stride for synthetic scenes: Include one evaluation image per "testskip" images in the dataset.
   llffhold: 2 # For real scenes: Number of training images to hold out for evaluation
@@ -62,9 +62,9 @@ dataset:
 # Model parameters.
 models:
   # Path to pre-trained model checkpoint to resume (if set):
-  path: projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy1459K
+  path: projects/VolumetricEnhance/models/21TrainScenes_LRforFicusMaterialsHotdogDrums
   # Path to feature planes checkpoint for scenes missing from the pre-trained model path:
-  planes_path:  projects/VolumetricEnhance/logs/planesOnly_fromNoDetach579K_paper4_8xLR
+  planes_path:  projects/VolumetricEnhance/models/new_scene_planes
   use_existing_planes:  True # If True, favor feature plane sets from pre-trained model checkpoint folder over ones in planes_path folder, and keep them frozen (do not update). Default: False
   coarse:
     # Name of the torch.nn.Module class that implements the model.
@@ -177,7 +177,7 @@ super_resolution: # Feature planes Super-Resolution module parameters:
   # plane_resize_mode:  bicubic
   model:
     # Path to pre-trained model checkpoint to resume (if set. Otherwise defaults to path set to decoder model, if set):
-    path: projects/VolumetricEnhance/logs/E2E_Synt_Res25Sc200_21Sc800_32_LR100_400_noDetach_Lean_other4NoPaper4_0_copy1459K
+    path: projects/VolumetricEnhance/models/21TrainScenes_LRforFicusMaterialsHotdogDrums
     # Name of the torch.nn.Module class that implements the model.
     type: EDSR # Can be set to None to test the effect of image inconsistency loss without super-resolving planes
     # type: None

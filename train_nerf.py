@@ -48,7 +48,8 @@ def main():
     assert configargs.config or configargs.load_checkpoint, 'Should specify path to either (or both) a configuration file or a pre-trained model to resume training.'
     cfg = None
     LOCAL_CONFIG_FILENAME = os.path.join('config','local_config.yml')
-    local_config = get_config(LOCAL_CONFIG_FILENAME) if os.path.isfile(LOCAL_CONFIG_FILENAME) else None
+    assert os.path.isfile(LOCAL_CONFIG_FILENAME),'Missing local config file %s'%(LOCAL_CONFIG_FILENAME)
+    local_config = get_config(LOCAL_CONFIG_FILENAME)
     root_path = local_config.root if local_config is not None else ''
     if configargs.config is None:
         config_file = os.path.join(configargs.load_checkpoint,"config.yml")
@@ -489,6 +490,7 @@ def main():
                     SR_checkpoint_path = pretrained_model_folder
                 if SR_checkpoint_path is not None: SR_checkpoint_path = os.path.join(root_path,SR_checkpoint_path)
                 SR_checkpoint_path = find_latest_checkpoint(SR_checkpoint_path,sr=True,find_best=load_best or ('SR' not in what2train))
+                assert SR_checkpoint_path is not None,'Could not find an SR model to load...'
                 SR_model_checkpoint = safe_loading(SR_checkpoint_path,suffix='ckpt_best' if load_best else 'ckpt')
                 print(("Using" if load_best else "Resuming training of")+" SR model %s"%(SR_checkpoint_path))
                 saved_config_dict = get_config(os.path.join('/'.join(SR_checkpoint_path.split('/')[:-1]),"config.yml"))

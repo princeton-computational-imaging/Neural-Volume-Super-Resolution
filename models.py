@@ -675,6 +675,7 @@ class PlanesOptimizer(nn.Module):
             prefer_best = True
         else:
             file2load = self.param_path(model_name=model_name,scene=scene,save_location=save_location,prefer_best=prefer_best,file_must_exist=True)
+        assert len(file2load)>0,'Could not find the required feature planes file for scene %s'%(scene)
         loaded_params = safe_loading(file2load,suffix='par',best=prefer_best)
         return loaded_params
 
