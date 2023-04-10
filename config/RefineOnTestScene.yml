@@ -86,7 +86,7 @@ models:
     # How to combine projection from viewdir plane with the ones from position planes. Defaults to whatever is set in proj_combination:
     viewdir_proj_combination: concat_pos
     # Whether to align values of -1 and 1 with the actual grid corners when interpolating. If False, these values correspond to the center of corner array values, making the interpolation more resolution dependent.
-    align_corners: False
+    # align_corners: True
     # Number of hidden units in each layer of the MLP (multi-layer
     # perceptron).
     # Add a skip connection once in a while. Note: This parameter won't take affect unless num_layers > skip_connect_every:
