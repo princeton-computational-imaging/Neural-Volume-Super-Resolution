@@ -1,6 +1,6 @@
 # Neural Volume Super Resolution
-#### Official PyTorch implementation
-### Project page (Coming soon) | [Paper](https://arxiv.org/abs/2212.04666)
+<!--- #### Official PyTorch implementation
+### Project page (Coming soon) | [Paper](https://arxiv.org/abs/2212.04666) -->
 
 
 ## Requitements
@@ -38,7 +38,7 @@ Use pre-trained decodeer and SR models, coupled with the learned feature-plane r
 
 Optionally, to resume training in any of the first two stages, use the `--load-checkpoint` argument followed by the path to the saved model folder, and omit the `--config` argument.
 
-
+<!--- 
 ## Citing
 If you find our code or paper useful, please consider citing
 ```bibtex
@@ -51,6 +51,7 @@ If you find our code or paper useful, please consider citing
       primaryClass={cs.CV}
 }
 ```
+-->
 ## Contributing / Issues?
 
 Feel free to raise GitHub issues if you find anything concerning. Pull requests adding additional features are welcome too.
